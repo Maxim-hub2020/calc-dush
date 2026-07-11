@@ -1,0 +1,117 @@
+name: Verify and deploy to Timeweb
+
+on:
+  pull_request:
+    branches: [main, codex/calc-timeweb-production]
+  push:
+    branches: [main, codex/calc-timeweb-production]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shower-calculator-production
+  cancel-in-progress: false
+
+env:
+  DEPLOY_HOST: 93.183.82.177
+  DEPLOY_PORT: 22
+  DEPLOY_USER: root
+  DEPLOY_PATH: /var/www/shower-calculator
+  PUBLIC_URL: https://calc.cehcrm.ru
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Add build metadata
+        run: |
+          printf '{"commit":"%s","builtAt":"%s"}\n' \
+            "$GITHUB_SHA" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            > dist/version.json
+
+      - name: Store production build
+        uses: actions/upload-artifact@v4
+        with:
+          name: shower-calculator-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/codex/calc-timeweb-production'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout deployment scripts
+        uses: actions/checkout@v4
+
+      - name: Download production build
+        uses: actions/download-artifact@v4
+        with:
+          name: shower-calculator-dist
+          path: dist
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.TIMEWEB_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.TIMEWEB_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Upload and activate release
+        env:
+          RELEASE_ID: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          [[ "$DEPLOY_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/var/www/[A-Za-z0-9._/-]+$ ]]
+          [[ "$RELEASE_ID" =~ ^[0-9a-f]{40}$ ]]
+
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          release_path="$DEPLOY_PATH/releases/$RELEASE_ID"
+          ssh_options=(-p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+
+          ssh "${ssh_options[@]}" "$remote" "mkdir -p '$release_path'"
+          rsync -az --delete \
+            --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+            -e "ssh -p $DEPLOY_PORT -o BatchMode=yes -o StrictHostKeyChecking=yes" \
+            dist/ "$remote:$release_path/"
+          ssh "${ssh_options[@]}" "$remote" \
+            "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' 5" \
+            < deploy/activate-release.sh
+
+      - name: Verify published version
+        run: |
+          set -Eeuo pipefail
+          curl --fail --silent --show-error \
+            --retry 5 --retry-delay 2 --retry-all-errors \
+            "${PUBLIC_URL%/}/version.json" \
+            | grep -F "\"commit\":\"$GITHUB_SHA\""

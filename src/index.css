@@ -1,0 +1,97 @@
+:root {
+  --surface: #ffffff;
+  --page: #edf3f8;
+  --soft: #f4f8fb;
+  --line: #dde7ee;
+  --line-strong: #c9d7e1;
+  --text: #405160;
+  --heading: #142331;
+  --muted: #6d7d8a;
+  --accent: #2384a6;
+  --accent-dark: #11617d;
+  --accent-soft: #e7f5fa;
+  --mint: #2e8e6f;
+  --amber: #b96f17;
+  --danger: #ba3b3b;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--text);
+  background: var(--page);
+  font-family: var(--font);
+  font-synthesis: none;
+  letter-spacing: 0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--page);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100svh;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+body,
+button,
+input,
+select {
+  font-family: var(--font);
+  letter-spacing: 0;
+}
+
+button,
+select,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+button:focus-visible {
+  outline: 3px solid rgba(35, 132, 166, 0.24);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+@media (min-width: 760px) {
+  body {
+    padding: 22px 0;
+  }
+
+  .app-shell {
+    overflow: hidden;
+    min-height: calc(100svh - 44px);
+    border: 1px solid rgba(155, 178, 195, 0.35);
+    border-radius: 28px;
+  }
+
+  .bottom-tabs {
+    bottom: 22px;
+    border-right: 1px solid rgba(155, 178, 195, 0.35);
+    border-bottom-right-radius: 28px;
+    border-bottom-left-radius: 28px;
+    border-left: 1px solid rgba(155, 178, 195, 0.35);
+  }
+}

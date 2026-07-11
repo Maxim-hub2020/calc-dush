@@ -1,0 +1,11 @@
+# Merge these fields into the existing caddy service in
+# Maxim-hub2020/crm:docker-compose.prod.yml.
+services:
+  caddy:
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - /var/www/shower-calculator:/srv/shower-calculator:ro
