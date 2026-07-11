@@ -23,6 +23,7 @@ fi
 
 releases_dir="$app_root/releases"
 release_dir="$releases_dir/$release_id"
+release_link_target="releases/$release_id"
 next_link="$app_root/.current-$release_id"
 current_link="$app_root/current"
 
@@ -31,7 +32,7 @@ if [[ ! -f "$release_dir/index.html" ]]; then
   exit 1
 fi
 
-ln -sfn "$release_dir" "$next_link"
+ln -sfn "$release_link_target" "$next_link"
 mv -Tf "$next_link" "$current_link"
 
 old_releases="$({
@@ -53,4 +54,3 @@ while IFS= read -r old_release; do
 done <<< "$old_releases"
 
 echo "Activated release $release_id"
-
