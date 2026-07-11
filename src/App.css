@@ -106,6 +106,138 @@
   color: var(--amber);
 }
 
+.sr-only {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.position-title {
+  align-items: center;
+}
+
+.position-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.position-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+}
+
+.position-tools button:disabled {
+  color: #b9c4cc;
+}
+
+.position-tools .add-position {
+  width: auto;
+  padding: 0 11px;
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.position-strip {
+  display: grid;
+  grid-auto-columns: 154px;
+  grid-auto-flow: column;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 1px 7px;
+  scroll-snap-type: x proximity;
+}
+
+.position-tab {
+  display: grid;
+  gap: 4px;
+  min-height: 78px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  text-align: left;
+  scroll-snap-align: start;
+}
+
+.position-tab.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.position-tab.has-error {
+  border-color: var(--danger);
+}
+
+.position-tab span,
+.position-tab small {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.position-tab strong {
+  overflow: hidden;
+  color: var(--heading);
+  font-size: 13px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #e8eef3;
+}
+
+.config-tabs button {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.config-tabs button.is-active {
+  background: #fff;
+  color: var(--accent-dark);
+  box-shadow: 0 1px 4px rgba(34, 54, 70, 0.13);
+}
+
+.config-panel {
+  min-width: 0;
+}
+
+.config-panel > .section-block {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 .construction-strip {
   display: grid;
   grid-auto-columns: 152px;
@@ -502,6 +634,23 @@
   gap: 5px;
 }
 
+.summary-details {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.summary-details summary {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.summary-details[open] summary {
+  margin-bottom: 9px;
+}
+
 .summary-lines div,
 .summary-total {
   display: flex;
@@ -532,6 +681,27 @@
   color: var(--heading);
   font-size: 24px;
   line-height: 1.05;
+}
+
+.summary-order-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 10px;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.summary-order-total span {
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.summary-order-total strong {
+  color: var(--heading);
+  font-size: 20px;
 }
 
 .primary-action,
@@ -850,6 +1020,13 @@
     padding-bottom: 2px;
   }
 
+  .position-strip {
+    grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
+    grid-auto-columns: auto;
+    grid-auto-flow: row;
+    overflow-x: visible;
+  }
+
   .construction-card {
     grid-template-rows: 132px auto;
     min-height: 186px;
@@ -895,20 +1072,23 @@
     row-gap: 24px;
   }
 
-  .calculator-screen > .section-block:first-child {
+  .calculator-screen > .position-section {
     grid-column: 1 / -1;
   }
 
-  .calculator-screen > .section-block:nth-child(2),
-  .calculator-screen > .section-block:nth-child(3),
-  .calculator-screen > .section-block:nth-child(4),
-  .calculator-screen > .section-block:nth-child(5) {
+  .calculator-screen > .config-tabs {
     grid-column: 1;
+    grid-row: 2;
+  }
+
+  .calculator-screen > .config-panel {
+    grid-column: 1;
+    grid-row: 3;
   }
 
   .calculator-screen > .summary-dock {
     grid-column: 2;
-    grid-row: 2 / span 4;
+    grid-row: 2 / span 2;
     align-self: start;
     position: sticky;
     top: 164px;

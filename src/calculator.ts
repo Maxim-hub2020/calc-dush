@@ -36,17 +36,27 @@ export type CalculationResult = {
   lines: CalculationLine[]
 }
 
-export type Quote = {
+export type QuoteItem = {
   id: string
-  number: string
-  createdAt: string
-  status: 'new' | 'sent' | 'accepted' | 'archived'
   form: CalculatorForm
   result: CalculationResult
   constructionTitle: string
   glassLabel: string
   hardwareLabel: string
   hardwareClassLabel: string
+}
+
+export type Quote = QuoteItem & {
+  id: string
+  number: string
+  createdAt: string
+  status: 'new' | 'sent' | 'accepted' | 'archived'
+  items?: QuoteItem[]
+}
+
+export type QuoteDraftItem = {
+  form: CalculatorForm
+  result: CalculationResult
 }
 
 const roundToTen = (value: number) => Math.round(value / 10) * 10
@@ -163,24 +173,72 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
   }
 }
 
-export const createQuote = (catalog: PricingCatalog, form: CalculatorForm, result: CalculationResult): Quote => {
-  const construction = getConstruction(catalog, form.constructionId)
-  const glass = getOption(catalog.glass, form.glassId)
-  const hardware = getOption(catalog.hardware, form.hardwareId)
-  const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
-  const createdAt = new Date().toISOString()
-  const id = crypto.randomUUID()
+export const combineCalculationResults = (results: CalculationResult[]): CalculationResult => {
+  const sum = (pick: (result: CalculationResult) => number) => results.reduce((total, result) => total + pick(result), 0)
+  const firstLines = results[0]?.lines ?? []
 
   return {
-    id,
-    number: `КП-${new Date().getFullYear()}-${id.slice(0, 4).toUpperCase()}`,
-    createdAt,
-    status: 'new',
-    form,
-    result,
+    product: sum((result) => result.product),
+    installation: sum((result) => result.installation),
+    delivery: sum((result) => result.delivery),
+    subtotal: sum((result) => result.subtotal),
+    discount: sum((result) => result.discount),
+    total: sum((result) => result.total),
+    glassArea: sum((result) => result.glassArea),
+    hardwarePrice: sum((result) => result.hardwarePrice),
+    hasSurcharge: results.some((result) => result.hasSurcharge),
+    errors: {},
+    lines: firstLines.map((line, index) => ({
+      label: line.label,
+      value: results.reduce((total, result) => total + (result.lines[index]?.value ?? 0), 0),
+    })),
+  }
+}
+
+const createQuoteItem = (catalog: PricingCatalog, draft: QuoteDraftItem): QuoteItem => {
+  const construction = getConstruction(catalog, draft.form.constructionId)
+  const glass = getOption(catalog.glass, draft.form.glassId)
+  const hardware = getOption(catalog.hardware, draft.form.hardwareId)
+  const hardwareClass = getOption(catalog.hardwareClass, draft.form.hardwareClassId)
+
+  return {
+    id: crypto.randomUUID(),
+    form: draft.form,
+    result: draft.result,
     constructionTitle: construction.title,
     glassLabel: glass.label,
     hardwareLabel: hardware.label,
     hardwareClassLabel: hardwareClass.label,
+  }
+}
+
+export const getQuoteItems = (quote: Quote): QuoteItem[] => {
+  if (quote.items?.length) return quote.items
+  return [{
+    id: quote.id,
+    form: quote.form,
+    result: quote.result,
+    constructionTitle: quote.constructionTitle,
+    glassLabel: quote.glassLabel,
+    hardwareLabel: quote.hardwareLabel,
+    hardwareClassLabel: quote.hardwareClassLabel,
+  }]
+}
+
+export const createQuote = (catalog: PricingCatalog, drafts: QuoteDraftItem[]): Quote => {
+  if (drafts.length === 0) throw new Error('КП должно содержать хотя бы одну позицию')
+  const items = drafts.map((draft) => createQuoteItem(catalog, draft))
+  const firstItem = items[0]
+  const createdAt = new Date().toISOString()
+  const id = crypto.randomUUID()
+
+  return {
+    ...firstItem,
+    id,
+    number: `КП-${new Date().getFullYear()}-${id.slice(0, 4).toUpperCase()}`,
+    createdAt,
+    status: 'new',
+    result: combineCalculationResults(items.map((item) => item.result)),
+    items,
   }
 }

@@ -1,6 +1,6 @@
 import type { Content, TableCell, TDocumentDefinitions } from 'pdfmake/interfaces'
 import { Capacitor } from '@capacitor/core'
-import { getConstruction, money, type Quote } from './calculator'
+import { getConstruction, getQuoteItems, money, type Quote, type QuoteItem } from './calculator'
 import { defaultCatalog, type Construction } from './pricing'
 
 const pdfColors = {
@@ -20,7 +20,7 @@ const formatPdfDate = (date: string) =>
     year: 'numeric',
   }).format(new Date(date))
 
-const dimensionRows = (quote: Quote, construction: Construction): Array<[string, string]> =>
+const dimensionRows = (quote: QuoteItem, construction: Construction): Array<[string, string]> =>
   construction.fields.map((field) => [field.label, `${quote.form.dimensions[field.key] ?? 0} мм`])
 
 const buildSketchSvg = (sketch: Construction['sketch']) => {
@@ -77,27 +77,64 @@ const detailTable = (rows: Array<[string, string]>): Content => ({
   },
 })
 
+const itemConfigurationRows = (item: QuoteItem, construction: Construction): Array<[string, string]> => [
+  ['Конструкция', item.constructionTitle],
+  ...dimensionRows(item, construction),
+  ['Стекло', item.glassLabel],
+  ['Фурнитура', item.hardwareLabel],
+  ['Класс фурнитуры', item.hardwareClassLabel],
+  ['Монтаж', item.form.installation ? 'Включен' : 'Не включен'],
+  [
+    'Доставка',
+    item.form.delivery
+      ? item.form.deliveryZone === 'outside'
+        ? `За МКАД, ${item.form.deliveryKm} км`
+        : 'В пределах МКАД'
+      : 'Не включена',
+  ],
+]
+
+const buildQuoteItemBlock = (item: QuoteItem, index: number): Content => {
+  const construction = getConstruction(defaultCatalog, item.form.constructionId)
+
+  return {
+    unbreakable: true,
+    margin: [0, 12, 0, 2],
+    stack: [
+      {
+        table: {
+          widths: [78, '*', 118],
+          body: [[
+            { text: `Позиция ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+            { text: item.constructionTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+            { text: money(item.result.total), alignment: 'right', bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+          ]],
+        },
+        layout: 'noBorders',
+      },
+      {
+        columns: [
+          { width: '*', stack: [detailTable(itemConfigurationRows(item, construction))] },
+          {
+            width: 160,
+            stack: [
+              { svg: buildSketchSvg(construction.sketch), width: 145, alignment: 'center' },
+              { text: construction.shortTitle, alignment: 'center', bold: true, color: pdfColors.heading, margin: [0, 3, 0, 0] },
+            ],
+          },
+        ],
+        columnGap: 18,
+        margin: [0, 8, 0, 0],
+      },
+    ],
+  }
+}
+
 export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
-  const construction = getConstruction(defaultCatalog, quote.form.constructionId)
+  const items = getQuoteItems(quote)
   const clientRows: Array<[string, string]> = [
     ['Клиент', quote.form.clientName || 'Не указан'],
     ['Телефон', quote.form.clientPhone || 'Не указан'],
-  ]
-  const configurationRows: Array<[string, string]> = [
-    ['Конструкция', quote.constructionTitle],
-    ...dimensionRows(quote, construction),
-    ['Стекло', quote.glassLabel],
-    ['Фурнитура', quote.hardwareLabel],
-    ['Класс фурнитуры', quote.hardwareClassLabel],
-    ['Монтаж', quote.form.installation ? 'Включен' : 'Не включен'],
-    [
-      'Доставка',
-      quote.form.delivery
-        ? quote.form.deliveryZone === 'outside'
-          ? `За МКАД, ${quote.form.deliveryKm} км`
-          : 'В пределах МКАД'
-        : 'Не включена',
-    ],
   ]
   const clientStack: Content[] = [
     { text: 'Клиент', style: 'sectionTitle', margin: [0, 8, 0, 7] },
@@ -126,7 +163,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
     pageMargins: [42, 40, 42, 46],
     info: {
       title: `${quote.number} - коммерческое предложение`,
-      subject: quote.constructionTitle,
+      subject: `${items.length} поз. - ${items.map((item) => item.constructionTitle).join(', ')}`,
       author: 'Душевые КП',
     },
     defaultStyle: {
@@ -157,6 +194,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
                 stack: [
                   { text: quote.number, bold: true, fontSize: 13, color: pdfColors.heading },
                   { text: formatPdfDate(quote.createdAt), color: pdfColors.muted, margin: [0, 4, 0, 0] },
+                  { text: `${items.length} поз.`, color: pdfColors.accent, bold: true, margin: [0, 4, 0, 0] },
                 ],
                 fillColor: pdfColors.accentSoft,
                 margin: [10, 8, 10, 8],
@@ -172,36 +210,27 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
         margin: [0, 18, 0, 4],
       },
       {
-        columns: [
+        stack: clientStack,
+        margin: [0, 4, 0, 0],
+      },
+      ...items.map((item, index) => buildQuoteItemBlock(item, index)),
+      {
+        unbreakable: true,
+        stack: [
+          { text: 'Итого по предложению', style: 'sectionTitle' },
           {
-            width: '*',
-            stack: clientStack,
-          },
-          {
-            width: 205,
-            stack: [
-              { svg: buildSketchSvg(construction.sketch), width: 190, alignment: 'center' },
-              { text: construction.shortTitle, alignment: 'center', bold: true, color: pdfColors.heading, margin: [0, 5, 0, 0] },
-            ],
+            table: {
+              widths: ['*', 130],
+              body: costTableBody,
+            },
+            layout: {
+              hLineColor: () => pdfColors.line,
+              vLineWidth: () => 0,
+              paddingLeft: () => 0,
+              paddingRight: () => 0,
+            },
           },
         ],
-        columnGap: 24,
-        margin: [0, 8, 0, 0],
-      },
-      { text: 'Комплектация', style: 'sectionTitle' },
-      detailTable(configurationRows),
-      { text: 'Стоимость', style: 'sectionTitle' },
-      {
-        table: {
-          widths: ['*', 130],
-          body: costTableBody,
-        },
-        layout: {
-          hLineColor: () => pdfColors.line,
-          vLineWidth: () => 0,
-          paddingLeft: () => 0,
-          paddingRight: () => 0,
-        },
       },
       {
         text: 'Итоговая стоимость рассчитана по выбранной комплектации и указанным размерам.',

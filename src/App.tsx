@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Copy,
   FileDown,
+  Plus,
   RotateCcw,
   Save,
   Search,
@@ -15,10 +16,12 @@ import {
 import './App.css'
 import {
   calculateQuote,
+  combineCalculationResults,
   createInitialForm,
   createQuote,
   getConstruction,
   getOption,
+  getQuoteItems,
   money,
   resetDimensionsForConstruction,
   shortMoney,
@@ -64,46 +67,119 @@ const cloneForm = (form: CalculatorForm): CalculatorForm => ({
   dimensions: { ...form.dimensions },
 })
 
+type DraftPosition = {
+  id: string
+  form: CalculatorForm
+}
+
+type PositionSummary = {
+  id: string
+  index: number
+  title: string
+  total: number
+  hasErrors: boolean
+}
+
+const customerFields: Array<keyof CalculatorForm> = ['clientName', 'clientPhone', 'note']
+
+const createDraftPosition = (catalog: PricingCatalog, customer?: CalculatorForm): DraftPosition => {
+  const form = createInitialForm(catalog)
+  if (customer) {
+    form.clientName = customer.clientName
+    form.clientPhone = customer.clientPhone
+    form.note = customer.note
+  }
+  return { id: crypto.randomUUID(), form }
+}
+
 function App() {
   const [catalog, setCatalog] = useState<PricingCatalog>(() => loadCatalog())
   const [quotes, setQuotes] = useState<Quote[]>(() => loadQuotes())
-  const [form, setForm] = useState<CalculatorForm>(() => createInitialForm(loadCatalog()))
+  const [positions, setPositions] = useState<DraftPosition[]>(() => [createDraftPosition(loadCatalog())])
+  const [activePositionId, setActivePositionId] = useState(() => positions[0].id)
   const [activeTab, setActiveTab] = useState<TabId>('calculator')
   const [notice, setNotice] = useState('')
   const [pdfQuoteId, setPdfQuoteId] = useState('')
 
-  const result = useMemo(() => calculateQuote(catalog, form), [catalog, form])
+  const activePosition = positions.find((position) => position.id === activePositionId) ?? positions[0]
+  const form = activePosition.form
+  const positionResults = useMemo(
+    () => positions.map((position) => ({ ...position, result: calculateQuote(catalog, position.form) })),
+    [catalog, positions],
+  )
+  const result = positionResults.find((position) => position.id === activePosition.id)?.result
+    ?? calculateQuote(catalog, form)
+  const orderResult = useMemo(
+    () => combineCalculationResults(positionResults.map((position) => position.result)),
+    [positionResults],
+  )
+  const positionSummaries = useMemo<PositionSummary[]>(
+    () => positionResults.map((position, index) => ({
+      id: position.id,
+      index,
+      title: getConstruction(catalog, position.form.constructionId).shortTitle,
+      total: position.result.total,
+      hasErrors: Object.keys(position.result.errors).length > 0,
+    })),
+    [catalog, positionResults],
+  )
   const construction = getConstruction(catalog, form.constructionId)
 
   useEffect(() => saveCatalog(catalog), [catalog])
   useEffect(() => saveQuotes(quotes), [quotes])
 
   const updateForm = (patch: Partial<CalculatorForm>) => {
-    setForm((current) => ({ ...current, ...patch }))
+    const sharedPatch = customerFields.reduce<Partial<CalculatorForm>>((next, key) => {
+      if (key in patch) Object.assign(next, { [key]: patch[key] })
+      return next
+    }, {})
+    setPositions((current) => current.map((position) => {
+      if (position.id === activePositionId) {
+        return { ...position, form: { ...position.form, ...patch } }
+      }
+      if (Object.keys(sharedPatch).length > 0) {
+        return { ...position, form: { ...position.form, ...sharedPatch } }
+      }
+      return position
+    }))
   }
 
   const updateDimension = (key: string, value: number) => {
-    setForm((current) => ({
-      ...current,
-      dimensions: { ...current.dimensions, [key]: value },
-    }))
+    setPositions((current) => current.map((position) => position.id === activePositionId
+      ? { ...position, form: { ...position.form, dimensions: { ...position.form.dimensions, [key]: value } } }
+      : position))
   }
 
   const selectConstruction = (id: string) => {
     const nextConstruction = getConstruction(catalog, id)
-    setForm((current) => ({
-      ...current,
-      constructionId: id,
-      dimensions: resetDimensionsForConstruction(nextConstruction),
-    }))
+    setPositions((current) => current.map((position) => position.id === activePositionId
+      ? {
+          ...position,
+          form: {
+            ...position.form,
+            constructionId: id,
+            dimensions: resetDimensionsForConstruction(nextConstruction),
+          },
+        }
+      : position))
+  }
+
+  const createQuoteFromPositions = () => createQuote(
+    catalog,
+    positionResults.map((position) => ({ form: cloneForm(position.form), result: position.result })),
+  )
+
+  const focusFirstInvalidPosition = () => {
+    const invalid = positionResults.find((position) => Object.keys(position.result.errors).length > 0)
+    if (!invalid) return false
+    setActivePositionId(invalid.id)
+    setNotice(`Проверьте размеры позиции ${positionResults.indexOf(invalid) + 1}`)
+    return true
   }
 
   const saveCurrentQuote = () => {
-    if (Object.keys(result.errors).length > 0) {
-      setNotice('Проверьте размеры')
-      return
-    }
-    const quote = createQuote(catalog, cloneForm(form), result)
+    if (focusFirstInvalidPosition()) return
+    const quote = createQuoteFromPositions()
     setQuotes((current) => [quote, ...current])
     setNotice(`${quote.number} сохранено`)
     setActiveTab('archive')
@@ -122,17 +198,44 @@ function App() {
   }
 
   const downloadCurrentQuotePdf = () => {
-    if (Object.keys(result.errors).length > 0) {
-      setNotice('Проверьте размеры')
-      return
-    }
-    const quote = createQuote(catalog, cloneForm(form), result)
+    if (focusFirstInvalidPosition()) return
+    const quote = createQuoteFromPositions()
     setQuotes((current) => [quote, ...current])
     void downloadQuotePdf(quote)
   }
 
+  const addPosition = () => {
+    const next = createDraftPosition(catalog, form)
+    setPositions((current) => [...current, next])
+    setActivePositionId(next.id)
+    setNotice(`Позиция ${positions.length + 1} добавлена`)
+  }
+
+  const duplicatePosition = () => {
+    const next = { id: crypto.randomUUID(), form: cloneForm(form) }
+    const activeIndex = positions.findIndex((position) => position.id === activePositionId)
+    setPositions((current) => [
+      ...current.slice(0, activeIndex + 1),
+      next,
+      ...current.slice(activeIndex + 1),
+    ])
+    setActivePositionId(next.id)
+    setNotice('Позиция продублирована')
+  }
+
+  const deletePosition = () => {
+    if (positions.length === 1) return
+    const activeIndex = positions.findIndex((position) => position.id === activePositionId)
+    const nextPositions = positions.filter((position) => position.id !== activePositionId)
+    setPositions(nextPositions)
+    setActivePositionId(nextPositions[Math.min(activeIndex, nextPositions.length - 1)].id)
+    setNotice('Позиция удалена')
+  }
+
   const loadQuoteToCalculator = (quote: Quote) => {
-    setForm(cloneForm(quote.form))
+    const nextPositions = getQuoteItems(quote).map((item) => ({ id: crypto.randomUUID(), form: cloneForm(item.form) }))
+    setPositions(nextPositions)
+    setActivePositionId(nextPositions[0].id)
     setActiveTab('calculator')
     setNotice(`${quote.number} открыт`)
   }
@@ -148,10 +251,12 @@ function App() {
   const resetPrices = () => {
     const nextCatalog = resetCatalog()
     setCatalog(nextCatalog)
-    const nextConstruction = getConstruction(nextCatalog, form.constructionId)
-    setForm((current) => ({
-      ...current,
-      dimensions: createDefaultDimensions(nextConstruction),
+    setPositions((current) => current.map((position) => {
+      const nextConstruction = getConstruction(nextCatalog, position.form.constructionId)
+      return {
+        ...position,
+        form: { ...position.form, dimensions: createDefaultDimensions(nextConstruction) },
+      }
     }))
     setNotice('Цены сброшены')
   }
@@ -165,7 +270,7 @@ function App() {
         </div>
         <div className="header-total">
           <span>Итого</span>
-          <strong>{shortMoney(result.total)} ₽</strong>
+          <strong>{shortMoney(orderResult.total)} ₽</strong>
         </div>
       </header>
 
@@ -182,11 +287,18 @@ function App() {
             catalog={catalog}
             form={form}
             result={result}
+            orderResult={orderResult}
+            positionSummaries={positionSummaries}
+            activePositionId={activePositionId}
             isPdfBusy={pdfQuoteId !== ''}
+            onAddPosition={addPosition}
+            onDeletePosition={deletePosition}
             onDimension={updateDimension}
+            onDuplicatePosition={duplicatePosition}
             onForm={updateForm}
             onPdf={downloadCurrentQuotePdf}
             onSave={saveCurrentQuote}
+            onSelectPosition={setActivePositionId}
             onSelectConstruction={selectConstruction}
           />
         ) : null}
@@ -231,33 +343,82 @@ type CalculatorScreenProps = {
   catalog: PricingCatalog
   form: CalculatorForm
   result: CalculationResult
+  orderResult: CalculationResult
+  positionSummaries: PositionSummary[]
+  activePositionId: string
   isPdfBusy: boolean
+  onAddPosition: () => void
+  onDeletePosition: () => void
   onDimension: (key: string, value: number) => void
+  onDuplicatePosition: () => void
   onForm: (patch: Partial<CalculatorForm>) => void
   onPdf: () => void
   onSave: () => void
   onSelectConstruction: (id: string) => void
+  onSelectPosition: (id: string) => void
 }
+
+type ConfigSectionId = 'construction' | 'dimensions' | 'appearance' | 'services' | 'client'
+
+const configSections: Array<{ id: ConfigSectionId; label: string }> = [
+  { id: 'construction', label: 'Тип' },
+  { id: 'dimensions', label: 'Размеры' },
+  { id: 'appearance', label: 'Вид' },
+  { id: 'services', label: 'Услуги' },
+  { id: 'client', label: 'Клиент' },
+]
 
 function CalculatorScreen({
   catalog,
   form,
   result,
+  orderResult,
+  positionSummaries,
+  activePositionId,
   isPdfBusy,
+  onAddPosition,
+  onDeletePosition,
   onDimension,
+  onDuplicatePosition,
   onForm,
   onPdf,
   onSave,
   onSelectConstruction,
+  onSelectPosition,
 }: CalculatorScreenProps) {
   const construction = getConstruction(catalog, form.constructionId)
   const glass = getOption(catalog.glass, form.glassId)
   const hardware = getOption(catalog.hardware, form.hardwareId)
   const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
-  const hasErrors = Object.keys(result.errors).length > 0
+  const [activeSection, setActiveSection] = useState<ConfigSectionId>('construction')
 
   return (
     <div className="screen-stack calculator-screen">
+      <PositionSwitcher
+        activeId={activePositionId}
+        positions={positionSummaries}
+        onAdd={onAddPosition}
+        onDelete={onDeletePosition}
+        onDuplicate={onDuplicatePosition}
+        onSelect={onSelectPosition}
+      />
+
+      <nav className="config-tabs" aria-label="Настройки позиции">
+        {configSections.map((section) => (
+          <button
+            aria-pressed={activeSection === section.id}
+            className={activeSection === section.id ? 'is-active' : ''}
+            key={section.id}
+            type="button"
+            onClick={() => setActiveSection(section.id)}
+          >
+            {section.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="config-panel">
+      {activeSection === 'construction' ? (
       <section className="section-block">
         <div className="section-title">
           <h2>Конструкция</h2>
@@ -277,7 +438,9 @@ function CalculatorScreen({
           ))}
         </div>
       </section>
+      ) : null}
 
+      {activeSection === 'dimensions' ? (
       <section className="section-block">
         <div className="section-title">
           <h2>Размеры</h2>
@@ -305,7 +468,9 @@ function CalculatorScreen({
           ))}
         </div>
       </section>
+      ) : null}
 
+      {activeSection === 'appearance' ? (
       <section className="section-block">
         <div className="section-title">
           <h2>Внешний вид</h2>
@@ -334,7 +499,9 @@ function CalculatorScreen({
           />
         </div>
       </section>
+      ) : null}
 
+      {activeSection === 'services' ? (
       <section className="section-block">
         <div className="section-title">
           <h2>Услуги</h2>
@@ -387,7 +554,9 @@ function CalculatorScreen({
           ) : null}
         </div>
       </section>
+      ) : null}
 
+      {activeSection === 'client' ? (
       <section className="section-block">
         <div className="section-title">
           <h2>Клиент</h2>
@@ -408,9 +577,67 @@ function CalculatorScreen({
           </label>
         </div>
       </section>
+      ) : null}
+      </div>
 
-      <SummaryDock result={result} hasErrors={hasErrors} isPdfBusy={isPdfBusy} onPdf={onPdf} onSave={onSave} />
+      <SummaryDock
+        result={result}
+        orderResult={orderResult}
+        positionCount={positionSummaries.length}
+        positionIndex={positionSummaries.findIndex((position) => position.id === activePositionId)}
+        hasErrors={positionSummaries.some((position) => position.hasErrors)}
+        isPdfBusy={isPdfBusy}
+        onPdf={onPdf}
+        onSave={onSave}
+      />
     </div>
+  )
+}
+
+type PositionSwitcherProps = {
+  activeId: string
+  positions: PositionSummary[]
+  onAdd: () => void
+  onDelete: () => void
+  onDuplicate: () => void
+  onSelect: (id: string) => void
+}
+
+function PositionSwitcher({ activeId, positions, onAdd, onDelete, onDuplicate, onSelect }: PositionSwitcherProps) {
+  return (
+    <section className="section-block position-section">
+      <div className="section-title position-title">
+        <h2>Позиции</h2>
+        <div className="position-tools">
+          <button title="Дублировать позицию" type="button" onClick={onDuplicate}>
+            <Copy size={17} />
+            <span className="sr-only">Дублировать позицию</span>
+          </button>
+          <button disabled={positions.length === 1} title="Удалить позицию" type="button" onClick={onDelete}>
+            <Trash2 size={17} />
+            <span className="sr-only">Удалить позицию</span>
+          </button>
+          <button className="add-position" type="button" onClick={onAdd}>
+            <Plus size={17} />
+            Добавить
+          </button>
+        </div>
+      </div>
+      <div className="position-strip" aria-label="Позиции коммерческого предложения">
+        {positions.map((position) => (
+          <button
+            className={`${position.id === activeId ? 'position-tab is-active' : 'position-tab'}${position.hasErrors ? ' has-error' : ''}`}
+            key={position.id}
+            type="button"
+            onClick={() => onSelect(position.id)}
+          >
+            <span>Позиция {position.index + 1}</span>
+            <strong>{position.title}</strong>
+            <small>{shortMoney(position.total)} ₽</small>
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -486,27 +713,39 @@ function ToggleRow({ checked, label, value, onChange }: ToggleRowProps) {
 
 type SummaryDockProps = {
   result: CalculationResult
+  orderResult: CalculationResult
+  positionCount: number
+  positionIndex: number
   hasErrors: boolean
   isPdfBusy: boolean
   onPdf: () => void
   onSave: () => void
 }
 
-function SummaryDock({ result, hasErrors, isPdfBusy, onPdf, onSave }: SummaryDockProps) {
+function SummaryDock({ result, orderResult, positionCount, positionIndex, hasErrors, isPdfBusy, onPdf, onSave }: SummaryDockProps) {
   return (
     <aside className="summary-dock">
-      <div className="summary-lines">
-        {result.lines.map((line) => (
-          <div key={line.label}>
-            <span>{line.label}</span>
-            <strong>{money(line.value)}</strong>
-          </div>
-        ))}
-      </div>
       <div className="summary-total">
-        <span>Итого</span>
+        <span>Позиция {positionIndex + 1}</span>
         <strong>{money(result.total)}</strong>
       </div>
+      {positionCount > 1 ? (
+        <div className="summary-order-total">
+          <span>Всего, {positionCount} поз.</span>
+          <strong>{money(orderResult.total)}</strong>
+        </div>
+      ) : null}
+      <details className="summary-details">
+        <summary>Детали расчета</summary>
+        <div className="summary-lines">
+          {result.lines.map((line) => (
+            <div key={line.label}>
+              <span>{line.label}</span>
+              <strong>{money(line.value)}</strong>
+            </div>
+          ))}
+        </div>
+      </details>
       <div className="summary-actions">
         <button className="pdf-action" disabled={hasErrors || isPdfBusy} type="button" onClick={onPdf}>
           <FileDown size={19} />
@@ -534,14 +773,19 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
   const [query, setQuery] = useState('')
   const normalized = query.trim().toLowerCase()
   const filtered = quotes.filter((quote) => {
+    const items = getQuoteItems(quote)
     const haystack = [
       quote.number,
-      quote.constructionTitle,
       quote.form.clientName,
       quote.form.clientPhone,
-      quote.glassLabel,
       statuses[quote.status],
       String(quote.result.total),
+      ...items.flatMap((item) => [
+        item.constructionTitle,
+        item.glassLabel,
+        item.hardwareLabel,
+        item.hardwareClassLabel,
+      ]),
     ]
       .join(' ')
       .toLowerCase()
@@ -566,7 +810,10 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
       </section>
 
       <section className="quote-list">
-        {filtered.map((quote) => (
+        {filtered.map((quote) => {
+          const items = getQuoteItems(quote)
+          const firstItem = items[0]
+          return (
           <article className="quote-card" key={quote.id}>
             <div className="quote-head">
               <div>
@@ -582,9 +829,9 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
               </select>
             </div>
             <button className="quote-main" type="button" onClick={() => onLoad(quote)}>
-              <ConstructionPreview construction={getConstruction(defaultCatalog, quote.form.constructionId)} />
+              <ConstructionPreview construction={getConstruction(defaultCatalog, firstItem.form.constructionId)} />
               <span>
-                <b>{quote.constructionTitle}</b>
+                <b>{items.length > 1 ? `${items.length} позиции` : firstItem.constructionTitle}</b>
                 <small>
                   {quote.form.clientName || 'Без имени'} · {money(quote.result.total)}
                 </small>
@@ -592,9 +839,15 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
               <ChevronRight size={19} />
             </button>
             <div className="quote-meta">
-              <span>{quote.glassLabel}</span>
-              <span>{quote.hardwareLabel}</span>
-              <span>{quote.hardwareClassLabel}</span>
+              {items.length > 1
+                ? items.map((item, index) => <span key={item.id}>{index + 1}. {item.constructionTitle}</span>)
+                : (
+                    <>
+                      <span>{firstItem.glassLabel}</span>
+                      <span>{firstItem.hardwareLabel}</span>
+                      <span>{firstItem.hardwareClassLabel}</span>
+                    </>
+                  )}
             </div>
             <div className="quote-actions">
               <button type="button" onClick={() => onLoad(quote)}>
@@ -611,7 +864,8 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
               </button>
             </div>
           </article>
-        ))}
+          )
+        })}
         {filtered.length === 0 ? (
           <div className="empty-state">
             <Archive size={28} />
