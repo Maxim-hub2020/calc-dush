@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   Copy,
+  FileDown,
   RotateCcw,
   Save,
   Search,
@@ -33,6 +34,7 @@ import {
   type PricingCatalog,
 } from './pricing'
 import { loadCatalog, loadQuotes, resetCatalog, saveCatalog, saveQuotes } from './storage'
+import { shareQuotePdf } from './quotePdf'
 
 type TabId = 'calculator' | 'archive' | 'prices'
 
@@ -68,6 +70,7 @@ function App() {
   const [form, setForm] = useState<CalculatorForm>(() => createInitialForm(loadCatalog()))
   const [activeTab, setActiveTab] = useState<TabId>('calculator')
   const [notice, setNotice] = useState('')
+  const [pdfQuoteId, setPdfQuoteId] = useState('')
 
   const result = useMemo(() => calculateQuote(catalog, form), [catalog, form])
   const construction = getConstruction(catalog, form.constructionId)
@@ -104,6 +107,28 @@ function App() {
     setQuotes((current) => [quote, ...current])
     setNotice(`${quote.number} сохранено`)
     setActiveTab('archive')
+  }
+
+  const downloadQuotePdf = async (quote: Quote) => {
+    setPdfQuoteId(quote.id)
+    try {
+      await shareQuotePdf(quote)
+      setNotice(`${quote.number}: PDF готов`)
+    } catch {
+      setNotice('Не удалось сформировать PDF')
+    } finally {
+      setPdfQuoteId('')
+    }
+  }
+
+  const downloadCurrentQuotePdf = () => {
+    if (Object.keys(result.errors).length > 0) {
+      setNotice('Проверьте размеры')
+      return
+    }
+    const quote = createQuote(catalog, cloneForm(form), result)
+    setQuotes((current) => [quote, ...current])
+    void downloadQuotePdf(quote)
   }
 
   const loadQuoteToCalculator = (quote: Quote) => {
@@ -157,8 +182,10 @@ function App() {
             catalog={catalog}
             form={form}
             result={result}
+            isPdfBusy={pdfQuoteId !== ''}
             onDimension={updateDimension}
             onForm={updateForm}
+            onPdf={downloadCurrentQuotePdf}
             onSave={saveCurrentQuote}
             onSelectConstruction={selectConstruction}
           />
@@ -167,8 +194,10 @@ function App() {
         {activeTab === 'archive' ? (
           <ArchiveScreen
             quotes={quotes}
+            pdfQuoteId={pdfQuoteId}
             onDelete={deleteQuote}
             onLoad={loadQuoteToCalculator}
+            onPdf={(quote) => void downloadQuotePdf(quote)}
             onStatus={updateQuoteStatus}
           />
         ) : null}
@@ -202,8 +231,10 @@ type CalculatorScreenProps = {
   catalog: PricingCatalog
   form: CalculatorForm
   result: CalculationResult
+  isPdfBusy: boolean
   onDimension: (key: string, value: number) => void
   onForm: (patch: Partial<CalculatorForm>) => void
+  onPdf: () => void
   onSave: () => void
   onSelectConstruction: (id: string) => void
 }
@@ -212,8 +243,10 @@ function CalculatorScreen({
   catalog,
   form,
   result,
+  isPdfBusy,
   onDimension,
   onForm,
+  onPdf,
   onSave,
   onSelectConstruction,
 }: CalculatorScreenProps) {
@@ -376,7 +409,7 @@ function CalculatorScreen({
         </div>
       </section>
 
-      <SummaryDock result={result} hasErrors={hasErrors} onSave={onSave} />
+      <SummaryDock result={result} hasErrors={hasErrors} isPdfBusy={isPdfBusy} onPdf={onPdf} onSave={onSave} />
     </div>
   )
 }
@@ -454,10 +487,12 @@ function ToggleRow({ checked, label, value, onChange }: ToggleRowProps) {
 type SummaryDockProps = {
   result: CalculationResult
   hasErrors: boolean
+  isPdfBusy: boolean
+  onPdf: () => void
   onSave: () => void
 }
 
-function SummaryDock({ result, hasErrors, onSave }: SummaryDockProps) {
+function SummaryDock({ result, hasErrors, isPdfBusy, onPdf, onSave }: SummaryDockProps) {
   return (
     <aside className="summary-dock">
       <div className="summary-lines">
@@ -472,22 +507,30 @@ function SummaryDock({ result, hasErrors, onSave }: SummaryDockProps) {
         <span>Итого</span>
         <strong>{money(result.total)}</strong>
       </div>
-      <button className="primary-action" disabled={hasErrors} type="button" onClick={onSave}>
-        <Save size={19} />
-        Сохранить КП
-      </button>
+      <div className="summary-actions">
+        <button className="pdf-action" disabled={hasErrors || isPdfBusy} type="button" onClick={onPdf}>
+          <FileDown size={19} />
+          {isPdfBusy ? 'Формируем...' : 'PDF клиенту'}
+        </button>
+        <button className="primary-action" disabled={hasErrors} type="button" onClick={onSave}>
+          <Save size={19} />
+          Сохранить КП
+        </button>
+      </div>
     </aside>
   )
 }
 
 type ArchiveScreenProps = {
   quotes: Quote[]
+  pdfQuoteId: string
   onDelete: (id: string) => void
   onLoad: (quote: Quote) => void
+  onPdf: (quote: Quote) => void
   onStatus: (id: string, status: Quote['status']) => void
 }
 
-function ArchiveScreen({ quotes, onDelete, onLoad, onStatus }: ArchiveScreenProps) {
+function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }: ArchiveScreenProps) {
   const [query, setQuery] = useState('')
   const normalized = query.trim().toLowerCase()
   const filtered = quotes.filter((quote) => {
@@ -557,6 +600,10 @@ function ArchiveScreen({ quotes, onDelete, onLoad, onStatus }: ArchiveScreenProp
               <button type="button" onClick={() => onLoad(quote)}>
                 <Copy size={16} />
                 Повторить
+              </button>
+              <button disabled={pdfQuoteId === quote.id} type="button" onClick={() => onPdf(quote)}>
+                <FileDown size={16} />
+                {pdfQuoteId === quote.id ? 'Готовим...' : 'PDF'}
               </button>
               <button className="danger" type="button" onClick={() => onDelete(quote.id)}>
                 <Trash2 size={16} />

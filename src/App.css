@@ -108,7 +108,7 @@
 
 .construction-strip {
   display: grid;
-  grid-auto-columns: 105px;
+  grid-auto-columns: 152px;
   grid-auto-flow: column;
   gap: 9px;
   overflow-x: auto;
@@ -118,10 +118,10 @@
 
 .construction-card {
   display: grid;
-  grid-template-rows: 64px 34px;
+  grid-template-rows: 124px minmax(36px, auto);
   gap: 6px;
-  min-height: 112px;
-  padding: 8px;
+  min-height: 180px;
+  padding: 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -144,8 +144,13 @@
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
+}
+
+.construction-card .construction-preview {
+  height: 124px;
+  background: #eef5f8;
 }
 
 .construction-preview .shower-sketch {
@@ -530,6 +535,7 @@
 }
 
 .primary-action,
+.pdf-action,
 .notice,
 .quote-actions button,
 .admin-head button {
@@ -547,6 +553,25 @@
   background: var(--accent);
   color: #fff;
   font-size: 15px;
+}
+
+.summary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pdf-action {
+  min-height: 48px;
+  border: 1px solid var(--accent);
+  background: #fff;
+  color: var(--accent-dark);
+  font-size: 14px;
+}
+
+.pdf-action:disabled {
+  border-color: var(--line-strong);
+  color: var(--muted);
 }
 
 .primary-action:disabled {
@@ -717,7 +742,7 @@
 
 .quote-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -818,7 +843,7 @@
   }
 
   .construction-strip {
-    grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(152px, 1fr));
     grid-auto-columns: auto;
     grid-auto-flow: row;
     overflow-x: visible;
@@ -826,14 +851,14 @@
   }
 
   .construction-card {
-    grid-template-rows: 82px auto;
-    min-height: 126px;
+    grid-template-rows: 132px auto;
+    min-height: 186px;
     padding: 10px;
   }
 
-  .construction-preview,
+  .construction-card .construction-preview,
   .shower-sketch {
-    height: 82px;
+    height: 132px;
   }
 
   .bottom-tabs {
