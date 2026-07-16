@@ -13,6 +13,18 @@ const pdfColors = {
   text: '#405160',
 }
 
+const pdfLoadTimeoutMs = 20_000
+
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number) =>
+  new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(
+      () => reject(new Error('Превышено время загрузки модуля PDF')),
+      timeoutMs,
+    )
+
+    promise.then(resolve, reject).finally(() => window.clearTimeout(timeoutId))
+  })
+
 const formatPdfDate = (date: string) =>
   new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit',
@@ -250,10 +262,13 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
 }
 
 const loadPdfMake = async () => {
-  const [pdfMakeModule, fontModule] = await Promise.all([
-    import('pdfmake/build/pdfmake'),
-    import('pdfmake/build/vfs_fonts'),
-  ])
+  const [pdfMakeModule, fontModule] = await withTimeout(
+    Promise.all([
+      import('pdfmake/build/pdfmake'),
+      import('pdfmake/build/vfs_fonts'),
+    ]),
+    pdfLoadTimeoutMs,
+  )
   pdfMakeModule.default.addVirtualFileSystem(fontModule.default)
   return pdfMakeModule.default
 }
