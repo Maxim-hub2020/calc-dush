@@ -382,7 +382,12 @@ function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
             <X size={20} />
           </button>
         </header>
-        <iframe src={preview.url} title={preview.title} />
+        <div className="pdf-preview-ready">
+          <FileDown size={52} aria-hidden="true" />
+          <h3>PDF сформирован</h3>
+          <p>Документ готов к просмотру и сохранению.</p>
+          <strong>{preview.fileName}</strong>
+        </div>
         <footer>
           <a href={preview.url} rel="noopener" target="_blank">
             <FileDown size={18} />
