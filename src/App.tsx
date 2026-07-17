@@ -1507,7 +1507,6 @@ type ShowerSketchProps = {
 function ConstructionPreview({ construction }: { construction: Construction }) {
   return (
     <span className="construction-preview">
-      <img alt="" src={construction.imageUrl} />
       <ShowerSketch sketch={construction.sketch} />
     </span>
   )
