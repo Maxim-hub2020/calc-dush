@@ -1,4 +1,4 @@
-const cacheName = 'shower-calc-v3'
+const cacheName = 'shower-calc-__BUILD_COMMIT__'
 const appShell = ['/', '/index.html', '/manifest.webmanifest', '/favicon.svg']
 const optionalAssets = [
   '/assets/pdfmake-v0.3.11.js',

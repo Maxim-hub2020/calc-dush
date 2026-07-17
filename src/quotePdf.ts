@@ -285,8 +285,21 @@ const downloadBlob = (blob: Blob, fileName: string) => {
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = fileName
+  anchor.target = '_blank'
+  anchor.rel = 'noopener'
+  anchor.style.display = 'none'
+  document.body.append(anchor)
   anchor.click()
+  anchor.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+}
+
+const openPdfPreview = () => {
+  const preview = window.open('', '_blank')
+  if (!preview) return null
+  preview.document.title = 'Формируем PDF...'
+  preview.opener = null
+  return preview
 }
 
 const blobToBase64 = (blob: Blob) =>
@@ -318,30 +331,49 @@ const shareNativePdf = async (blob: Blob, fileName: string, title: string) => {
 }
 
 export const shareQuotePdf = async (quote: Quote) => {
-  const blob = await createQuotePdfBlob(quote)
   const fileName = pdfFileName(quote)
   const title = `${quote.number} - коммерческое предложение`
+  const isNative = Capacitor.isNativePlatform()
+  const preview = isNative ? null : openPdfPreview()
 
-  if (Capacitor.isNativePlatform()) {
-    await shareNativePdf(blob, fileName, title)
-    return
-  }
+  try {
+    const blob = await createQuotePdfBlob(quote)
 
-  const file = new File([blob], fileName, { type: 'application/pdf' })
-  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-
-  if (isIos && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({
-        files: [file],
-        title,
-      })
+    if (isNative) {
+      await shareNativePdf(blob, fileName, title)
       return
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
     }
-  }
 
-  downloadBlob(blob, fileName)
+    const file = new File([blob], fileName, { type: 'application/pdf' })
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+
+    if (isIos && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title,
+        })
+        preview?.close()
+        return
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          preview?.close()
+          return
+        }
+      }
+    }
+
+    if (preview) {
+      const url = URL.createObjectURL(blob)
+      preview.location.replace(url)
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+      return
+    }
+
+    downloadBlob(blob, fileName)
+  } catch (error) {
+    preview?.close()
+    throw error
+  }
 }
