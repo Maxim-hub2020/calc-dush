@@ -47,7 +47,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Шторка одинарная',
       shortTitle: 'Шторка',
       basePrice: 4000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/eec/150_150_0/dbqgvx00zl4yysqem07mnh9mg413p1jd.JPG',
+      imageUrl: shower6663,
       sketch: 'single',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -59,7 +59,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Шторка с добором (глухое + дверь)',
       shortTitle: 'Шторка + добор',
       basePrice: 8000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/7dd/150_150_0/69u4a3xqhnuaj19lpczu60hhrkn21gs1.JPG',
+      imageUrl: shower6744,
       sketch: 'panel-door',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -72,7 +72,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Перегородка',
       shortTitle: 'Перегородка',
       basePrice: 4000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/7b4/150_150_0/6nhimb66ap65b6a1uubx6gv1eu507yxv.JPG',
+      imageUrl: shower6747,
       sketch: 'panel',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -84,7 +84,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Дверка в нишу одинарная распашная',
       shortTitle: 'Дверка',
       basePrice: 4000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/d02/150_150_0/mmj2mgqiq7hynak7obv7x4251ku432a6.JPG',
+      imageUrl: shower6745,
       sketch: 'niche',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -96,7 +96,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Дверка в нишу с добором (глухое + дверь)',
       shortTitle: 'Ниша + добор',
       basePrice: 8000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/3db/u0seg5mzq8gya52kiymxx8dssrntfrtb/150_150_0/IMG_4868.jpg',
+      imageUrl: shower6746,
       sketch: 'panel-door',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -109,7 +109,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Г-образная угловая (глухое + дверь)',
       shortTitle: 'Г-образная',
       basePrice: 8000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/11b/150_150_0/12bxhv2qd49y7xsfp95w33tlxqraiypp.JPG',
+      imageUrl: shower6748,
       sketch: 'corner',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -122,7 +122,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Г-образная угловая (глухое + дверь + добор)',
       shortTitle: 'Угол + добор',
       basePrice: 12000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/768/150_150_0/gexnsxp0uw9e2otmm4hdlh1wkthrqfe5.JPG',
+      imageUrl: shower6749,
       sketch: 'corner-plus',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -136,7 +136,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Г-образная угловая распашная (2 глухих + 2 двери)',
       shortTitle: 'Угол 4 стекла',
       basePrice: 16000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/57a/150_150_0/gzmex37ovugojagqnzny0x4wvg5x8i8i.JPG',
+      imageUrl: shower6750,
       sketch: 'double-corner',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -151,7 +151,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Раздвижка прямая (2 стекла)',
       shortTitle: 'Раздвижка',
       basePrice: 8000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/e2f/150_150_0/gqgby9h0uez3cryltkun4xrl6zi69s7n.jpg',
+      imageUrl: shower6751,
       sketch: 'slider',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -164,7 +164,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Раздвижка угловая (3 стекла, одна дверка)',
       shortTitle: 'Угл. раздвижка',
       basePrice: 12000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/10d/150_150_0/q69i8kgl2z8ym83wzbn8lcdprr1vg6ta.JPG',
+      imageUrl: shower6752,
       sketch: 'slider-corner',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -178,7 +178,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Раздвижка угловая (4 стекла, две дверки)',
       shortTitle: 'Раздвижка 4',
       basePrice: 16000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/f89/150_150_0/20yo38akrbm80prv9qs4r53oqx0x7qnv.JPG',
+      imageUrl: shower6753,
       sketch: 'slider-double',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -193,7 +193,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Трапеция (3 стекла)',
       shortTitle: 'Трапеция',
       basePrice: 12000,
-      imageUrl: 'https://dush.zm-tools.ru/upload/resize_cache/iblock/3ca/150_150_0/ztnqxr7crxmrfuvnfa2qcpwrrmcidlq6.JPG',
+      imageUrl: shower6754,
       sketch: 'trapezoid',
       fields: [
         { key: 'HEIGHT_0', label: 'Высота', min: 1000, max: 2500, defaultValue: 2000, surchargeAfter: 2200 },
@@ -235,3 +235,15 @@ export const createDefaultDimensions = (construction: Construction) =>
     acc[field.key] = field.defaultValue
     return acc
   }, {})
+import shower6663 from './assets/showers/shower-6663.webp'
+import shower6744 from './assets/showers/shower-6744.webp'
+import shower6745 from './assets/showers/shower-6745.webp'
+import shower6746 from './assets/showers/shower-6746.webp'
+import shower6747 from './assets/showers/shower-6747.webp'
+import shower6748 from './assets/showers/shower-6748.webp'
+import shower6749 from './assets/showers/shower-6749.webp'
+import shower6750 from './assets/showers/shower-6750.webp'
+import shower6751 from './assets/showers/shower-6751.webp'
+import shower6752 from './assets/showers/shower-6752.webp'
+import shower6753 from './assets/showers/shower-6753.webp'
+import shower6754 from './assets/showers/shower-6754.webp'

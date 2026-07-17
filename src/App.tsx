@@ -17,7 +17,6 @@ import {
   Trash2,
 } from 'lucide-react'
 import './App.css'
-import showerVisualization from './assets/shower-visualization.webp'
 import {
   calculateQuote,
   combineCalculationResults,
@@ -653,7 +652,7 @@ function ProductVisualization({ construction, form, glass, hardware }: ProductVi
         <Ruler size={20} aria-hidden="true" />
       </div>
       <figure className="visualization-figure">
-        <img src={showerVisualization} alt={`Душевая: ${construction.title}`} />
+        <img src={construction.imageUrl} alt={`Душевая: ${construction.title}`} />
         <figcaption>
           <strong>{construction.title}</strong>
           <span>{glass.label} · {hardware.label}</span>
