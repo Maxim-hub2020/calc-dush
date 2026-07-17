@@ -1,7 +1,9 @@
 import type { Quote } from './calculator'
+import { defaultMirrorCatalog, type MirrorPricingCatalog } from './mirrorPricing'
 import { defaultCatalog, type PricingCatalog } from './pricing'
 
 const catalogKey = 'shower-calc.catalog.v1'
+const mirrorCatalogKey = 'shower-calc.mirror-catalog.v1'
 const quotesKey = 'shower-calc.quotes.v1'
 
 const readJson = <T>(key: string, fallback: T): T => {
@@ -54,6 +56,28 @@ export const saveCatalog = (catalog: PricingCatalog) => writeJson(catalogKey, ca
 export const resetCatalog = () => {
   localStorage.removeItem(catalogKey)
   return defaultCatalog
+}
+
+const mergeMirrorCatalog = (saved: MirrorPricingCatalog): MirrorPricingCatalog => {
+  const mergeItems = <T extends { id: string }>(defaults: T[], items?: T[]) => {
+    if (!Array.isArray(items) || items.length === 0) return defaults
+    return items.map((item) => ({ ...defaults.find((entry) => entry.id === item.id), ...item } as T))
+  }
+
+  return {
+    materials: mergeItems(defaultMirrorCatalog.materials, saved.materials),
+    services: mergeItems(defaultMirrorCatalog.services, saved.services),
+    settings: { ...defaultMirrorCatalog.settings, ...saved.settings },
+  }
+}
+
+export const loadMirrorCatalog = () => mergeMirrorCatalog(
+  readJson<MirrorPricingCatalog>(mirrorCatalogKey, defaultMirrorCatalog),
+)
+export const saveMirrorCatalog = (catalog: MirrorPricingCatalog) => writeJson(mirrorCatalogKey, catalog)
+export const resetMirrorCatalog = () => {
+  localStorage.removeItem(mirrorCatalogKey)
+  return defaultMirrorCatalog
 }
 
 export const loadQuotes = () => readJson<Quote[]>(quotesKey, [])

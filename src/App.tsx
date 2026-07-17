@@ -8,11 +8,16 @@ import {
   ChevronRight,
   Copy,
   FileDown,
+  Image,
+  Layers3,
+  ListPlus,
+  Pencil,
   Plus,
   Ruler,
   RotateCcw,
   Save,
   Search,
+  ScanLine,
   Settings2,
   ShieldCheck,
   Trash2,
@@ -26,14 +31,35 @@ import {
   createQuote,
   getConstruction,
   getOption,
+  getQuoteItemTitle,
   getQuoteItems,
+  isMirrorQuoteItem,
   money,
   resetDimensionsForConstruction,
   shortMoney,
   type CalculatorForm,
   type CalculationResult,
   type Quote,
+  type QuoteDraftItem,
 } from './calculator'
+import {
+  calculateMirrorQuote,
+  cloneMirrorForm,
+  createInitialMirrorForm,
+  getMirrorCalculatedOptions,
+  getMirrorMaterial,
+  getMirrorService,
+  getMirrorTitle,
+  mirrorArea,
+  mirrorPerimeter,
+  type MirrorForm,
+} from './mirrorCalculator'
+import {
+  mirrorUnitLabels,
+  type MirrorMaterial,
+  type MirrorPricingCatalog,
+  type MirrorService,
+} from './mirrorPricing'
 import {
   createDefaultDimensions,
   defaultCatalog,
@@ -41,13 +67,25 @@ import {
   type PriceOption,
   type PricingCatalog,
 } from './pricing'
-import { loadCatalog, loadQuotes, resetCatalog, saveCatalog, saveQuotes } from './storage'
+import {
+  loadCatalog,
+  loadMirrorCatalog,
+  loadQuotes,
+  resetCatalog,
+  resetMirrorCatalog,
+  saveCatalog,
+  saveMirrorCatalog,
+  saveQuotes,
+} from './storage'
 import { shareQuotePdf, type QuotePdfPreview } from './quotePdf'
+import mirrorVisualization from './assets/mirror-visualization.png'
 
-type TabId = 'calculator' | 'archive' | 'prices'
+type ProductKind = 'shower' | 'mirror'
+type TabId = 'showers' | 'mirrors' | 'archive' | 'prices'
 
 const tabs: Array<{ id: TabId; label: string; icon: typeof Calculator }> = [
-  { id: 'calculator', label: 'Расчет', icon: Calculator },
+  { id: 'showers', label: 'Душевые', icon: Calculator },
+  { id: 'mirrors', label: 'Зеркала', icon: ScanLine },
   { id: 'archive', label: 'Архив', icon: Archive },
   { id: 'prices', label: 'Цены', icon: Settings2 },
 ]
@@ -72,20 +110,32 @@ const cloneForm = (form: CalculatorForm): CalculatorForm => ({
   dimensions: { ...form.dimensions },
 })
 
-type DraftPosition = {
+type ShowerDraftPosition = {
   id: string
+  kind: 'shower'
   form: CalculatorForm
 }
+
+type MirrorDraftPosition = {
+  id: string
+  kind: 'mirror'
+  form: MirrorForm
+}
+
+type DraftPosition = ShowerDraftPosition | MirrorDraftPosition
 
 type PositionSummary = {
   id: string
   index: number
+  kind: ProductKind
   title: string
   total: number
   hasErrors: boolean
 }
 
-const sharedFormFields: Array<keyof CalculatorForm> = [
+type SharedFormPatch = Pick<CalculatorForm, 'clientName' | 'clientPhone' | 'note' | 'discountEnabled' | 'discountPercent' | 'designerEnabled'>
+
+const sharedFormFields: Array<keyof SharedFormPatch> = [
   'clientName',
   'clientPhone',
   'note',
@@ -94,37 +144,51 @@ const sharedFormFields: Array<keyof CalculatorForm> = [
   'designerEnabled',
 ]
 
-const createDraftPosition = (catalog: PricingCatalog, customer?: CalculatorForm): DraftPosition => {
+const createDraftPosition = (catalog: PricingCatalog, customer?: Partial<SharedFormPatch>): ShowerDraftPosition => {
   const form = createInitialForm(catalog)
   if (customer) {
-    form.clientName = customer.clientName
-    form.clientPhone = customer.clientPhone
-    form.note = customer.note
-    form.discountEnabled = customer.discountEnabled
-    form.discountPercent = customer.discountPercent
-    form.designerEnabled = customer.designerEnabled
+    form.clientName = customer.clientName ?? form.clientName
+    form.clientPhone = customer.clientPhone ?? form.clientPhone
+    form.note = customer.note ?? form.note
+    form.discountEnabled = customer.discountEnabled ?? form.discountEnabled
+    form.discountPercent = customer.discountPercent ?? form.discountPercent
+    form.designerEnabled = customer.designerEnabled ?? form.designerEnabled
   }
-  return { id: crypto.randomUUID(), form }
+  return { id: crypto.randomUUID(), kind: 'shower', form }
 }
+
+const createMirrorDraftPosition = (
+  catalog: MirrorPricingCatalog,
+  customer?: Partial<SharedFormPatch>,
+): MirrorDraftPosition => ({
+  id: crypto.randomUUID(),
+  kind: 'mirror',
+  form: createInitialMirrorForm(catalog, customer),
+})
 
 function App() {
   const [catalog, setCatalog] = useState<PricingCatalog>(() => loadCatalog())
+  const [mirrorCatalog, setMirrorCatalog] = useState<MirrorPricingCatalog>(() => loadMirrorCatalog())
   const [quotes, setQuotes] = useState<Quote[]>(() => loadQuotes())
   const [positions, setPositions] = useState<DraftPosition[]>(() => [createDraftPosition(loadCatalog())])
   const [activePositionId, setActivePositionId] = useState(() => positions[0].id)
-  const [activeTab, setActiveTab] = useState<TabId>('calculator')
+  const [activeTab, setActiveTab] = useState<TabId>('showers')
   const [notice, setNotice] = useState('')
+  const [editingQuoteId, setEditingQuoteId] = useState('')
   const [pdfQuoteId, setPdfQuoteId] = useState('')
   const [pdfPreview, setPdfPreview] = useState<QuotePdfPreview | null>(null)
 
   const activePosition = positions.find((position) => position.id === activePositionId) ?? positions[0]
-  const form = activePosition.form
   const positionResults = useMemo(
-    () => positions.map((position) => ({ ...position, result: calculateQuote(catalog, position.form) })),
-    [catalog, positions],
+    () => positions.map((position) => position.kind === 'mirror'
+      ? { ...position, result: calculateMirrorQuote(mirrorCatalog, position.form) }
+      : { ...position, result: calculateQuote(catalog, position.form) }),
+    [catalog, mirrorCatalog, positions],
   )
-  const result = positionResults.find((position) => position.id === activePosition.id)?.result
-    ?? calculateQuote(catalog, form)
+  const activeResult = positionResults.find((position) => position.id === activePosition.id)?.result
+    ?? (activePosition.kind === 'mirror'
+      ? calculateMirrorQuote(mirrorCatalog, activePosition.form)
+      : calculateQuote(catalog, activePosition.form))
   const orderResult = useMemo(
     () => combineCalculationResults(positionResults.map((position) => position.result)),
     [positionResults],
@@ -133,18 +197,23 @@ function App() {
     () => positionResults.map((position, index) => ({
       id: position.id,
       index,
-      title: getConstruction(catalog, position.form.constructionId).shortTitle,
+      kind: position.kind,
+      title: position.kind === 'mirror'
+        ? getMirrorTitle(position.form)
+        : getConstruction(catalog, position.form.constructionId).shortTitle,
       total: position.result.total,
       hasErrors: Object.keys(position.result.errors).length > 0,
     })),
     [catalog, positionResults],
   )
   useEffect(() => saveCatalog(catalog), [catalog])
+  useEffect(() => saveMirrorCatalog(mirrorCatalog), [mirrorCatalog])
   useEffect(() => saveQuotes(quotes), [quotes])
   useEffect(() => {
     setPositions((current) => {
       let changed = false
       const next = current.map((position) => {
+        if (position.kind === 'mirror') return position
         const form = position.form
         const constructionExists = catalog.constructions.some((item) => item.id === form.constructionId)
         const glassExists = catalog.glass.some((item) => item.id === form.glassId)
@@ -175,6 +244,29 @@ function App() {
     })
   }, [catalog])
   useEffect(() => {
+    setPositions((current) => {
+      let changed = false
+      const next = current.map((position) => {
+        if (position.kind === 'shower') return position
+        const materialExists = mirrorCatalog.materials.some((item) => item.id === position.form.materialId)
+        const validOptions = position.form.options.filter((option) => (
+          mirrorCatalog.services.some((service) => service.id === option.serviceId)
+        ))
+        if (materialExists && validOptions.length === position.form.options.length) return position
+        changed = true
+        return {
+          ...position,
+          form: {
+            ...position.form,
+            materialId: materialExists ? position.form.materialId : mirrorCatalog.materials[0].id,
+            options: validOptions,
+          },
+        }
+      })
+      return changed ? next : current
+    })
+  }, [mirrorCatalog])
+  useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' })
   }, [activeTab])
   useEffect(() => {
@@ -187,31 +279,52 @@ function App() {
     }
   }, [pdfPreview])
 
-  const updateForm = (patch: Partial<CalculatorForm>) => {
-    const sharedPatch = sharedFormFields.reduce<Partial<CalculatorForm>>((next, key) => {
-      if (key in patch) Object.assign(next, { [key]: patch[key] })
+  const pickSharedPatch = (patch: Partial<SharedFormPatch>) => sharedFormFields.reduce<Partial<SharedFormPatch>>((next, key) => {
+      if (patch[key] !== undefined) Object.assign(next, { [key]: patch[key] })
       return next
     }, {})
+
+  const mergeSharedPatch = (position: DraftPosition, patch: Partial<SharedFormPatch>): DraftPosition => (
+    position.kind === 'mirror'
+      ? { ...position, form: { ...position.form, ...patch } }
+      : { ...position, form: { ...position.form, ...patch } }
+  )
+
+  const updateForm = (patch: Partial<CalculatorForm>) => {
+    const sharedPatch = pickSharedPatch(patch)
     setPositions((current) => current.map((position) => {
-      if (position.id === activePositionId) {
+      if (position.id === activePositionId && position.kind === 'shower') {
         return { ...position, form: { ...position.form, ...patch } }
       }
       if (Object.keys(sharedPatch).length > 0) {
-        return { ...position, form: { ...position.form, ...sharedPatch } }
+        return mergeSharedPatch(position, sharedPatch)
+      }
+      return position
+    }))
+  }
+
+  const updateMirrorForm = (patch: Partial<MirrorForm>) => {
+    const sharedPatch = pickSharedPatch(patch)
+    setPositions((current) => current.map((position) => {
+      if (position.id === activePositionId && position.kind === 'mirror') {
+        return { ...position, form: { ...position.form, ...patch } }
+      }
+      if (Object.keys(sharedPatch).length > 0) {
+        return mergeSharedPatch(position, sharedPatch)
       }
       return position
     }))
   }
 
   const updateDimension = (key: string, value: number) => {
-    setPositions((current) => current.map((position) => position.id === activePositionId
+    setPositions((current) => current.map((position) => position.id === activePositionId && position.kind === 'shower'
       ? { ...position, form: { ...position.form, dimensions: { ...position.form.dimensions, [key]: value } } }
       : position))
   }
 
   const selectConstruction = (id: string) => {
     const nextConstruction = getConstruction(catalog, id)
-    setPositions((current) => current.map((position) => position.id === activePositionId
+    setPositions((current) => current.map((position) => position.id === activePositionId && position.kind === 'shower'
       ? {
           ...position,
           form: {
@@ -223,15 +336,27 @@ function App() {
       : position))
   }
 
-  const createQuoteFromPositions = () => createQuote(
-    catalog,
-    positionResults.map((position) => ({ form: cloneForm(position.form), result: position.result })),
-  )
+  const createQuoteFromPositions = () => {
+    const drafts: QuoteDraftItem[] = positionResults.map((position) => position.kind === 'mirror'
+      ? { kind: 'mirror', form: cloneMirrorForm(position.form), result: position.result }
+      : { kind: 'shower', form: cloneForm(position.form), result: position.result })
+    const quote = createQuote(catalog, mirrorCatalog, drafts)
+    const editingQuote = quotes.find((item) => item.id === editingQuoteId)
+    if (!editingQuote) return quote
+    return {
+      ...quote,
+      id: editingQuote.id,
+      number: editingQuote.number,
+      createdAt: editingQuote.createdAt,
+      status: editingQuote.status,
+    }
+  }
 
   const focusFirstInvalidPosition = () => {
     const invalid = positionResults.find((position) => Object.keys(position.result.errors).length > 0)
     if (!invalid) return false
     setActivePositionId(invalid.id)
+    setActiveTab(invalid.kind === 'mirror' ? 'mirrors' : 'showers')
     setNotice(`Проверьте размеры позиции ${positionResults.indexOf(invalid) + 1}`)
     return true
   }
@@ -239,8 +364,11 @@ function App() {
   const saveCurrentQuote = () => {
     if (focusFirstInvalidPosition()) return
     const quote = createQuoteFromPositions()
-    setQuotes((current) => [quote, ...current])
-    setNotice(`${quote.number} сохранено`)
+    setQuotes((current) => editingQuoteId
+      ? current.map((item) => item.id === editingQuoteId ? quote : item)
+      : [quote, ...current])
+    setNotice(`${quote.number} ${editingQuoteId ? 'обновлено' : 'сохранено'}`)
+    setEditingQuoteId('')
     setActiveTab('archive')
   }
 
@@ -260,19 +388,28 @@ function App() {
   const downloadCurrentQuotePdf = () => {
     if (focusFirstInvalidPosition()) return
     const quote = createQuoteFromPositions()
-    setQuotes((current) => [quote, ...current])
+    setQuotes((current) => editingQuoteId
+      ? current.map((item) => item.id === editingQuoteId ? quote : item)
+      : [quote, ...current])
+    setEditingQuoteId('')
     void downloadQuotePdf(quote)
   }
 
-  const addPosition = () => {
-    const next = createDraftPosition(catalog, form)
+  const addPosition = (kind: ProductKind) => {
+    const customer = activePosition.form
+    const next = kind === 'mirror'
+      ? createMirrorDraftPosition(mirrorCatalog, customer)
+      : createDraftPosition(catalog, customer)
     setPositions((current) => [...current, next])
     setActivePositionId(next.id)
+    setActiveTab(kind === 'mirror' ? 'mirrors' : 'showers')
     setNotice(`Позиция ${positions.length + 1} добавлена`)
   }
 
   const duplicatePosition = () => {
-    const next = { id: crypto.randomUUID(), form: cloneForm(form) }
+    const next: DraftPosition = activePosition.kind === 'mirror'
+      ? { id: crypto.randomUUID(), kind: 'mirror', form: cloneMirrorForm(activePosition.form) }
+      : { id: crypto.randomUUID(), kind: 'shower', form: cloneForm(activePosition.form) }
     const activeIndex = positions.findIndex((position) => position.id === activePositionId)
     setPositions((current) => [
       ...current.slice(0, activeIndex + 1),
@@ -290,17 +427,42 @@ function App() {
     const nextPositions = positions.filter((position) => position.id !== positionId)
     setPositions(nextPositions)
     if (positionId === activePositionId) {
-      setActivePositionId(nextPositions[Math.min(deletedIndex, nextPositions.length - 1)].id)
+      const nextActive = nextPositions[Math.min(deletedIndex, nextPositions.length - 1)]
+      setActivePositionId(nextActive.id)
+      setActiveTab(nextActive.kind === 'mirror' ? 'mirrors' : 'showers')
     }
     setNotice(`Позиция ${deletedIndex + 1} удалена`)
   }
 
-  const loadQuoteToCalculator = (quote: Quote) => {
-    const nextPositions = getQuoteItems(quote).map((item) => ({ id: crypto.randomUUID(), form: cloneForm(item.form) }))
+  const loadQuoteToCalculator = (quote: Quote, itemId?: string) => {
+    const items = getQuoteItems(quote)
+    const nextPositions: DraftPosition[] = items.map((item) => isMirrorQuoteItem(item)
+      ? { id: crypto.randomUUID(), kind: 'mirror', form: cloneMirrorForm(item.form) }
+      : { id: crypto.randomUUID(), kind: 'shower', form: cloneForm(item.form) })
+    const selectedIndex = itemId ? Math.max(0, items.findIndex((item) => item.id === itemId)) : 0
+    const selected = nextPositions[selectedIndex]
     setPositions(nextPositions)
-    setActivePositionId(nextPositions[0].id)
-    setActiveTab('calculator')
+    setEditingQuoteId(quote.id)
+    setActivePositionId(selected.id)
+    setActiveTab(selected.kind === 'mirror' ? 'mirrors' : 'showers')
     setNotice(`${quote.number} открыт`)
+  }
+
+  const selectPosition = (positionId: string) => {
+    const position = positions.find((item) => item.id === positionId)
+    if (!position) return
+    setActivePositionId(positionId)
+    setActiveTab(position.kind === 'mirror' ? 'mirrors' : 'showers')
+  }
+
+  const openProductTab = (kind: ProductKind) => {
+    const existing = positions.find((position) => position.kind === kind)
+    if (existing) {
+      setActivePositionId(existing.id)
+      setActiveTab(kind === 'mirror' ? 'mirrors' : 'showers')
+      return
+    }
+    addPosition(kind)
   }
 
   const updateQuoteStatus = (id: string, status: Quote['status']) => {
@@ -313,8 +475,20 @@ function App() {
 
   const resetPrices = () => {
     const nextCatalog = resetCatalog()
+    const nextMirrorCatalog = resetMirrorCatalog()
     setCatalog(nextCatalog)
+    setMirrorCatalog(nextMirrorCatalog)
     setPositions((current) => current.map((position) => {
+      if (position.kind === 'mirror') {
+        return {
+          ...position,
+          form: {
+            ...position.form,
+            materialId: nextMirrorCatalog.materials[0].id,
+            options: [],
+          },
+        }
+      }
       const nextConstruction = getConstruction(nextCatalog, position.form.constructionId)
       return {
         ...position,
@@ -337,12 +511,17 @@ function App() {
         <nav className="app-tabs" aria-label="Главная навигация">
           {tabs.map((tab) => {
             const Icon = tab.icon
+            const openTab = () => {
+              if (tab.id === 'showers') openProductTab('shower')
+              else if (tab.id === 'mirrors') openProductTab('mirror')
+              else setActiveTab(tab.id)
+            }
             return (
               <button
                 className={activeTab === tab.id ? 'tab-button is-active' : 'tab-button'}
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={openTab}
               >
                 <Icon size={18} />
                 <span>{tab.label}</span>
@@ -360,27 +539,46 @@ function App() {
           </button>
         ) : null}
 
-        {activeTab === 'calculator' ? (
+        {activeTab === 'showers' && activePosition.kind === 'shower' ? (
           <CalculatorScreen
             catalog={catalog}
-            form={form}
-            result={result}
+            form={activePosition.form}
+            result={activeResult}
             orderResult={orderResult}
             positionSummaries={positionSummaries}
             activePositionId={activePositionId}
             isPdfBusy={pdfQuoteId !== ''}
-            onAddPosition={addPosition}
+            onAddPosition={() => addPosition('shower')}
             onDeletePosition={deletePosition}
             onDimension={updateDimension}
             onDuplicatePosition={duplicatePosition}
             onForm={updateForm}
             onPdf={downloadCurrentQuotePdf}
             onSave={saveCurrentQuote}
-            onSelectPosition={setActivePositionId}
+            onSelectPosition={selectPosition}
             onSelectConstruction={selectConstruction}
             onOpenArchive={() => setActiveTab('archive')}
             onOpenQuote={loadQuoteToCalculator}
             recentQuotes={quotes.slice(0, 3)}
+          />
+        ) : null}
+
+        {activeTab === 'mirrors' && activePosition.kind === 'mirror' ? (
+          <MirrorCalculatorScreen
+            activePositionId={activePositionId}
+            catalog={mirrorCatalog}
+            form={activePosition.form}
+            isPdfBusy={pdfQuoteId !== ''}
+            orderResult={orderResult}
+            positionSummaries={positionSummaries}
+            result={activeResult}
+            onAddPosition={() => addPosition('mirror')}
+            onDeletePosition={deletePosition}
+            onDuplicatePosition={duplicatePosition}
+            onForm={updateMirrorForm}
+            onPdf={downloadCurrentQuotePdf}
+            onSave={saveCurrentQuote}
+            onSelectPosition={selectPosition}
           />
         ) : null}
 
@@ -396,7 +594,13 @@ function App() {
         ) : null}
 
         {activeTab === 'prices' ? (
-          <PricesScreen catalog={catalog} onCatalog={setCatalog} onReset={resetPrices} />
+          <PricesScreen
+            catalog={catalog}
+            mirrorCatalog={mirrorCatalog}
+            onCatalog={setCatalog}
+            onMirrorCatalog={setMirrorCatalog}
+            onReset={resetPrices}
+          />
         ) : null}
       </main>
 
@@ -761,6 +965,321 @@ function CalculatorScreen({
   )
 }
 
+type MirrorCalculatorScreenProps = {
+  catalog: MirrorPricingCatalog
+  form: MirrorForm
+  result: CalculationResult
+  orderResult: CalculationResult
+  positionSummaries: PositionSummary[]
+  activePositionId: string
+  isPdfBusy: boolean
+  onAddPosition: () => void
+  onDeletePosition: (id: string) => void
+  onDuplicatePosition: () => void
+  onForm: (patch: Partial<MirrorForm>) => void
+  onPdf: () => void
+  onSave: () => void
+  onSelectPosition: (id: string) => void
+}
+
+type MirrorSectionId = 'dimensions' | 'material' | 'options' | 'pricing' | 'client'
+
+const mirrorSections: Array<{ id: MirrorSectionId; label: string }> = [
+  { id: 'dimensions', label: 'Размеры' },
+  { id: 'material', label: 'Материал' },
+  { id: 'options', label: 'Работы' },
+  { id: 'pricing', label: 'Цена' },
+  { id: 'client', label: 'Клиент' },
+]
+
+function MirrorCalculatorScreen({
+  catalog,
+  form,
+  result,
+  orderResult,
+  positionSummaries,
+  activePositionId,
+  isPdfBusy,
+  onAddPosition,
+  onDeletePosition,
+  onDuplicatePosition,
+  onForm,
+  onPdf,
+  onSave,
+  onSelectPosition,
+}: MirrorCalculatorScreenProps) {
+  const [activeSection, setActiveSection] = useState<MirrorSectionId>('dimensions')
+  const material = getMirrorMaterial(catalog, form.materialId)
+  const calculatedOptions = getMirrorCalculatedOptions(catalog, form)
+  const selectedServices = new Set(form.options.map((option) => option.serviceId))
+
+  const addOption = () => {
+    const service = catalog.services.find((item) => !selectedServices.has(item.id)) ?? catalog.services[0]
+    onForm({
+      options: [...form.options, { id: crypto.randomUUID(), serviceId: service.id, quantity: 1 }],
+    })
+  }
+
+  const updateOption = (id: string, patch: Partial<MirrorForm['options'][number]>) => {
+    onForm({ options: form.options.map((option) => option.id === id ? { ...option, ...patch } : option) })
+  }
+
+  const deleteOption = (id: string) => {
+    onForm({ options: form.options.filter((option) => option.id !== id) })
+  }
+
+  return (
+    <div className="screen-stack calculator-screen mirror-calculator-screen">
+      <PositionSwitcher
+        activeId={activePositionId}
+        positions={positionSummaries}
+        onAdd={onAddPosition}
+        onDelete={onDeletePosition}
+        onDuplicate={onDuplicatePosition}
+        onSelect={onSelectPosition}
+      />
+
+      <section className="parameter-panel workspace-panel">
+        <div className="panel-heading">
+          <div>
+            <span>Зеркало {positionSummaries.findIndex((position) => position.id === activePositionId) + 1}</span>
+            <h2>Параметры зеркала</h2>
+          </div>
+          <ScanLine size={20} aria-hidden="true" />
+        </div>
+
+        <nav className="config-tabs" aria-label="Настройки зеркала">
+          {mirrorSections.map((section) => (
+            <button
+              aria-pressed={activeSection === section.id}
+              className={activeSection === section.id ? 'is-active' : ''}
+              key={section.id}
+              type="button"
+              onClick={() => setActiveSection(section.id)}
+            >
+              {section.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="config-panel">
+          {activeSection === 'dimensions' ? (
+            <section className="section-block">
+              <div className="section-title">
+                <h2>Размер зеркала</h2>
+                <span>{mirrorArea(form).toFixed(2)} м²</span>
+              </div>
+              <div className="dimension-list mirror-dimensions">
+                <label className="field-row">
+                  <span>Ширина<small>100-4000 мм</small></span>
+                  <input
+                    inputMode="numeric"
+                    min={100}
+                    max={4000}
+                    type="number"
+                    value={form.width}
+                    onChange={(event) => onForm({ width: Number(event.target.value) })}
+                  />
+                  {result.errors.width ? <em>{result.errors.width}</em> : null}
+                </label>
+                <label className="field-row">
+                  <span>Высота<small>100-4000 мм</small></span>
+                  <input
+                    inputMode="numeric"
+                    min={100}
+                    max={4000}
+                    type="number"
+                    value={form.height}
+                    onChange={(event) => onForm({ height: Number(event.target.value) })}
+                  />
+                  {result.errors.height ? <em>{result.errors.height}</em> : null}
+                </label>
+              </div>
+              <div className="mirror-metrics">
+                <span>Площадь <strong>{mirrorArea(form).toFixed(2)} м²</strong></span>
+                <span>Периметр <strong>{mirrorPerimeter(form).toFixed(2)} м.п.</strong></span>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'material' ? (
+            <section className="section-block">
+              <div className="section-title">
+                <h2>Материал</h2>
+                <span>{money(material.price)}/м²</span>
+              </div>
+              <OptionGrid
+                activeId={form.materialId}
+                items={catalog.materials}
+                priceSuffix="₽/м²"
+                onSelect={(materialId) => onForm({ materialId })}
+              />
+            </section>
+          ) : null}
+
+          {activeSection === 'options' ? (
+            <section className="section-block mirror-options-section">
+              <div className="section-title">
+                <h2>Работы и услуги</h2>
+                <button className="section-add-button" type="button" onClick={addOption}>
+                  <ListPlus size={17} />
+                  Добавить
+                </button>
+              </div>
+              <div className="mirror-option-list">
+                {form.options.map((option, index) => {
+                  const service = getMirrorService(catalog, option.serviceId)
+                  const calculated = calculatedOptions[index]
+                  return (
+                    <div className="mirror-option-row" key={option.id}>
+                      <label>
+                        <span className="sr-only">Работа или услуга</span>
+                        <select
+                          value={option.serviceId}
+                          onChange={(event) => updateOption(option.id, { serviceId: event.target.value, quantity: 1 })}
+                        >
+                          {catalog.services.map((item) => (
+                            <option key={item.id} value={item.id}>{item.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {service.unit === 'piece' ? (
+                        <label className="mirror-option-quantity">
+                          <span>Кол-во</span>
+                          <input
+                            inputMode="decimal"
+                            min={0}
+                            step="1"
+                            type="number"
+                            value={option.quantity}
+                            onChange={(event) => updateOption(option.id, { quantity: Number(event.target.value) })}
+                          />
+                        </label>
+                      ) : (
+                        <span className="mirror-option-auto">
+                          {calculated.quantity.toFixed(2)} {calculated.unitLabel}
+                        </span>
+                      )}
+                      <strong>{money(calculated.total)}</strong>
+                      <button aria-label={`Удалить ${service.label}`} type="button" onClick={() => deleteOption(option.id)}>
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  )
+                })}
+                {form.options.length === 0 ? (
+                  <button className="mirror-options-empty" type="button" onClick={addOption}>
+                    <ListPlus size={22} />
+                    <span>Добавить работу, монтаж или доставку</span>
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'pricing' ? (
+            <section className="section-block">
+              <div className="section-title">
+                <h2>Условия расчёта</h2>
+                <span>{money(result.total)}</span>
+              </div>
+              <div className="service-list">
+                <ToggleRow
+                  checked={form.managerEnabled}
+                  label="Менеджер"
+                  value={`+${catalog.settings.managerPercent}%`}
+                  onChange={(managerEnabled) => onForm({ managerEnabled })}
+                />
+                <ToggleRow
+                  checked={form.designerEnabled}
+                  label="Дизайнер"
+                  value={`+${catalog.settings.designerPercent}%`}
+                  onChange={(designerEnabled) => onForm({ designerEnabled })}
+                />
+                <ToggleRow
+                  checked={form.discountEnabled}
+                  label="Скидка"
+                  value={`${form.discountPercent}%`}
+                  onChange={(discountEnabled) => onForm({ discountEnabled })}
+                />
+                {form.discountEnabled ? (
+                  <label className="delivery-distance">
+                    <span>Размер скидки</span>
+                    <input
+                      inputMode="decimal"
+                      min={0}
+                      max={100}
+                      type="number"
+                      value={form.discountPercent}
+                      onChange={(event) => onForm({ discountPercent: Number(event.target.value) })}
+                    />
+                    <small>%</small>
+                  </label>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'client' ? (
+            <section className="section-block">
+              <div className="section-title"><h2>Клиент</h2><span>КП</span></div>
+              <div className="client-grid">
+                <label className="text-field">
+                  <span>Имя</span>
+                  <input value={form.clientName} onChange={(event) => onForm({ clientName: event.target.value })} />
+                </label>
+                <label className="text-field">
+                  <span>Телефон</span>
+                  <input value={form.clientPhone} onChange={(event) => onForm({ clientPhone: event.target.value })} />
+                </label>
+                <label className="text-field is-wide">
+                  <span>Комментарий</span>
+                  <input value={form.note} onChange={(event) => onForm({ note: event.target.value })} />
+                </label>
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="visualization-panel workspace-panel mirror-visualization-panel">
+        <div className="panel-heading">
+          <div><span>Предпросмотр</span><h2>Визуализация зеркала</h2></div>
+          <Image size={20} aria-hidden="true" />
+        </div>
+        <figure className="visualization-figure">
+          <img src={mirrorVisualization} alt="Прямоугольное зеркало в светлом интерьере ванной" />
+          <figcaption>
+            <strong>{getMirrorTitle(form)}</strong>
+            <span>{material.label}</span>
+          </figcaption>
+        </figure>
+        <div className="visualization-specs">
+          <div><span>Площадь</span><strong>{mirrorArea(form).toFixed(2)} м²</strong></div>
+          <div><span>Работы</span><strong>{form.options.length}</strong></div>
+        </div>
+        <div className="visualization-guarantee">
+          <ShieldCheck size={18} aria-hidden="true" />
+          <span>Размеры и особенности монтажа уточняются после замера</span>
+        </div>
+      </section>
+
+      <div className="summary-column">
+        <SummaryDock
+          result={result}
+          orderResult={orderResult}
+          positionCount={positionSummaries.length}
+          positionIndex={positionSummaries.findIndex((position) => position.id === activePositionId)}
+          hasErrors={positionSummaries.some((position) => position.hasErrors)}
+          isPdfBusy={isPdfBusy}
+          onPdf={onPdf}
+          onSave={onSave}
+        />
+      </div>
+    </div>
+  )
+}
+
 type ProductVisualizationProps = {
   construction: Construction
   form: CalculatorForm
@@ -821,12 +1340,13 @@ function RecentCalculations({ catalog, quotes, onOpenArchive, onOpenQuote }: Rec
         {quotes.length > 0 ? quotes.map((quote) => {
           const items = getQuoteItems(quote)
           const firstItem = items[0]
-          const quoteConstruction = getConstruction(catalog, firstItem.form.constructionId)
-          const title = items.length > 1 ? `${items.length} позиции` : firstItem.constructionTitle
+          const title = items.length > 1 ? `${items.length} позиции` : getQuoteItemTitle(firstItem)
 
           return (
             <button className="recent-quote" key={quote.id} type="button" onClick={() => onOpenQuote(quote)}>
-              <ConstructionPreview construction={quoteConstruction} />
+              {isMirrorQuoteItem(firstItem)
+                ? <MirrorPreviewIcon />
+                : <ConstructionPreview construction={getConstruction(catalog, firstItem.form.constructionId)} />}
               <span>
                 <strong>{title}</strong>
                 <small>{formatDate(quote.createdAt)}</small>
@@ -884,7 +1404,7 @@ function PositionSwitcher({ activeId, positions, onAdd, onDelete, onDuplicate, o
           return (
             <div className={className} key={position.id}>
               <button className="position-tab-select" type="button" onClick={() => onSelect(position.id)}>
-                <span>Позиция {position.index + 1}</span>
+                <span>{position.kind === 'mirror' ? 'Зеркало' : 'Душевая'} · {position.index + 1}</span>
                 <strong>{position.title}</strong>
                 <small>{shortMoney(position.total)} ₽</small>
               </button>
@@ -1033,7 +1553,7 @@ type ArchiveScreenProps = {
   quotes: Quote[]
   pdfQuoteId: string
   onDelete: (id: string) => void
-  onLoad: (quote: Quote) => void
+  onLoad: (quote: Quote, itemId?: string) => void
   onPdf: (quote: Quote) => void
   onStatus: (id: string, status: Quote['status']) => void
 }
@@ -1049,12 +1569,9 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
       quote.form.clientPhone,
       statuses[quote.status],
       String(quote.result.total),
-      ...items.flatMap((item) => [
-        item.constructionTitle,
-        item.glassLabel,
-        item.hardwareLabel,
-        item.hardwareClassLabel,
-      ]),
+      ...items.flatMap((item) => isMirrorQuoteItem(item)
+        ? [item.mirrorTitle, item.materialLabel, ...item.serviceLines.map((line) => line.label)]
+        : [item.constructionTitle, item.glassLabel, item.hardwareLabel, item.hardwareClassLabel]),
     ]
       .join(' ')
       .toLowerCase()
@@ -1098,30 +1615,35 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
               </select>
             </div>
             <button className="quote-main" type="button" onClick={() => onLoad(quote)}>
-              <ConstructionPreview construction={getConstruction(defaultCatalog, firstItem.form.constructionId)} />
+              {isMirrorQuoteItem(firstItem)
+                ? <MirrorPreviewIcon />
+                : <ConstructionPreview construction={getConstruction(defaultCatalog, firstItem.form.constructionId)} />}
               <span>
-                <b>{items.length > 1 ? `${items.length} позиции` : firstItem.constructionTitle}</b>
+                <b>{items.length > 1 ? `${items.length} позиции` : getQuoteItemTitle(firstItem)}</b>
                 <small>
                   {quote.form.clientName || 'Без имени'} · {money(quote.result.total)}
                 </small>
               </span>
               <ChevronRight size={19} />
             </button>
-            <div className="quote-meta">
-              {items.length > 1
-                ? items.map((item, index) => <span key={item.id}>{index + 1}. {item.constructionTitle}</span>)
-                : (
-                    <>
-                      <span>{firstItem.glassLabel}</span>
-                      <span>{firstItem.hardwareLabel}</span>
-                      <span>{firstItem.hardwareClassLabel}</span>
-                    </>
-                  )}
+            <div className="quote-item-list">
+              {items.map((item, index) => (
+                <button key={item.id} type="button" onClick={() => onLoad(quote, item.id)}>
+                  <span className="quote-item-icon">
+                    {isMirrorQuoteItem(item) ? <ScanLine size={18} /> : <Layers3 size={18} />}
+                  </span>
+                  <span>
+                    <strong>{index + 1}. {getQuoteItemTitle(item)}</strong>
+                    <small>{isMirrorQuoteItem(item) ? item.materialLabel : item.glassLabel}</small>
+                  </span>
+                  <Pencil size={16} />
+                </button>
+              ))}
             </div>
             <div className="quote-actions">
               <button type="button" onClick={() => onLoad(quote)}>
-                <Copy size={16} />
-                Повторить
+                <Pencil size={16} />
+                Редактировать
               </button>
               <button disabled={pdfQuoteId === quote.id} type="button" onClick={() => onPdf(quote)}>
                 <FileDown size={16} />
@@ -1148,13 +1670,23 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
 
 type PricesScreenProps = {
   catalog: PricingCatalog
+  mirrorCatalog: MirrorPricingCatalog
   onCatalog: (catalog: PricingCatalog) => void
+  onMirrorCatalog: (catalog: MirrorPricingCatalog) => void
   onReset: () => void
 }
 
-type PriceSectionId = 'glass' | 'hardware' | 'hardwareClass' | 'constructions' | 'services'
+type PriceSectionId =
+  | 'glass'
+  | 'hardware'
+  | 'hardwareClass'
+  | 'constructions'
+  | 'services'
+  | 'mirrorMaterials'
+  | 'mirrorServices'
+  | 'mirrorSettings'
 
-function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
+function PricesScreen({ catalog, mirrorCatalog, onCatalog, onMirrorCatalog, onReset }: PricesScreenProps) {
   const [openSection, setOpenSection] = useState<PriceSectionId | null>(null)
   const toggleSection = (section: PriceSectionId) => {
     setOpenSection((current) => (current === section ? null : section))
@@ -1228,6 +1760,70 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
     onCatalog({
       ...catalog,
       services: { ...catalog.services, [key]: value },
+    })
+  }
+
+  const updateMirrorMaterial = (id: string, patch: Partial<Pick<MirrorMaterial, 'label' | 'price'>>) => {
+    onMirrorCatalog({
+      ...mirrorCatalog,
+      materials: mirrorCatalog.materials.map((item) => item.id === id ? { ...item, ...patch } : item),
+    })
+  }
+
+  const addMirrorMaterial = () => {
+    onMirrorCatalog({
+      ...mirrorCatalog,
+      materials: [
+        ...mirrorCatalog.materials,
+        { id: `custom-${crypto.randomUUID()}`, label: 'Новый материал', price: 0 },
+      ],
+    })
+  }
+
+  const deleteMirrorMaterial = (id: string) => {
+    if (mirrorCatalog.materials.length <= 1) return
+    onMirrorCatalog({
+      ...mirrorCatalog,
+      materials: mirrorCatalog.materials.filter((item) => item.id !== id),
+    })
+  }
+
+  const updateMirrorService = (id: string, patch: Partial<MirrorService>) => {
+    onMirrorCatalog({
+      ...mirrorCatalog,
+      services: mirrorCatalog.services.map((item) => item.id === id ? { ...item, ...patch } : item),
+    })
+  }
+
+  const addMirrorService = () => {
+    onMirrorCatalog({
+      ...mirrorCatalog,
+      services: [
+        ...mirrorCatalog.services,
+        {
+          id: `custom-${crypto.randomUUID()}`,
+          label: 'Новая работа',
+          price: 0,
+          unit: 'piece',
+          category: 'work',
+          visibleInQuote: true,
+        },
+      ],
+    })
+  }
+
+  const deleteMirrorService = (id: string) => {
+    if (mirrorCatalog.services.length <= 1) return
+    onMirrorCatalog({
+      ...mirrorCatalog,
+      services: mirrorCatalog.services.filter((item) => item.id !== id),
+    })
+  }
+
+  const updateMirrorSetting = (key: keyof MirrorPricingCatalog['settings'], value: number) => {
+    onMirrorCatalog({
+      ...mirrorCatalog,
+      settings: { ...mirrorCatalog.settings, [key]: value },
     })
   }
 
@@ -1333,6 +1929,62 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
               value={catalog.services.heightSurchargePercent}
               onChange={(value) => updateService('heightSurchargePercent', value)}
             />
+          </div>
+        ) : null}
+      </section>
+
+      <PriceGroup
+        controlsId="price-mirror-materials"
+        isOpen={openSection === 'mirrorMaterials'}
+        items={mirrorCatalog.materials}
+        suffix="₽/м²"
+        title="Материалы зеркал"
+        onAdd={addMirrorMaterial}
+        onChange={(id, value) => updateMirrorMaterial(id, { price: value })}
+        onDelete={deleteMirrorMaterial}
+        onNameChange={(id, value) => updateMirrorMaterial(id, { label: value })}
+        onToggle={() => toggleSection('mirrorMaterials')}
+      />
+
+      <section className={openSection === 'mirrorServices' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+        <PriceAccordionHeader
+          controlsId="price-mirror-services"
+          isOpen={openSection === 'mirrorServices'}
+          meta="Работы, монтаж, доставка"
+          title="Работы для зеркал"
+          onAdd={addMirrorService}
+          onToggle={() => toggleSection('mirrorServices')}
+        />
+        {openSection === 'mirrorServices' ? (
+          <div className="price-list price-accordion-body" id="price-mirror-services">
+            {mirrorCatalog.services.map((item) => (
+              <MirrorServicePriceRow
+                canDelete={mirrorCatalog.services.length > 1}
+                item={item}
+                key={item.id}
+                onChange={(patch) => updateMirrorService(item.id, patch)}
+                onDelete={() => deleteMirrorService(item.id)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      <section className={openSection === 'mirrorSettings' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+        <PriceAccordionHeader
+          controlsId="price-mirror-settings"
+          isOpen={openSection === 'mirrorSettings'}
+          meta="Наценки и комиссии"
+          title="Настройки зеркал"
+          onToggle={() => toggleSection('mirrorSettings')}
+        />
+        {openSection === 'mirrorSettings' ? (
+          <div className="price-list price-accordion-body" id="price-mirror-settings">
+            <ServiceRow label="Наценка на материал, %" value={mirrorCatalog.settings.materialMarkupPercent} onChange={(value) => updateMirrorSetting('materialMarkupPercent', value)} />
+            <ServiceRow label="Наценка на работы, %" value={mirrorCatalog.settings.serviceMarkupPercent} onChange={(value) => updateMirrorSetting('serviceMarkupPercent', value)} />
+            <ServiceRow label="Менеджер, %" value={mirrorCatalog.settings.managerPercent} onChange={(value) => updateMirrorSetting('managerPercent', value)} />
+            <ServiceRow label="Дизайнер, %" value={mirrorCatalog.settings.designerPercent} onChange={(value) => updateMirrorSetting('designerPercent', value)} />
+            <ServiceRow label="Скидка по умолчанию, %" value={mirrorCatalog.settings.discountPercent} onChange={(value) => updateMirrorSetting('discountPercent', value)} />
           </div>
         ) : null}
       </section>
@@ -1568,6 +2220,67 @@ type ServiceRowProps = {
   onChange: (value: number) => void
 }
 
+type MirrorServicePriceRowProps = {
+  item: MirrorService
+  canDelete: boolean
+  onChange: (patch: Partial<MirrorService>) => void
+  onDelete: () => void
+}
+
+function MirrorServicePriceRow({ item, canDelete, onChange, onDelete }: MirrorServicePriceRowProps) {
+  return (
+    <div className="mirror-service-price-row">
+      <label className="price-name-field">
+        <span className="sr-only">Название работы</span>
+        <input value={item.label} onChange={(event) => onChange({ label: event.target.value })} />
+      </label>
+      <label className="price-value-field">
+        <span className="sr-only">Цена работы</span>
+        <input
+          inputMode="numeric"
+          type="number"
+          value={item.price}
+          onChange={(event) => onChange({ price: Number(event.target.value) })}
+        />
+        <small>₽</small>
+      </label>
+      <label className="mirror-service-unit">
+        <span>Единица</span>
+        <select value={item.unit} onChange={(event) => onChange({ unit: event.target.value as MirrorService['unit'] })}>
+          {Object.entries(mirrorUnitLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+        </select>
+      </label>
+      <label className="mirror-service-category">
+        <span>Раздел</span>
+        <select
+          value={item.category}
+          onChange={(event) => onChange({ category: event.target.value as MirrorService['category'] })}
+        >
+          <option value="work">Работы</option>
+          <option value="delivery">Доставка</option>
+        </select>
+      </label>
+      <label className="mirror-service-visible">
+        <input
+          checked={item.visibleInQuote}
+          type="checkbox"
+          onChange={(event) => onChange({ visibleInQuote: event.target.checked })}
+        />
+        <span>Показывать в КП</span>
+      </label>
+      <button
+        aria-label={`Удалить ${item.label}`}
+        className="price-delete"
+        disabled={!canDelete}
+        type="button"
+        onClick={onDelete}
+      >
+        <Trash2 size={17} />
+      </button>
+    </div>
+  )
+}
+
 function ServiceRow({ label, value, onChange }: ServiceRowProps) {
   return (
     <label className="price-row">
@@ -1586,6 +2299,14 @@ function ConstructionPreview({ construction }: { construction: Construction }) {
   return (
     <span className="construction-preview">
       <ShowerSketch sketch={construction.sketch} />
+    </span>
+  )
+}
+
+function MirrorPreviewIcon() {
+  return (
+    <span className="construction-preview mirror-preview-icon" aria-hidden="true">
+      <span className="mirror-preview-glass"><ScanLine size={24} /></span>
     </span>
   )
 }

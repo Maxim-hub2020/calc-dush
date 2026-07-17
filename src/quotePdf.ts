@@ -1,6 +1,16 @@
 import type { Content, TableCell, TDocumentDefinitions } from 'pdfmake/interfaces'
 import { Capacitor } from '@capacitor/core'
-import { getConstruction, getQuoteItems, money, type Quote, type QuoteItem } from './calculator'
+import {
+  getConstruction,
+  getQuoteItemTitle,
+  getQuoteItems,
+  isMirrorQuoteItem,
+  money,
+  type MirrorQuoteItem,
+  type Quote,
+  type QuoteItem,
+  type ShowerQuoteItem,
+} from './calculator'
 import { defaultCatalog, type Construction } from './pricing'
 
 const pdfColors = {
@@ -22,7 +32,7 @@ const formatPdfDate = (date: string) =>
     year: 'numeric',
   }).format(new Date(date))
 
-const dimensionRows = (quote: QuoteItem, construction: Construction): Array<[string, string]> =>
+const dimensionRows = (quote: ShowerQuoteItem, construction: Construction): Array<[string, string]> =>
   construction.fields.map((field) => [field.label, `${quote.form.dimensions[field.key] ?? 0} мм`])
 
 const buildSketchSvg = (sketch: Construction['sketch']) => {
@@ -63,6 +73,15 @@ const buildSketchSvg = (sketch: Construction['sketch']) => {
   return `<svg width="240" height="140" viewBox="0 0 240 140" xmlns="http://www.w3.org/2000/svg"><rect width="240" height="140" rx="12" fill="#f4f8fb"/><rect x="28" y="118" width="184" height="10" rx="5" fill="#d7e4ec"/>${panels}${cornerLine}${sliderLine}${doorLine}</svg>`
 }
 
+const buildMirrorSvg = () => (
+  '<svg width="240" height="140" viewBox="0 0 240 140" xmlns="http://www.w3.org/2000/svg">'
+  + '<rect width="240" height="140" rx="12" fill="#f4f8fb"/>'
+  + '<rect x="48" y="15" width="144" height="110" rx="8" fill="#dff3f8" stroke="#4b9fc0" stroke-width="3"/>'
+  + '<path d="M64 34 L96 22 M63 54 L128 23" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.82"/>'
+  + '<rect x="58" y="126" width="124" height="5" rx="2.5" fill="#d7e4ec"/>'
+  + '</svg>'
+)
+
 const detailTable = (rows: Array<[string, string]>): Content => ({
   table: {
     widths: ['42%', '*'],
@@ -79,7 +98,7 @@ const detailTable = (rows: Array<[string, string]>): Content => ({
   },
 })
 
-const itemConfigurationRows = (item: QuoteItem, construction: Construction): Array<[string, string]> => [
+const showerConfigurationRows = (item: ShowerQuoteItem, construction: Construction): Array<[string, string]> => [
   ['Конструкция', item.constructionTitle],
   ...dimensionRows(item, construction),
   ['Стекло', item.glassLabel],
@@ -97,7 +116,7 @@ const itemConfigurationRows = (item: QuoteItem, construction: Construction): Arr
   ['Скидка', item.form.discountEnabled ? `${item.form.discountPercent}%` : 'Не применена'],
 ]
 
-const buildQuoteItemBlock = (item: QuoteItem, index: number): Content => {
+const buildShowerQuoteItemBlock = (item: ShowerQuoteItem, index: number): Content => {
   const construction = getConstruction(defaultCatalog, item.form.constructionId)
 
   return {
@@ -117,7 +136,7 @@ const buildQuoteItemBlock = (item: QuoteItem, index: number): Content => {
       },
       {
         columns: [
-          { width: '*', stack: [detailTable(itemConfigurationRows(item, construction))] },
+          { width: '*', stack: [detailTable(showerConfigurationRows(item, construction))] },
           {
             width: 160,
             stack: [
@@ -132,6 +151,58 @@ const buildQuoteItemBlock = (item: QuoteItem, index: number): Content => {
     ],
   }
 }
+
+const mirrorConfigurationRows = (item: MirrorQuoteItem): Array<[string, string]> => [
+  ['Изделие', 'Зеркало на заказ'],
+  ['Размер', `${item.form.width} × ${item.form.height} мм`],
+  ['Площадь', `${item.result.glassArea.toFixed(2)} м²`],
+  ['Материал', item.materialLabel],
+  ...item.serviceLines
+    .filter((line) => line.visibleInQuote)
+    .map((line): [string, string] => [
+      line.label,
+      `${line.quantity.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${line.unitLabel}`,
+    ]),
+  ['Скидка', item.form.discountEnabled ? `${item.form.discountPercent}%` : 'Не применена'],
+]
+
+const buildMirrorQuoteItemBlock = (item: MirrorQuoteItem, index: number): Content => ({
+  unbreakable: true,
+  margin: [0, 12, 0, 2],
+  stack: [
+    {
+      table: {
+        widths: [78, '*', 118],
+        body: [[
+          { text: `Позиция ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+          { text: item.mirrorTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+          { text: money(item.result.total), alignment: 'right', bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+        ]],
+      },
+      layout: 'noBorders',
+    },
+    {
+      columns: [
+        { width: '*', stack: [detailTable(mirrorConfigurationRows(item))] },
+        {
+          width: 160,
+          stack: [
+            { svg: buildMirrorSvg(), width: 145, alignment: 'center' },
+            { text: 'Зеркало', alignment: 'center', bold: true, color: pdfColors.heading, margin: [0, 3, 0, 0] },
+          ],
+        },
+      ],
+      columnGap: 18,
+      margin: [0, 8, 0, 0],
+    },
+  ],
+})
+
+const buildQuoteItemBlock = (item: QuoteItem, index: number): Content => (
+  isMirrorQuoteItem(item)
+    ? buildMirrorQuoteItemBlock(item, index)
+    : buildShowerQuoteItemBlock(item, index)
+)
 
 export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
   const items = getQuoteItems(quote)
@@ -166,8 +237,8 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
     pageMargins: [42, 40, 42, 46],
     info: {
       title: `${quote.number} - коммерческое предложение`,
-      subject: `${items.length} поз. - ${items.map((item) => item.constructionTitle).join(', ')}`,
-      author: 'Душевые КП',
+      subject: `${items.length} поз. - ${items.map(getQuoteItemTitle).join(', ')}`,
+      author: 'Амальгама',
     },
     defaultStyle: {
       font: 'Roboto',
@@ -185,7 +256,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
           {
             width: '*',
             stack: [
-              { text: 'Душевые КП', color: pdfColors.accent, bold: true, fontSize: 12 },
+              { text: 'Амальгама', color: pdfColors.accent, bold: true, fontSize: 12 },
               { text: 'Коммерческое предложение', style: 'documentTitle', margin: [0, 5, 0, 0] },
             ],
           },

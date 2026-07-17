@@ -1,4 +1,11 @@
 import type { Construction, PriceOption, PricingCatalog } from './pricing'
+import {
+  getMirrorCalculatedOptions,
+  getMirrorMaterial,
+  getMirrorTitle,
+  type MirrorForm,
+} from './mirrorCalculator'
+import type { MirrorPricingCatalog, MirrorUnit } from './mirrorPricing'
 
 export type DeliveryZone = 'inside' | 'outside'
 
@@ -29,6 +36,7 @@ export type CalculationResult = {
   product: number
   installation: number
   delivery: number
+  manager: number
   designer: number
   subtotal: number
   discount: number
@@ -40,8 +48,9 @@ export type CalculationResult = {
   lines: CalculationLine[]
 }
 
-export type QuoteItem = {
+export type ShowerQuoteItem = {
   id: string
+  kind?: 'shower'
   form: CalculatorForm
   result: CalculationResult
   constructionTitle: string
@@ -50,7 +59,27 @@ export type QuoteItem = {
   hardwareClassLabel: string
 }
 
-export type Quote = QuoteItem & {
+export type MirrorQuoteServiceLine = {
+  label: string
+  quantity: number
+  unit: MirrorUnit
+  unitLabel: string
+  visibleInQuote: boolean
+}
+
+export type MirrorQuoteItem = {
+  id: string
+  kind: 'mirror'
+  form: MirrorForm
+  result: CalculationResult
+  mirrorTitle: string
+  materialLabel: string
+  serviceLines: MirrorQuoteServiceLine[]
+}
+
+export type QuoteItem = ShowerQuoteItem | MirrorQuoteItem
+
+type QuoteMetadata = {
   id: string
   number: string
   createdAt: string
@@ -58,10 +87,21 @@ export type Quote = QuoteItem & {
   items?: QuoteItem[]
 }
 
-export type QuoteDraftItem = {
+export type Quote = QuoteItem & QuoteMetadata
+
+export type ShowerQuoteDraftItem = {
+  kind: 'shower'
   form: CalculatorForm
   result: CalculationResult
 }
+
+export type MirrorQuoteDraftItem = {
+  kind: 'mirror'
+  form: MirrorForm
+  result: CalculationResult
+}
+
+export type QuoteDraftItem = ShowerQuoteDraftItem | MirrorQuoteDraftItem
 
 const roundToTen = (value: number) => Math.round(value / 10) * 10
 const ceilToTen = (value: number) => Math.ceil(value / 10) * 10
@@ -169,7 +209,7 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
   const discount = subtotal - total
   const lines = [
     { label: 'Стоимость изделий', value: product },
-    { label: 'Монтаж', value: installation },
+    { label: 'Работы и монтаж', value: installation },
     { label: 'Доставка', value: delivery },
     { label: 'Сумма без скидки', value: subtotal },
   ]
@@ -179,6 +219,7 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
     product,
     installation,
     delivery,
+    manager: 0,
     designer,
     subtotal,
     discount,
@@ -200,7 +241,7 @@ export const combineCalculationResults = (results: CalculationResult[]): Calcula
   const discount = sum((result) => result.discount)
   const lines = [
     { label: 'Стоимость изделий', value: product },
-    { label: 'Монтаж', value: installation },
+    { label: 'Работы и монтаж', value: installation },
     { label: 'Доставка', value: delivery },
     { label: 'Сумма без скидки', value: subtotal },
   ]
@@ -213,6 +254,7 @@ export const combineCalculationResults = (results: CalculationResult[]): Calcula
     product,
     installation,
     delivery,
+    manager: sum((result) => result.manager ?? 0),
     designer: sum((result) => result.designer),
     subtotal,
     discount,
@@ -225,7 +267,7 @@ export const combineCalculationResults = (results: CalculationResult[]): Calcula
   }
 }
 
-const createQuoteItem = (catalog: PricingCatalog, draft: QuoteDraftItem): QuoteItem => {
+const createShowerQuoteItem = (catalog: PricingCatalog, draft: ShowerQuoteDraftItem): ShowerQuoteItem => {
   const construction = getConstruction(catalog, draft.form.constructionId)
   const glass = getOption(catalog.glass, draft.form.glassId)
   const hardware = getOption(catalog.hardware, draft.form.hardwareId)
@@ -233,6 +275,7 @@ const createQuoteItem = (catalog: PricingCatalog, draft: QuoteDraftItem): QuoteI
 
   return {
     id: crypto.randomUUID(),
+    kind: 'shower',
     form: draft.form,
     result: draft.result,
     constructionTitle: construction.title,
@@ -242,10 +285,47 @@ const createQuoteItem = (catalog: PricingCatalog, draft: QuoteDraftItem): QuoteI
   }
 }
 
+const createMirrorQuoteItem = (
+  catalog: MirrorPricingCatalog,
+  draft: MirrorQuoteDraftItem,
+): MirrorQuoteItem => ({
+  id: crypto.randomUUID(),
+  kind: 'mirror',
+  form: draft.form,
+  result: draft.result,
+  mirrorTitle: getMirrorTitle(draft.form),
+  materialLabel: getMirrorMaterial(catalog, draft.form.materialId).label,
+  serviceLines: getMirrorCalculatedOptions(catalog, draft.form).map((item) => ({
+    label: item.label,
+    quantity: item.quantity,
+    unit: item.unit,
+    unitLabel: item.unitLabel,
+    visibleInQuote: item.visibleInQuote,
+  })),
+})
+
+export const isMirrorQuoteItem = (item: QuoteItem): item is MirrorQuoteItem => item.kind === 'mirror'
+export const isShowerQuoteItem = (item: QuoteItem): item is ShowerQuoteItem => item.kind !== 'mirror'
+
+export const getQuoteItemTitle = (item: QuoteItem) =>
+  isMirrorQuoteItem(item) ? item.mirrorTitle : item.constructionTitle
+
 export const getQuoteItems = (quote: Quote): QuoteItem[] => {
   if (quote.items?.length) return quote.items
+  if (quote.kind === 'mirror') {
+    return [{
+      id: quote.id,
+      kind: 'mirror',
+      form: quote.form,
+      result: quote.result,
+      mirrorTitle: quote.mirrorTitle,
+      materialLabel: quote.materialLabel,
+      serviceLines: quote.serviceLines ?? [],
+    }]
+  }
   return [{
     id: quote.id,
+    kind: 'shower',
     form: quote.form,
     result: quote.result,
     constructionTitle: quote.constructionTitle,
@@ -255,9 +335,15 @@ export const getQuoteItems = (quote: Quote): QuoteItem[] => {
   }]
 }
 
-export const createQuote = (catalog: PricingCatalog, drafts: QuoteDraftItem[]): Quote => {
+export const createQuote = (
+  catalog: PricingCatalog,
+  mirrorCatalog: MirrorPricingCatalog,
+  drafts: QuoteDraftItem[],
+): Quote => {
   if (drafts.length === 0) throw new Error('КП должно содержать хотя бы одну позицию')
-  const items = drafts.map((draft) => createQuoteItem(catalog, draft))
+  const items = drafts.map((draft) => draft.kind === 'mirror'
+    ? createMirrorQuoteItem(mirrorCatalog, draft)
+    : createShowerQuoteItem(catalog, draft))
   const firstItem = items[0]
   const createdAt = new Date().toISOString()
   const id = crypto.randomUUID()
