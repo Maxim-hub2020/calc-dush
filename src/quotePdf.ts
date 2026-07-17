@@ -274,8 +274,16 @@ const loadPdfMake = async () => {
 }
 
 export const createQuotePdfBlob = async (quote: Quote) => {
-  const pdfMake = await loadPdfMake()
-  return pdfMake.createPdf(buildQuotePdfDefinition(quote)).getBlob()
+  const existingFrames = new Set(document.querySelectorAll('iframe'))
+
+  try {
+    const pdfMake = await loadPdfMake()
+    return await pdfMake.createPdf(buildQuotePdfDefinition(quote)).getBlob()
+  } finally {
+    document.querySelectorAll('iframe').forEach((frame) => {
+      if (!existingFrames.has(frame)) frame.remove()
+    })
+  }
 }
 
 const pdfFileName = (quote: Quote) => `${quote.number.replace(/[^\p{L}\p{N}._-]+/gu, '-')}.pdf`
