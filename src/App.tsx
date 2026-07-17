@@ -15,6 +15,7 @@ import {
   Settings2,
   ShieldCheck,
   Trash2,
+  X,
 } from 'lucide-react'
 import './App.css'
 import {
@@ -40,7 +41,7 @@ import {
   type PricingCatalog,
 } from './pricing'
 import { loadCatalog, loadQuotes, resetCatalog, saveCatalog, saveQuotes } from './storage'
-import { shareQuotePdf } from './quotePdf'
+import { shareQuotePdf, type QuotePdfPreview } from './quotePdf'
 
 type TabId = 'calculator' | 'archive' | 'prices'
 
@@ -103,6 +104,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabId>('calculator')
   const [notice, setNotice] = useState('')
   const [pdfQuoteId, setPdfQuoteId] = useState('')
+  const [pdfPreview, setPdfPreview] = useState<QuotePdfPreview | null>(null)
 
   const activePosition = positions.find((position) => position.id === activePositionId) ?? positions[0]
   const form = activePosition.form
@@ -131,6 +133,15 @@ function App() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' })
   }, [activeTab])
+  useEffect(() => {
+    if (!pdfPreview) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+      URL.revokeObjectURL(pdfPreview.url)
+    }
+  }, [pdfPreview])
 
   const updateForm = (patch: Partial<CalculatorForm>) => {
     const sharedPatch = customerFields.reduce<Partial<CalculatorForm>>((next, key) => {
@@ -192,7 +203,8 @@ function App() {
   const downloadQuotePdf = async (quote: Quote) => {
     setPdfQuoteId(quote.id)
     try {
-      await shareQuotePdf(quote)
+      const preview = await shareQuotePdf(quote)
+      if (preview) setPdfPreview(preview)
       setNotice(`${quote.number}: PDF готов`)
     } catch {
       setNotice('Не удалось сформировать PDF')
@@ -344,6 +356,45 @@ function App() {
         ) : null}
       </main>
 
+      {pdfPreview ? (
+        <PdfPreviewDialog preview={pdfPreview} onClose={() => setPdfPreview(null)} />
+      ) : null}
+
+    </div>
+  )
+}
+
+type PdfPreviewDialogProps = {
+  preview: QuotePdfPreview
+  onClose: () => void
+}
+
+function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
+  return (
+    <div className="pdf-preview-backdrop">
+      <section aria-labelledby="pdf-preview-title" aria-modal="true" className="pdf-preview-dialog" role="dialog">
+        <header>
+          <div>
+            <span>Коммерческое предложение</span>
+            <h2 id="pdf-preview-title">{preview.title}</h2>
+          </div>
+          <button aria-label="Закрыть просмотр PDF" title="Закрыть" type="button" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </header>
+        <iframe src={preview.url} title={preview.title} />
+        <footer>
+          <a href={preview.url} rel="noopener" target="_blank">
+            <FileDown size={18} />
+            Открыть отдельно
+          </a>
+          <a download={preview.fileName} href={preview.url}>
+            <Save size={18} />
+            Скачать PDF
+          </a>
+          <button type="button" onClick={onClose}>Закрыть</button>
+        </footer>
+      </section>
     </div>
   )
 }

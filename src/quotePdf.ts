@@ -280,28 +280,6 @@ export const createQuotePdfBlob = async (quote: Quote) => {
 
 const pdfFileName = (quote: Quote) => `${quote.number.replace(/[^\p{L}\p{N}._-]+/gu, '-')}.pdf`
 
-const downloadBlob = (blob: Blob, fileName: string) => {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = fileName
-  anchor.target = '_blank'
-  anchor.rel = 'noopener'
-  anchor.style.display = 'none'
-  document.body.append(anchor)
-  anchor.click()
-  anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
-}
-
-const openPdfPreview = () => {
-  const preview = window.open('', '_blank')
-  if (!preview) return null
-  preview.document.title = 'Формируем PDF...'
-  preview.opener = null
-  return preview
-}
-
 const blobToBase64 = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -330,50 +308,40 @@ const shareNativePdf = async (blob: Blob, fileName: string, title: string) => {
   }
 }
 
-export const shareQuotePdf = async (quote: Quote) => {
+export type QuotePdfPreview = {
+  fileName: string
+  title: string
+  url: string
+}
+
+export const shareQuotePdf = async (quote: Quote): Promise<QuotePdfPreview | null> => {
   const fileName = pdfFileName(quote)
   const title = `${quote.number} - коммерческое предложение`
   const isNative = Capacitor.isNativePlatform()
-  const preview = isNative ? null : openPdfPreview()
+  const blob = await createQuotePdfBlob(quote)
 
-  try {
-    const blob = await createQuotePdfBlob(quote)
+  if (isNative) {
+    await shareNativePdf(blob, fileName, title)
+    return null
+  }
 
-    if (isNative) {
-      await shareNativePdf(blob, fileName, title)
-      return
-    }
+  const file = new File([blob], fileName, { type: 'application/pdf' })
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
-    const file = new File([blob], fileName, { type: 'application/pdf' })
-    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
-      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-
-    if (isIos && navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          title,
-        })
-        preview?.close()
-        return
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          preview?.close()
-          return
-        }
+  if (isIos && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title,
+      })
+      return null
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return null
       }
     }
-
-    if (preview) {
-      const url = URL.createObjectURL(blob)
-      preview.location.replace(url)
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
-      return
-    }
-
-    downloadBlob(blob, fileName)
-  } catch (error) {
-    preview?.close()
-    throw error
   }
+
+  return { fileName, title, url: URL.createObjectURL(blob) }
 }
