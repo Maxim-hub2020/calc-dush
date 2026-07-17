@@ -15,16 +15,6 @@ const pdfColors = {
 
 const pdfLoadTimeoutMs = 20_000
 
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number) =>
-  new Promise<T>((resolve, reject) => {
-    const timeoutId = window.setTimeout(
-      () => reject(new Error('Превышено время загрузки модуля PDF')),
-      timeoutMs,
-    )
-
-    promise.then(resolve, reject).finally(() => window.clearTimeout(timeoutId))
-  })
-
 const formatPdfDate = (date: string) =>
   new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit',
@@ -261,30 +251,40 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
   }
 }
 
-const loadPdfMake = async () => {
-  const [pdfMakeModule, fontModule] = await withTimeout(
-    Promise.all([
-      import('pdfmake/build/pdfmake'),
-      import('pdfmake/build/vfs_fonts'),
-    ]),
-    pdfLoadTimeoutMs,
-  )
-  pdfMakeModule.default.addVirtualFileSystem(fontModule.default)
-  return pdfMakeModule.default
+type PdfWorkerResponse = {
+  blob?: Blob
+  error?: string
 }
 
-export const createQuotePdfBlob = async (quote: Quote) => {
-  const existingFrames = new Set(document.querySelectorAll('iframe'))
+export const createQuotePdfBlob = (quote: Quote) =>
+  new Promise<Blob>((resolve, reject) => {
+    const worker = new Worker(new URL('./quotePdf.worker.ts', import.meta.url), { type: 'module' })
+    const timeoutId = window.setTimeout(() => {
+      worker.terminate()
+      reject(new Error('Превышено время формирования PDF'))
+    }, pdfLoadTimeoutMs)
 
-  try {
-    const pdfMake = await loadPdfMake()
-    return await pdfMake.createPdf(buildQuotePdfDefinition(quote)).getBlob()
-  } finally {
-    document.querySelectorAll('iframe').forEach((frame) => {
-      if (!existingFrames.has(frame)) frame.remove()
-    })
-  }
-}
+    const finish = () => {
+      window.clearTimeout(timeoutId)
+      worker.terminate()
+    }
+
+    worker.onmessage = (event: MessageEvent<PdfWorkerResponse>) => {
+      finish()
+      if (event.data.blob) {
+        resolve(event.data.blob)
+        return
+      }
+      reject(new Error(event.data.error || 'Не удалось сформировать PDF'))
+    }
+
+    worker.onerror = (event) => {
+      finish()
+      reject(new Error(event.message || 'Не удалось запустить модуль PDF'))
+    }
+
+    worker.postMessage(quote)
+  })
 
 const pdfFileName = (quote: Quote) => `${quote.number.replace(/[^\p{L}\p{N}._-]+/gu, '-')}.pdf`
 
