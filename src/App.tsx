@@ -4,6 +4,7 @@ import {
   Box,
   Calculator,
   Check,
+  ChevronDown,
   ChevronRight,
   Copy,
   FileDown,
@@ -1151,7 +1152,14 @@ type PricesScreenProps = {
   onReset: () => void
 }
 
+type PriceSectionId = 'glass' | 'hardware' | 'hardwareClass' | 'constructions' | 'services'
+
 function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
+  const [openSection, setOpenSection] = useState<PriceSectionId | null>(null)
+  const toggleSection = (section: PriceSectionId) => {
+    setOpenSection((current) => (current === section ? null : section))
+  }
+
   const updateOption = (
     group: 'glass' | 'hardware' | 'hardwareClass',
     id: string,
@@ -1237,6 +1245,8 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
       </section>
 
       <PriceGroup
+        controlsId="price-glass"
+        isOpen={openSection === 'glass'}
         items={catalog.glass}
         suffix="₽/м²"
         title="Стекло"
@@ -1244,8 +1254,11 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
         onChange={(id, value) => updateOption('glass', id, { price: value })}
         onDelete={(id) => deleteOption('glass', id)}
         onNameChange={(id, value) => updateOption('glass', id, { label: value })}
+        onToggle={() => toggleSection('glass')}
       />
       <PriceGroup
+        controlsId="price-hardware"
+        isOpen={openSection === 'hardware'}
         items={catalog.hardware}
         suffix="%"
         title="Цвет фурнитуры"
@@ -1253,8 +1266,11 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
         onChange={(id, value) => updateOption('hardware', id, { price: value })}
         onDelete={(id) => deleteOption('hardware', id)}
         onNameChange={(id, value) => updateOption('hardware', id, { label: value })}
+        onToggle={() => toggleSection('hardware')}
       />
       <PriceGroup
+        controlsId="price-hardware-class"
+        isOpen={openSection === 'hardwareClass'}
         items={catalog.hardwareClass}
         suffix="₽"
         title="Класс фурнитуры"
@@ -1262,63 +1278,71 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
         onChange={(id, value) => updateOption('hardwareClass', id, { price: value })}
         onDelete={(id) => deleteOption('hardwareClass', id)}
         onNameChange={(id, value) => updateOption('hardwareClass', id, { label: value })}
+        onToggle={() => toggleSection('hardwareClass')}
       />
 
-      <section className="section-block">
-        <div className="section-title price-section-title">
-          <div className="price-section-heading">
-            <h2>Конструкции</h2>
-            <span>База и монтаж</span>
+      <section className={openSection === 'constructions' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+        <PriceAccordionHeader
+          controlsId="price-constructions"
+          isOpen={openSection === 'constructions'}
+          meta="База и монтаж"
+          title="Конструкции"
+          onAdd={addConstruction}
+          onToggle={() => toggleSection('constructions')}
+        />
+        {openSection === 'constructions' ? (
+          <div className="price-list price-accordion-body" id="price-constructions">
+            {catalog.constructions.map((item) => (
+              <ConstructionPriceRow
+                basePrice={item.basePrice}
+                canDelete={catalog.constructions.length > 1}
+                installationPrice={item.installationPrice}
+                key={item.id}
+                label={item.shortTitle}
+                onBasePriceChange={(value) => updateConstruction(item.id, { basePrice: value })}
+                onDelete={() => deleteConstruction(item.id)}
+                onInstallationPriceChange={(value) => updateConstruction(item.id, { installationPrice: value })}
+                onLabelChange={(value) => updateConstruction(item.id, { shortTitle: value, title: value })}
+              />
+            ))}
           </div>
-          <button type="button" onClick={addConstruction}>
-            <Plus size={16} />
-            Добавить
-          </button>
-        </div>
-        <div className="price-list">
-          {catalog.constructions.map((item) => (
-            <ConstructionPriceRow
-              basePrice={item.basePrice}
-              canDelete={catalog.constructions.length > 1}
-              installationPrice={item.installationPrice}
-              key={item.id}
-              label={item.shortTitle}
-              onBasePriceChange={(value) => updateConstruction(item.id, { basePrice: value })}
-              onDelete={() => deleteConstruction(item.id)}
-              onInstallationPriceChange={(value) => updateConstruction(item.id, { installationPrice: value })}
-              onLabelChange={(value) => updateConstruction(item.id, { shortTitle: value, title: value })}
-            />
-          ))}
-        </div>
+        ) : null}
       </section>
 
-      <section className="section-block">
-        <div className="section-title">
-          <h2>Услуги</h2>
-          <span>Руб.</span>
-        </div>
-        <div className="price-list">
-          <ServiceRow label="Доставка по городу" value={catalog.services.deliveryBase} onChange={(value) => updateService('deliveryBase', value)} />
-          <ServiceRow label="За городом, ₽/км" value={catalog.services.deliveryKmRate} onChange={(value) => updateService('deliveryKmRate', value)} />
-          <ServiceRow label="Скидка по умолчанию, %" value={catalog.services.discountPercent} onChange={(value) => updateService('discountPercent', value)} />
-          <ServiceRow label="Дизайнер, %" value={catalog.services.designerPercent} onChange={(value) => updateService('designerPercent', value)} />
-          <ServiceRow
-            label="Высота +%, после"
-            value={catalog.services.heightSurchargeAfter}
-            onChange={(value) => updateService('heightSurchargeAfter', value)}
-          />
-          <ServiceRow
-            label="Надбавка за высоту, %"
-            value={catalog.services.heightSurchargePercent}
-            onChange={(value) => updateService('heightSurchargePercent', value)}
-          />
-        </div>
+      <section className={openSection === 'services' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+        <PriceAccordionHeader
+          controlsId="price-services"
+          isOpen={openSection === 'services'}
+          meta="Руб. и проценты"
+          title="Услуги"
+          onToggle={() => toggleSection('services')}
+        />
+        {openSection === 'services' ? (
+          <div className="price-list price-accordion-body" id="price-services">
+            <ServiceRow label="Доставка по городу" value={catalog.services.deliveryBase} onChange={(value) => updateService('deliveryBase', value)} />
+            <ServiceRow label="За городом, ₽/км" value={catalog.services.deliveryKmRate} onChange={(value) => updateService('deliveryKmRate', value)} />
+            <ServiceRow label="Скидка по умолчанию, %" value={catalog.services.discountPercent} onChange={(value) => updateService('discountPercent', value)} />
+            <ServiceRow label="Дизайнер, %" value={catalog.services.designerPercent} onChange={(value) => updateService('designerPercent', value)} />
+            <ServiceRow
+              label="Высота +%, после"
+              value={catalog.services.heightSurchargeAfter}
+              onChange={(value) => updateService('heightSurchargeAfter', value)}
+            />
+            <ServiceRow
+              label="Надбавка за высоту, %"
+              value={catalog.services.heightSurchargePercent}
+              onChange={(value) => updateService('heightSurchargePercent', value)}
+            />
+          </div>
+        ) : null}
       </section>
     </div>
   )
 }
 
 type PriceGroupProps = {
+  controlsId: string
+  isOpen: boolean
   title: string
   suffix: string
   items: PriceOption[]
@@ -1326,36 +1350,90 @@ type PriceGroupProps = {
   onNameChange: (id: string, value: string) => void
   onAdd: () => void
   onDelete: (id: string) => void
+  onToggle: () => void
 }
 
-function PriceGroup({ title, suffix, items, onChange, onNameChange, onAdd, onDelete }: PriceGroupProps) {
+function PriceGroup({
+  controlsId,
+  isOpen,
+  title,
+  suffix,
+  items,
+  onChange,
+  onNameChange,
+  onAdd,
+  onDelete,
+  onToggle,
+}: PriceGroupProps) {
   return (
-    <section className="section-block">
-      <div className="section-title price-section-title">
-        <div className="price-section-heading">
-          <h2>{title}</h2>
-          <span>{suffix}</span>
+    <section className={isOpen ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+      <PriceAccordionHeader
+        controlsId={controlsId}
+        isOpen={isOpen}
+        meta={suffix}
+        title={title}
+        onAdd={onAdd}
+        onToggle={onToggle}
+      />
+      {isOpen ? (
+        <div className="price-list price-accordion-body" id={controlsId}>
+          {items.map((item) => (
+            <EditablePriceRow
+              canDelete={items.length > 1}
+              key={item.id}
+              label={item.label}
+              price={item.price}
+              suffix={suffix}
+              onDelete={() => onDelete(item.id)}
+              onLabelChange={(value) => onNameChange(item.id, value)}
+              onPriceChange={(value) => onChange(item.id, value)}
+            />
+          ))}
         </div>
-        <button type="button" onClick={onAdd}>
+      ) : null}
+    </section>
+  )
+}
+
+type PriceAccordionHeaderProps = {
+  title: string
+  meta: string
+  controlsId: string
+  isOpen: boolean
+  onToggle: () => void
+  onAdd?: () => void
+}
+
+function PriceAccordionHeader({ title, meta, controlsId, isOpen, onToggle, onAdd }: PriceAccordionHeaderProps) {
+  const addItem = () => {
+    if (!isOpen) onToggle()
+    onAdd?.()
+  }
+
+  return (
+    <div className="price-accordion-header">
+      <h2 className="price-accordion-heading">
+        <button
+          aria-controls={controlsId}
+          aria-expanded={isOpen}
+          className="price-accordion-toggle"
+          type="button"
+          onClick={onToggle}
+        >
+          <span className="price-accordion-copy">
+            <span className="price-accordion-title">{title}</span>
+            <small>{meta}</small>
+          </span>
+          <ChevronDown className="price-accordion-chevron" size={20} aria-hidden="true" />
+        </button>
+      </h2>
+      {onAdd ? (
+        <button aria-label={`Добавить в раздел ${title}`} className="price-accordion-add" type="button" onClick={addItem}>
           <Plus size={16} />
           Добавить
         </button>
-      </div>
-      <div className="price-list">
-        {items.map((item) => (
-          <EditablePriceRow
-            canDelete={items.length > 1}
-            key={item.id}
-            label={item.label}
-            price={item.price}
-            suffix={suffix}
-            onDelete={() => onDelete(item.id)}
-            onLabelChange={(value) => onNameChange(item.id, value)}
-            onPriceChange={(value) => onChange(item.id, value)}
-          />
-        ))}
-      </div>
-    </section>
+      ) : null}
+    </div>
   )
 }
 

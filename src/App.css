@@ -1006,17 +1006,71 @@
   font-weight: 760;
 }
 
-.price-section-title {
-  align-items: center;
+.prices-screen > .section-block.price-accordion {
+  overflow: hidden;
+  padding: 0;
 }
 
-.price-section-heading {
+.price-accordion-header {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.price-accordion-heading {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+}
+
+.price-accordion-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--heading);
+  text-align: left;
+}
+
+.price-accordion-copy {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 3px;
 }
 
-.price-section-title button {
+.price-accordion-title {
+  font-family: var(--font-display);
+  font-size: var(--type-section);
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.price-accordion-copy small {
+  color: var(--muted);
+  font-size: var(--type-meta);
+  font-weight: 700;
+}
+
+.price-accordion-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+
+.price-accordion.is-open .price-accordion-chevron {
+  color: var(--accent);
+  transform: rotate(180deg);
+}
+
+.price-accordion-add {
   display: inline-flex;
   min-height: 38px;
   flex: 0 0 auto;
@@ -1030,6 +1084,24 @@
   color: var(--accent-dark);
   font-size: var(--type-meta);
   font-weight: 760;
+}
+
+.price-accordion-body {
+  padding: 14px;
+  border-top: 1px solid var(--line);
+  animation: price-accordion-in 0.18s ease-out;
+}
+
+@keyframes price-accordion-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .price-edit-row {
@@ -1305,7 +1377,7 @@
   }
 
   .prices-screen {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .prices-screen > .admin-head {
