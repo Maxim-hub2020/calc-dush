@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Archive,
+  Box,
   Calculator,
   Check,
   ChevronRight,
   Copy,
   FileDown,
   Plus,
+  Ruler,
   RotateCcw,
   Save,
   Search,
   Settings2,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react'
 import './App.css'
+import showerVisualization from './assets/shower-visualization.webp'
 import {
   calculateQuote,
   combineCalculationResults,
@@ -123,10 +127,11 @@ function App() {
     })),
     [catalog, positionResults],
   )
-  const construction = getConstruction(catalog, form.constructionId)
-
   useEffect(() => saveCatalog(catalog), [catalog])
   useEffect(() => saveQuotes(quotes), [quotes])
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }, [activeTab])
 
   const updateForm = (patch: Partial<CalculatorForm>) => {
     const sharedPatch = customerFields.reduce<Partial<CalculatorForm>>((next, key) => {
@@ -267,14 +272,29 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div>
-          <h1>Калькулятор душевых</h1>
-          <p>{construction.shortTitle}</p>
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true">A</span>
+          <div>
+            <h1>Амальгама</h1>
+            <p>Калькулятор изделий на заказ</p>
+          </div>
         </div>
-        <div className="header-total">
-          <span>Итого</span>
-          <strong>{shortMoney(orderResult.total)} ₽</strong>
-        </div>
+        <nav className="app-tabs" aria-label="Главная навигация">
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <button
+                className={activeTab === tab.id ? 'tab-button is-active' : 'tab-button'}
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+              >
+                <Icon size={18} />
+                <span>{tab.label}</span>
+              </button>
+            )
+          })}
+        </nav>
       </header>
 
       <main className="app-main">
@@ -303,6 +323,9 @@ function App() {
             onSave={saveCurrentQuote}
             onSelectPosition={setActivePositionId}
             onSelectConstruction={selectConstruction}
+            onOpenArchive={() => setActiveTab('archive')}
+            onOpenQuote={loadQuoteToCalculator}
+            recentQuotes={quotes.slice(0, 3)}
           />
         ) : null}
 
@@ -322,22 +345,6 @@ function App() {
         ) : null}
       </main>
 
-      <nav className="bottom-tabs" aria-label="Главная навигация">
-        {tabs.map((tab) => {
-          const Icon = tab.icon
-          return (
-            <button
-              className={activeTab === tab.id ? 'tab-button is-active' : 'tab-button'}
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <Icon size={20} />
-              <span>{tab.label}</span>
-            </button>
-          )
-        })}
-      </nav>
     </div>
   )
 }
@@ -348,6 +355,7 @@ type CalculatorScreenProps = {
   result: CalculationResult
   orderResult: CalculationResult
   positionSummaries: PositionSummary[]
+  recentQuotes: Quote[]
   activePositionId: string
   isPdfBusy: boolean
   onAddPosition: () => void
@@ -357,6 +365,8 @@ type CalculatorScreenProps = {
   onForm: (patch: Partial<CalculatorForm>) => void
   onPdf: () => void
   onSave: () => void
+  onOpenArchive: () => void
+  onOpenQuote: (quote: Quote) => void
   onSelectConstruction: (id: string) => void
   onSelectPosition: (id: string) => void
 }
@@ -377,6 +387,7 @@ function CalculatorScreen({
   result,
   orderResult,
   positionSummaries,
+  recentQuotes,
   activePositionId,
   isPdfBusy,
   onAddPosition,
@@ -386,6 +397,8 @@ function CalculatorScreen({
   onForm,
   onPdf,
   onSave,
+  onOpenArchive,
+  onOpenQuote,
   onSelectConstruction,
   onSelectPosition,
 }: CalculatorScreenProps) {
@@ -406,21 +419,30 @@ function CalculatorScreen({
         onSelect={onSelectPosition}
       />
 
-      <nav className="config-tabs" aria-label="Настройки позиции">
-        {configSections.map((section) => (
-          <button
-            aria-pressed={activeSection === section.id}
-            className={activeSection === section.id ? 'is-active' : ''}
-            key={section.id}
-            type="button"
-            onClick={() => setActiveSection(section.id)}
-          >
-            {section.label}
-          </button>
-        ))}
-      </nav>
+      <section className="parameter-panel workspace-panel">
+        <div className="panel-heading">
+          <div>
+            <span>Позиция {positionSummaries.findIndex((position) => position.id === activePositionId) + 1}</span>
+            <h2>Параметры изделия</h2>
+          </div>
+          <Box size={20} aria-hidden="true" />
+        </div>
 
-      <div className="config-panel">
+        <nav className="config-tabs" aria-label="Настройки позиции">
+          {configSections.map((section) => (
+            <button
+              aria-pressed={activeSection === section.id}
+              className={activeSection === section.id ? 'is-active' : ''}
+              key={section.id}
+              type="button"
+              onClick={() => setActiveSection(section.id)}
+            >
+              {section.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="config-panel">
       {activeSection === 'construction' ? (
       <section className="section-block">
         <div className="section-title">
@@ -581,19 +603,120 @@ function CalculatorScreen({
         </div>
       </section>
       ) : null}
-      </div>
+        </div>
+      </section>
 
-      <SummaryDock
-        result={result}
-        orderResult={orderResult}
-        positionCount={positionSummaries.length}
-        positionIndex={positionSummaries.findIndex((position) => position.id === activePositionId)}
-        hasErrors={positionSummaries.some((position) => position.hasErrors)}
-        isPdfBusy={isPdfBusy}
-        onPdf={onPdf}
-        onSave={onSave}
+      <ProductVisualization
+        construction={construction}
+        form={form}
+        glass={glass}
+        hardware={hardware}
       />
+
+      <div className="summary-column">
+        <SummaryDock
+          result={result}
+          orderResult={orderResult}
+          positionCount={positionSummaries.length}
+          positionIndex={positionSummaries.findIndex((position) => position.id === activePositionId)}
+          hasErrors={positionSummaries.some((position) => position.hasErrors)}
+          isPdfBusy={isPdfBusy}
+          onPdf={onPdf}
+          onSave={onSave}
+        />
+        <RecentCalculations
+          catalog={catalog}
+          quotes={recentQuotes}
+          onOpenArchive={onOpenArchive}
+          onOpenQuote={onOpenQuote}
+        />
+      </div>
     </div>
+  )
+}
+
+type ProductVisualizationProps = {
+  construction: Construction
+  form: CalculatorForm
+  glass: PriceOption
+  hardware: PriceOption
+}
+
+function ProductVisualization({ construction, form, glass, hardware }: ProductVisualizationProps) {
+  return (
+    <section className="visualization-panel workspace-panel">
+      <div className="panel-heading">
+        <div>
+          <span>Предпросмотр</span>
+          <h2>Визуализация</h2>
+        </div>
+        <Ruler size={20} aria-hidden="true" />
+      </div>
+      <figure className="visualization-figure">
+        <img src={showerVisualization} alt={`Душевая: ${construction.title}`} />
+        <figcaption>
+          <strong>{construction.title}</strong>
+          <span>{glass.label} · {hardware.label}</span>
+        </figcaption>
+      </figure>
+      <div className="visualization-specs" aria-label="Размеры выбранной конструкции">
+        {construction.fields.map((field) => (
+          <div key={field.key}>
+            <span>{field.label}</span>
+            <strong>{form.dimensions[field.key] ?? 0} мм</strong>
+          </div>
+        ))}
+      </div>
+      <div className="visualization-guarantee">
+        <ShieldCheck size={18} aria-hidden="true" />
+        <span>Точные размеры уточняются после замера</span>
+      </div>
+    </section>
+  )
+}
+
+type RecentCalculationsProps = {
+  catalog: PricingCatalog
+  quotes: Quote[]
+  onOpenArchive: () => void
+  onOpenQuote: (quote: Quote) => void
+}
+
+function RecentCalculations({ catalog, quotes, onOpenArchive, onOpenQuote }: RecentCalculationsProps) {
+  return (
+    <section className="recent-panel workspace-panel">
+      <div className="panel-heading compact-heading">
+        <div>
+          <span>Архив КП</span>
+          <h2>Последние расчеты</h2>
+        </div>
+      </div>
+      <div className="recent-list">
+        {quotes.length > 0 ? quotes.map((quote) => {
+          const items = getQuoteItems(quote)
+          const firstItem = items[0]
+          const quoteConstruction = getConstruction(catalog, firstItem.form.constructionId)
+          const title = items.length > 1 ? `${items.length} позиции` : firstItem.constructionTitle
+
+          return (
+            <button className="recent-quote" key={quote.id} type="button" onClick={() => onOpenQuote(quote)}>
+              <ConstructionPreview construction={quoteConstruction} />
+              <span>
+                <strong>{title}</strong>
+                <small>{formatDate(quote.createdAt)}</small>
+              </span>
+              <b>{shortMoney(quote.result.total)} ₽</b>
+            </button>
+          )
+        }) : (
+          <p className="recent-empty">Сохраненные КП появятся здесь</p>
+        )}
+      </div>
+      <button className="recent-open" type="button" onClick={onOpenArchive}>
+        Открыть архив
+        <ChevronRight size={17} />
+      </button>
+    </section>
   )
 }
 
@@ -742,35 +865,38 @@ type SummaryDockProps = {
 function SummaryDock({ result, orderResult, positionCount, positionIndex, hasErrors, isPdfBusy, onPdf, onSave }: SummaryDockProps) {
   return (
     <aside className="summary-dock">
-      <div className="summary-total">
-        <span>Позиция {positionIndex + 1}</span>
-        <strong>{money(result.total)}</strong>
+      <div className="summary-headline">
+        <span>Предварительная стоимость</span>
+        <strong>{money(orderResult.total)}</strong>
+        <small>
+          Позиция {positionIndex + 1}: {money(result.total)}
+          {positionCount > 1 ? ` · Всего ${positionCount}` : ''}
+        </small>
       </div>
-      {positionCount > 1 ? (
-        <div className="summary-order-total">
-          <span>Всего, {positionCount} поз.</span>
-          <strong>{money(orderResult.total)}</strong>
-        </div>
-      ) : null}
-      <details className="summary-details">
-        <summary>Детали расчета</summary>
-        <div className="summary-lines">
-          {result.lines.map((line) => (
-            <div key={line.label}>
-              <span>{line.label}</span>
-              <strong>{money(line.value)}</strong>
-            </div>
-          ))}
-        </div>
-      </details>
+      <div className="summary-lines">
+        {orderResult.lines.map((line) => (
+          <div key={line.label}>
+            <span>{line.label}</span>
+            <strong>{money(line.value)}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="summary-term">
+        <span>Срок изготовления</span>
+        <strong>7-10 рабочих дней</strong>
+      </div>
+      <div className="summary-guarantee">
+        <ShieldCheck size={18} aria-hidden="true" />
+        <span>Гарантия на изделие 24 месяца</span>
+      </div>
       <div className="summary-actions">
-        <button className="pdf-action" disabled={hasErrors || isPdfBusy} type="button" onClick={onPdf}>
-          <FileDown size={19} />
-          {isPdfBusy ? 'Формируем...' : 'PDF клиенту'}
-        </button>
         <button className="primary-action" disabled={hasErrors} type="button" onClick={onSave}>
           <Save size={19} />
           Сохранить КП
+        </button>
+        <button className="pdf-action" disabled={hasErrors || isPdfBusy} type="button" onClick={onPdf}>
+          <FileDown size={19} />
+          {isPdfBusy ? 'Формируем...' : 'Создать PDF'}
         </button>
       </div>
     </aside>

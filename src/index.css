@@ -1,16 +1,16 @@
 :root {
   --surface: #ffffff;
-  --page: #edf3f8;
-  --soft: #f4f8fb;
-  --line: #dde7ee;
-  --line-strong: #c9d7e1;
-  --text: #405160;
-  --heading: #142331;
-  --muted: #6d7d8a;
-  --accent: #2384a6;
-  --accent-dark: #11617d;
-  --accent-soft: #e7f5fa;
-  --mint: #2e8e6f;
+  --page: #eaf0f6;
+  --soft: #f5f8fc;
+  --line: #dfe6ef;
+  --line-strong: #ccd6e2;
+  --text: #46556b;
+  --heading: #101828;
+  --muted: #7c899b;
+  --accent: #1f5ed7;
+  --accent-dark: #1648ad;
+  --accent-soft: #eef5ff;
+  --mint: #238566;
   --amber: #b96f17;
   --danger: #ba3b3b;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
