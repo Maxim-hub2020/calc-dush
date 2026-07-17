@@ -325,23 +325,5 @@ export const shareQuotePdf = async (quote: Quote): Promise<QuotePdfPreview | nul
     return null
   }
 
-  const file = new File([blob], fileName, { type: 'application/pdf' })
-  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-
-  if (isIos && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({
-        files: [file],
-        title,
-      })
-      return null
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return null
-      }
-    }
-  }
-
   return { fileName, title, url: URL.createObjectURL(blob) }
 }
