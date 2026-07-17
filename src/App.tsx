@@ -223,13 +223,16 @@ function App() {
     setNotice('Позиция продублирована')
   }
 
-  const deletePosition = () => {
+  const deletePosition = (positionId: string) => {
     if (positions.length === 1) return
-    const activeIndex = positions.findIndex((position) => position.id === activePositionId)
-    const nextPositions = positions.filter((position) => position.id !== activePositionId)
+    const deletedIndex = positions.findIndex((position) => position.id === positionId)
+    if (deletedIndex === -1) return
+    const nextPositions = positions.filter((position) => position.id !== positionId)
     setPositions(nextPositions)
-    setActivePositionId(nextPositions[Math.min(activeIndex, nextPositions.length - 1)].id)
-    setNotice('Позиция удалена')
+    if (positionId === activePositionId) {
+      setActivePositionId(nextPositions[Math.min(deletedIndex, nextPositions.length - 1)].id)
+    }
+    setNotice(`Позиция ${deletedIndex + 1} удалена`)
   }
 
   const loadQuoteToCalculator = (quote: Quote) => {
@@ -348,7 +351,7 @@ type CalculatorScreenProps = {
   activePositionId: string
   isPdfBusy: boolean
   onAddPosition: () => void
-  onDeletePosition: () => void
+  onDeletePosition: (id: string) => void
   onDimension: (key: string, value: number) => void
   onDuplicatePosition: () => void
   onForm: (patch: Partial<CalculatorForm>) => void
@@ -598,7 +601,7 @@ type PositionSwitcherProps = {
   activeId: string
   positions: PositionSummary[]
   onAdd: () => void
-  onDelete: () => void
+  onDelete: (id: string) => void
   onDuplicate: () => void
   onSelect: (id: string) => void
 }
@@ -613,10 +616,6 @@ function PositionSwitcher({ activeId, positions, onAdd, onDelete, onDuplicate, o
             <Copy size={17} />
             <span className="sr-only">Дублировать позицию</span>
           </button>
-          <button disabled={positions.length === 1} title="Удалить позицию" type="button" onClick={onDelete}>
-            <Trash2 size={17} />
-            <span className="sr-only">Удалить позицию</span>
-          </button>
           <button className="add-position" type="button" onClick={onAdd}>
             <Plus size={17} />
             Добавить
@@ -624,18 +623,36 @@ function PositionSwitcher({ activeId, positions, onAdd, onDelete, onDuplicate, o
         </div>
       </div>
       <div className="position-strip" aria-label="Позиции коммерческого предложения">
-        {positions.map((position) => (
-          <button
-            className={`${position.id === activeId ? 'position-tab is-active' : 'position-tab'}${position.hasErrors ? ' has-error' : ''}`}
-            key={position.id}
-            type="button"
-            onClick={() => onSelect(position.id)}
-          >
-            <span>Позиция {position.index + 1}</span>
-            <strong>{position.title}</strong>
-            <small>{shortMoney(position.total)} ₽</small>
-          </button>
-        ))}
+        {positions.map((position) => {
+          const canDelete = positions.length > 1
+          const className = [
+            'position-tab',
+            position.id === activeId ? 'is-active' : '',
+            position.hasErrors ? 'has-error' : '',
+            canDelete ? 'can-delete' : '',
+          ].filter(Boolean).join(' ')
+
+          return (
+            <div className={className} key={position.id}>
+              <button className="position-tab-select" type="button" onClick={() => onSelect(position.id)}>
+                <span>Позиция {position.index + 1}</span>
+                <strong>{position.title}</strong>
+                <small>{shortMoney(position.total)} ₽</small>
+              </button>
+              {canDelete ? (
+                <button
+                  aria-label={`Удалить позицию ${position.index + 1}`}
+                  className="position-tab-delete"
+                  title={`Удалить позицию ${position.index + 1}`}
+                  type="button"
+                  onClick={() => onDelete(position.id)}
+                >
+                  <Trash2 size={15} />
+                </button>
+              ) : null}
+            </div>
+          )
+        })}
       </div>
     </section>
   )
