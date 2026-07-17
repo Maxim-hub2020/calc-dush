@@ -13,11 +13,22 @@
   --mint: #2e8e6f;
   --amber: #b96f17;
   --danger: #ba3b3b;
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "SF Pro Display", "Segoe UI", Roboto, Arial, sans-serif;
+  --type-caption: 12px;
+  --type-meta: 13px;
+  --type-label: 14px;
+  --type-body: 15px;
+  --type-control: 16px;
+  --type-section: 18px;
+  --type-title: 24px;
+  --type-amount: 26px;
   color: var(--text);
   background: var(--page);
   font-family: var(--font);
+  font-size: 16px;
   font-synthesis: none;
+  line-height: 1.4;
   letter-spacing: 0;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -45,6 +56,7 @@ button,
 input,
 select {
   font-family: var(--font);
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0;
 }
 
