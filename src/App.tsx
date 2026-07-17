@@ -131,6 +131,39 @@ function App() {
   useEffect(() => saveCatalog(catalog), [catalog])
   useEffect(() => saveQuotes(quotes), [quotes])
   useEffect(() => {
+    setPositions((current) => {
+      let changed = false
+      const next = current.map((position) => {
+        const form = position.form
+        const constructionExists = catalog.constructions.some((item) => item.id === form.constructionId)
+        const glassExists = catalog.glass.some((item) => item.id === form.glassId)
+        const hardwareExists = catalog.hardware.some((item) => item.id === form.hardwareId)
+        const hardwareClassExists = catalog.hardwareClass.some((item) => item.id === form.hardwareClassId)
+
+        if (constructionExists && glassExists && hardwareExists && hardwareClassExists) return position
+
+        const construction = constructionExists
+          ? getConstruction(catalog, form.constructionId)
+          : catalog.constructions[0]
+        changed = true
+
+        return {
+          ...position,
+          form: {
+            ...form,
+            constructionId: construction.id,
+            dimensions: constructionExists ? form.dimensions : createDefaultDimensions(construction),
+            glassId: glassExists ? form.glassId : catalog.glass[0].id,
+            hardwareId: hardwareExists ? form.hardwareId : catalog.hardware[0].id,
+            hardwareClassId: hardwareClassExists ? form.hardwareClassId : catalog.hardwareClass[0].id,
+          },
+        }
+      })
+
+      return changed ? next : current
+    })
+  }, [catalog])
+  useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' })
   }, [activeTab])
   useEffect(() => {
@@ -1082,17 +1115,66 @@ type PricesScreenProps = {
 }
 
 function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
-  const updateOption = (group: 'glass' | 'hardware' | 'hardwareClass', id: string, price: number) => {
+  const updateOption = (
+    group: 'glass' | 'hardware' | 'hardwareClass',
+    id: string,
+    patch: Partial<Pick<PriceOption, 'label' | 'price'>>,
+  ) => {
     onCatalog({
       ...catalog,
-      [group]: catalog[group].map((item) => (item.id === id ? { ...item, price } : item)),
+      [group]: catalog[group].map((item) => (item.id === id ? { ...item, ...patch } : item)),
     })
   }
 
-  const updateConstruction = (id: string, basePrice: number) => {
+  const addOption = (group: 'glass' | 'hardware' | 'hardwareClass') => {
     onCatalog({
       ...catalog,
-      constructions: catalog.constructions.map((item) => (item.id === id ? { ...item, basePrice } : item)),
+      [group]: [
+        ...catalog[group],
+        { id: `custom-${crypto.randomUUID()}`, label: 'Новая позиция', price: 0 },
+      ],
+    })
+  }
+
+  const deleteOption = (group: 'glass' | 'hardware' | 'hardwareClass', id: string) => {
+    if (catalog[group].length <= 1) return
+    onCatalog({ ...catalog, [group]: catalog[group].filter((item) => item.id !== id) })
+  }
+
+  const updateConstruction = (
+    id: string,
+    patch: Partial<Pick<Construction, 'basePrice' | 'shortTitle' | 'title'>>,
+  ) => {
+    onCatalog({
+      ...catalog,
+      constructions: catalog.constructions.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    })
+  }
+
+  const addConstruction = () => {
+    const template = catalog.constructions[0]
+    const label = 'Новая конструкция'
+    onCatalog({
+      ...catalog,
+      constructions: [
+        ...catalog.constructions,
+        {
+          ...template,
+          id: `custom-${crypto.randomUUID()}`,
+          title: label,
+          shortTitle: label,
+          basePrice: 0,
+          fields: template.fields.map((field) => ({ ...field })),
+        },
+      ],
+    })
+  }
+
+  const deleteConstruction = (id: string) => {
+    if (catalog.constructions.length <= 1) return
+    onCatalog({
+      ...catalog,
+      constructions: catalog.constructions.filter((item) => item.id !== id),
     })
   }
 
@@ -1120,38 +1202,53 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
         items={catalog.glass}
         suffix="₽/м²"
         title="Стекло"
-        onChange={(id, value) => updateOption('glass', id, value)}
+        onAdd={() => addOption('glass')}
+        onChange={(id, value) => updateOption('glass', id, { price: value })}
+        onDelete={(id) => deleteOption('glass', id)}
+        onNameChange={(id, value) => updateOption('glass', id, { label: value })}
       />
       <PriceGroup
         items={catalog.hardware}
         suffix="%"
         title="Цвет фурнитуры"
-        onChange={(id, value) => updateOption('hardware', id, value)}
+        onAdd={() => addOption('hardware')}
+        onChange={(id, value) => updateOption('hardware', id, { price: value })}
+        onDelete={(id) => deleteOption('hardware', id)}
+        onNameChange={(id, value) => updateOption('hardware', id, { label: value })}
       />
       <PriceGroup
         items={catalog.hardwareClass}
         suffix="₽"
         title="Класс фурнитуры"
-        onChange={(id, value) => updateOption('hardwareClass', id, value)}
+        onAdd={() => addOption('hardwareClass')}
+        onChange={(id, value) => updateOption('hardwareClass', id, { price: value })}
+        onDelete={(id) => deleteOption('hardwareClass', id)}
+        onNameChange={(id, value) => updateOption('hardwareClass', id, { label: value })}
       />
 
       <section className="section-block">
-        <div className="section-title">
-          <h2>Конструкции</h2>
-          <span>База</span>
+        <div className="section-title price-section-title">
+          <div className="price-section-heading">
+            <h2>Конструкции</h2>
+            <span>Базовая цена</span>
+          </div>
+          <button type="button" onClick={addConstruction}>
+            <Plus size={16} />
+            Добавить
+          </button>
         </div>
         <div className="price-list">
           {catalog.constructions.map((item) => (
-            <label className="price-row" key={item.id}>
-              <span>{item.shortTitle}</span>
-              <input
-                inputMode="numeric"
-                type="number"
-                value={item.basePrice}
-                onChange={(event) => updateConstruction(item.id, Number(event.target.value))}
-              />
-              <small>₽</small>
-            </label>
+            <EditablePriceRow
+              canDelete={catalog.constructions.length > 1}
+              key={item.id}
+              label={item.shortTitle}
+              price={item.basePrice}
+              suffix="₽"
+              onDelete={() => deleteConstruction(item.id)}
+              onLabelChange={(value) => updateConstruction(item.id, { shortTitle: value, title: value })}
+              onPriceChange={(value) => updateConstruction(item.id, { basePrice: value })}
+            />
           ))}
         </div>
       </section>
@@ -1187,30 +1284,93 @@ type PriceGroupProps = {
   suffix: string
   items: PriceOption[]
   onChange: (id: string, value: number) => void
+  onNameChange: (id: string, value: string) => void
+  onAdd: () => void
+  onDelete: (id: string) => void
 }
 
-function PriceGroup({ title, suffix, items, onChange }: PriceGroupProps) {
+function PriceGroup({ title, suffix, items, onChange, onNameChange, onAdd, onDelete }: PriceGroupProps) {
   return (
     <section className="section-block">
-      <div className="section-title">
-        <h2>{title}</h2>
-        <span>{suffix}</span>
+      <div className="section-title price-section-title">
+        <div className="price-section-heading">
+          <h2>{title}</h2>
+          <span>{suffix}</span>
+        </div>
+        <button type="button" onClick={onAdd}>
+          <Plus size={16} />
+          Добавить
+        </button>
       </div>
       <div className="price-list">
         {items.map((item) => (
-          <label className="price-row" key={item.id}>
-            <span>{item.label}</span>
-            <input
-              inputMode="numeric"
-              type="number"
-              value={item.price}
-              onChange={(event) => onChange(item.id, Number(event.target.value))}
-            />
-            <small>{suffix}</small>
-          </label>
+          <EditablePriceRow
+            canDelete={items.length > 1}
+            key={item.id}
+            label={item.label}
+            price={item.price}
+            suffix={suffix}
+            onDelete={() => onDelete(item.id)}
+            onLabelChange={(value) => onNameChange(item.id, value)}
+            onPriceChange={(value) => onChange(item.id, value)}
+          />
         ))}
       </div>
     </section>
+  )
+}
+
+type EditablePriceRowProps = {
+  label: string
+  price: number
+  suffix: string
+  canDelete: boolean
+  onLabelChange: (value: string) => void
+  onPriceChange: (value: number) => void
+  onDelete: () => void
+}
+
+function EditablePriceRow({
+  label,
+  price,
+  suffix,
+  canDelete,
+  onLabelChange,
+  onPriceChange,
+  onDelete,
+}: EditablePriceRowProps) {
+  return (
+    <div className="price-edit-row">
+      <label className="price-name-field">
+        <span className="sr-only">Название позиции</span>
+        <input
+          aria-label={`Название: ${label || 'позиция'}`}
+          value={label}
+          onChange={(event) => onLabelChange(event.target.value)}
+        />
+      </label>
+      <label className="price-value-field">
+        <span className="sr-only">Цена позиции {label}</span>
+        <input
+          aria-label={`Цена: ${label || 'позиция'}`}
+          inputMode="numeric"
+          type="number"
+          value={price}
+          onChange={(event) => onPriceChange(Number(event.target.value))}
+        />
+        <small>{suffix}</small>
+      </label>
+      <button
+        aria-label={`Удалить позицию ${label || 'без названия'}`}
+        className="price-delete"
+        disabled={!canDelete}
+        title={canDelete ? 'Удалить позицию' : 'В категории должна остаться хотя бы одна позиция'}
+        type="button"
+        onClick={onDelete}
+      >
+        <Trash2 size={17} />
+      </button>
+    </div>
   )
 }
 

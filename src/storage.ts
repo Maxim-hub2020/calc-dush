@@ -18,20 +18,17 @@ const writeJson = (key: string, value: unknown) => {
 }
 
 const mergeCatalog = (saved: PricingCatalog): PricingCatalog => {
-  const savedConstructions = new Map(saved.constructions?.map((item) => [item.id, item]))
-  const mergeOptions = <T extends { id: string; price: number }>(defaults: T[], items: T[] = []) => {
-    const savedItems = new Map(items.map((item) => [item.id, item]))
-    return defaults.map((item) => ({ ...item, price: savedItems.get(item.id)?.price ?? item.price }))
+  const mergeItems = <T extends { id: string }>(defaults: T[], items?: T[]) => {
+    if (!Array.isArray(items) || items.length === 0) return defaults
+    const defaultsById = new Map(defaults.map((item) => [item.id, item]))
+    return items.map((item) => ({ ...defaultsById.get(item.id), ...item } as T))
   }
 
   return {
-    constructions: defaultCatalog.constructions.map((item) => ({
-      ...item,
-      basePrice: savedConstructions.get(item.id)?.basePrice ?? item.basePrice,
-    })),
-    glass: mergeOptions(defaultCatalog.glass, saved.glass),
-    hardware: mergeOptions(defaultCatalog.hardware, saved.hardware),
-    hardwareClass: mergeOptions(defaultCatalog.hardwareClass, saved.hardwareClass),
+    constructions: mergeItems(defaultCatalog.constructions, saved.constructions),
+    glass: mergeItems(defaultCatalog.glass, saved.glass),
+    hardware: mergeItems(defaultCatalog.hardware, saved.hardware),
+    hardwareClass: mergeItems(defaultCatalog.hardwareClass, saved.hardwareClass),
     services: { ...defaultCatalog.services, ...saved.services },
   }
 }
