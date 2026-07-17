@@ -12,6 +12,7 @@ export type Construction = {
   title: string
   shortTitle: string
   basePrice: number
+  installationPrice: number
   imageUrl: string
   sketch: 'single' | 'panel-door' | 'panel' | 'niche' | 'corner' | 'corner-plus' | 'double-corner' | 'slider' | 'slider-corner' | 'slider-double' | 'trapezoid'
   fields: DimensionField[]
@@ -24,10 +25,10 @@ export type PriceOption = {
 }
 
 export type ServicePrices = {
-  installation: number
   deliveryBase: number
   deliveryKmRate: number
   discountPercent: number
+  designerPercent: number
   heightSurchargeAfter: number
   heightSurchargePercent: number
 }
@@ -47,6 +48,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Шторка одинарная',
       shortTitle: 'Шторка',
       basePrice: 4000,
+      installationPrice: 5000,
       imageUrl: shower6663,
       sketch: 'single',
       fields: [
@@ -59,6 +61,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Шторка с добором (глухое + дверь)',
       shortTitle: 'Шторка + добор',
       basePrice: 8000,
+      installationPrice: 5000,
       imageUrl: shower6744,
       sketch: 'panel-door',
       fields: [
@@ -72,6 +75,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Перегородка',
       shortTitle: 'Перегородка',
       basePrice: 4000,
+      installationPrice: 5000,
       imageUrl: shower6747,
       sketch: 'panel',
       fields: [
@@ -84,6 +88,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Дверка в нишу одинарная распашная',
       shortTitle: 'Дверка',
       basePrice: 4000,
+      installationPrice: 5000,
       imageUrl: shower6745,
       sketch: 'niche',
       fields: [
@@ -96,6 +101,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Дверка в нишу с добором (глухое + дверь)',
       shortTitle: 'Ниша + добор',
       basePrice: 8000,
+      installationPrice: 5000,
       imageUrl: shower6746,
       sketch: 'panel-door',
       fields: [
@@ -109,6 +115,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Г-образная угловая (глухое + дверь)',
       shortTitle: 'Г-образная',
       basePrice: 8000,
+      installationPrice: 5000,
       imageUrl: shower6748,
       sketch: 'corner',
       fields: [
@@ -122,6 +129,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Г-образная угловая (глухое + дверь + добор)',
       shortTitle: 'Угол + добор',
       basePrice: 12000,
+      installationPrice: 5000,
       imageUrl: shower6749,
       sketch: 'corner-plus',
       fields: [
@@ -136,6 +144,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Г-образная угловая распашная (2 глухих + 2 двери)',
       shortTitle: 'Угол 4 стекла',
       basePrice: 16000,
+      installationPrice: 5000,
       imageUrl: shower6750,
       sketch: 'double-corner',
       fields: [
@@ -151,6 +160,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Раздвижка прямая (2 стекла)',
       shortTitle: 'Раздвижка',
       basePrice: 8000,
+      installationPrice: 5000,
       imageUrl: shower6751,
       sketch: 'slider',
       fields: [
@@ -164,6 +174,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Раздвижка угловая (3 стекла, одна дверка)',
       shortTitle: 'Угл. раздвижка',
       basePrice: 12000,
+      installationPrice: 5000,
       imageUrl: shower6752,
       sketch: 'slider-corner',
       fields: [
@@ -178,6 +189,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Раздвижка угловая (4 стекла, две дверки)',
       shortTitle: 'Раздвижка 4',
       basePrice: 16000,
+      installationPrice: 5000,
       imageUrl: shower6753,
       sketch: 'slider-double',
       fields: [
@@ -193,6 +205,7 @@ export const defaultCatalog: PricingCatalog = {
       title: 'Трапеция (3 стекла)',
       shortTitle: 'Трапеция',
       basePrice: 12000,
+      installationPrice: 5000,
       imageUrl: shower6754,
       sketch: 'trapezoid',
       fields: [
@@ -221,10 +234,10 @@ export const defaultCatalog: PricingCatalog = {
     { id: 'premium', label: 'Премиум', price: 9600 },
   ],
   services: {
-    installation: 5000,
-    deliveryBase: 4000,
-    deliveryKmRate: 70,
+    deliveryBase: 1500,
+    deliveryKmRate: 50,
     discountPercent: 5,
+    designerPercent: 10,
     heightSurchargeAfter: 2200,
     heightSurchargePercent: 30,
   },

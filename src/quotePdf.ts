@@ -90,10 +90,11 @@ const itemConfigurationRows = (item: QuoteItem, construction: Construction): Arr
     'Доставка',
     item.form.delivery
       ? item.form.deliveryZone === 'outside'
-        ? `За МКАД, ${item.form.deliveryKm} км`
-        : 'В пределах МКАД'
+        ? `За городом, ${item.form.deliveryKm} км`
+        : 'По городу'
       : 'Не включена',
   ],
+  ['Скидка', item.form.discountEnabled ? `${item.form.discountPercent}%` : 'Не применена'],
 ]
 
 const buildQuoteItemBlock = (item: QuoteItem, index: number): Content => {

@@ -84,7 +84,14 @@ type PositionSummary = {
   hasErrors: boolean
 }
 
-const customerFields: Array<keyof CalculatorForm> = ['clientName', 'clientPhone', 'note']
+const sharedFormFields: Array<keyof CalculatorForm> = [
+  'clientName',
+  'clientPhone',
+  'note',
+  'discountEnabled',
+  'discountPercent',
+  'designerEnabled',
+]
 
 const createDraftPosition = (catalog: PricingCatalog, customer?: CalculatorForm): DraftPosition => {
   const form = createInitialForm(catalog)
@@ -92,6 +99,9 @@ const createDraftPosition = (catalog: PricingCatalog, customer?: CalculatorForm)
     form.clientName = customer.clientName
     form.clientPhone = customer.clientPhone
     form.note = customer.note
+    form.discountEnabled = customer.discountEnabled
+    form.discountPercent = customer.discountPercent
+    form.designerEnabled = customer.designerEnabled
   }
   return { id: crypto.randomUUID(), form }
 }
@@ -177,7 +187,7 @@ function App() {
   }, [pdfPreview])
 
   const updateForm = (patch: Partial<CalculatorForm>) => {
-    const sharedPatch = customerFields.reduce<Partial<CalculatorForm>>((next, key) => {
+    const sharedPatch = sharedFormFields.reduce<Partial<CalculatorForm>>((next, key) => {
       if (key in patch) Object.assign(next, { [key]: patch[key] })
       return next
     }, {})
@@ -624,7 +634,7 @@ function CalculatorScreen({
           <ToggleRow
             checked={form.installation}
             label="Монтаж"
-            value={money(catalog.services.installation)}
+            value={money(construction.installationPrice)}
             onChange={(installation) => onForm({ installation })}
           />
           <ToggleRow
@@ -641,19 +651,19 @@ function CalculatorScreen({
                   type="button"
                   onClick={() => onForm({ deliveryZone: 'inside', deliveryKm: 0 })}
                 >
-                  МКАД
+                  По городу
                 </button>
                 <button
                   className={form.deliveryZone === 'outside' ? 'is-active' : ''}
                   type="button"
                   onClick={() => onForm({ deliveryZone: 'outside' })}
                 >
-                  За МКАД
+                  За городом
                 </button>
               </div>
               {form.deliveryZone === 'outside' ? (
                 <label className="km-field">
-                  <span>Км от МКАД</span>
+                  <span>Км за городом</span>
                   <input
                     inputMode="numeric"
                     min={0}
@@ -663,6 +673,33 @@ function CalculatorScreen({
                   />
                 </label>
               ) : null}
+            </div>
+          ) : null}
+          <ToggleRow
+            checked={form.designerEnabled}
+            label="Дизайнер"
+            value={form.designerEnabled ? `Надбавка +${catalog.services.designerPercent}%` : 'Без надбавки'}
+            onChange={(designerEnabled) => onForm({ designerEnabled })}
+          />
+          <ToggleRow
+            checked={form.discountEnabled}
+            label="Скидка"
+            value={form.discountEnabled ? `${form.discountPercent}%` : 'Без скидки'}
+            onChange={(discountEnabled) => onForm({ discountEnabled })}
+          />
+          {form.discountEnabled ? (
+            <div className="delivery-box service-number-box">
+              <label className="km-field">
+                <span>Размер скидки, %</span>
+                <input
+                  inputMode="decimal"
+                  max={100}
+                  min={0}
+                  type="number"
+                  value={form.discountPercent}
+                  onChange={(event) => onForm({ discountPercent: Number(event.target.value) })}
+                />
+              </label>
             </div>
           ) : null}
         </div>
@@ -1143,7 +1180,7 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
 
   const updateConstruction = (
     id: string,
-    patch: Partial<Pick<Construction, 'basePrice' | 'shortTitle' | 'title'>>,
+    patch: Partial<Pick<Construction, 'basePrice' | 'installationPrice' | 'shortTitle' | 'title'>>,
   ) => {
     onCatalog({
       ...catalog,
@@ -1164,6 +1201,7 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
           title: label,
           shortTitle: label,
           basePrice: 0,
+          installationPrice: 0,
           fields: template.fields.map((field) => ({ ...field })),
         },
       ],
@@ -1230,7 +1268,7 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
         <div className="section-title price-section-title">
           <div className="price-section-heading">
             <h2>Конструкции</h2>
-            <span>Базовая цена</span>
+            <span>База и монтаж</span>
           </div>
           <button type="button" onClick={addConstruction}>
             <Plus size={16} />
@@ -1239,15 +1277,16 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
         </div>
         <div className="price-list">
           {catalog.constructions.map((item) => (
-            <EditablePriceRow
+            <ConstructionPriceRow
+              basePrice={item.basePrice}
               canDelete={catalog.constructions.length > 1}
+              installationPrice={item.installationPrice}
               key={item.id}
               label={item.shortTitle}
-              price={item.basePrice}
-              suffix="₽"
+              onBasePriceChange={(value) => updateConstruction(item.id, { basePrice: value })}
               onDelete={() => deleteConstruction(item.id)}
+              onInstallationPriceChange={(value) => updateConstruction(item.id, { installationPrice: value })}
               onLabelChange={(value) => updateConstruction(item.id, { shortTitle: value, title: value })}
-              onPriceChange={(value) => updateConstruction(item.id, { basePrice: value })}
             />
           ))}
         </div>
@@ -1259,10 +1298,10 @@ function PricesScreen({ catalog, onCatalog, onReset }: PricesScreenProps) {
           <span>Руб.</span>
         </div>
         <div className="price-list">
-          <ServiceRow label="Монтаж" value={catalog.services.installation} onChange={(value) => updateService('installation', value)} />
-          <ServiceRow label="Доставка" value={catalog.services.deliveryBase} onChange={(value) => updateService('deliveryBase', value)} />
-          <ServiceRow label="За МКАД, км" value={catalog.services.deliveryKmRate} onChange={(value) => updateService('deliveryKmRate', value)} />
-          <ServiceRow label="Скидка, %" value={catalog.services.discountPercent} onChange={(value) => updateService('discountPercent', value)} />
+          <ServiceRow label="Доставка по городу" value={catalog.services.deliveryBase} onChange={(value) => updateService('deliveryBase', value)} />
+          <ServiceRow label="За городом, ₽/км" value={catalog.services.deliveryKmRate} onChange={(value) => updateService('deliveryKmRate', value)} />
+          <ServiceRow label="Скидка по умолчанию, %" value={catalog.services.discountPercent} onChange={(value) => updateService('discountPercent', value)} />
+          <ServiceRow label="Дизайнер, %" value={catalog.services.designerPercent} onChange={(value) => updateService('designerPercent', value)} />
           <ServiceRow
             label="Высота +%, после"
             value={catalog.services.heightSurchargeAfter}
@@ -1365,6 +1404,77 @@ function EditablePriceRow({
         className="price-delete"
         disabled={!canDelete}
         title={canDelete ? 'Удалить позицию' : 'В категории должна остаться хотя бы одна позиция'}
+        type="button"
+        onClick={onDelete}
+      >
+        <Trash2 size={17} />
+      </button>
+    </div>
+  )
+}
+
+type ConstructionPriceRowProps = {
+  label: string
+  basePrice: number
+  installationPrice: number
+  canDelete: boolean
+  onLabelChange: (value: string) => void
+  onBasePriceChange: (value: number) => void
+  onInstallationPriceChange: (value: number) => void
+  onDelete: () => void
+}
+
+function ConstructionPriceRow({
+  label,
+  basePrice,
+  installationPrice,
+  canDelete,
+  onLabelChange,
+  onBasePriceChange,
+  onInstallationPriceChange,
+  onDelete,
+}: ConstructionPriceRowProps) {
+  return (
+    <div className="construction-price-row">
+      <label className="price-name-field">
+        <span className="sr-only">Название конструкции</span>
+        <input
+          aria-label={`Название конструкции: ${label || 'без названия'}`}
+          value={label}
+          onChange={(event) => onLabelChange(event.target.value)}
+        />
+      </label>
+      <label className="construction-price-field">
+        <span>База</span>
+        <div className="price-value-field">
+          <input
+            aria-label={`Базовая цена: ${label || 'конструкция'}`}
+            inputMode="numeric"
+            type="number"
+            value={basePrice}
+            onChange={(event) => onBasePriceChange(Number(event.target.value))}
+          />
+          <small>₽</small>
+        </div>
+      </label>
+      <label className="construction-price-field">
+        <span>Монтаж</span>
+        <div className="price-value-field">
+          <input
+            aria-label={`Стоимость монтажа: ${label || 'конструкция'}`}
+            inputMode="numeric"
+            type="number"
+            value={installationPrice}
+            onChange={(event) => onInstallationPriceChange(Number(event.target.value))}
+          />
+          <small>₽</small>
+        </div>
+      </label>
+      <button
+        aria-label={`Удалить конструкцию ${label || 'без названия'}`}
+        className="price-delete"
+        disabled={!canDelete}
+        title={canDelete ? 'Удалить конструкцию' : 'Должна остаться хотя бы одна конструкция'}
         type="button"
         onClick={onDelete}
       >

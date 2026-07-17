@@ -24,12 +24,28 @@ const mergeCatalog = (saved: PricingCatalog): PricingCatalog => {
     return items.map((item) => ({ ...defaultsById.get(item.id), ...item } as T))
   }
 
+  const savedServices = saved.services as Partial<PricingCatalog['services']> & { installation?: number }
+  const legacyInstallationPrice = Number.isFinite(savedServices.installation)
+    ? Number(savedServices.installation)
+    : 5000
+  const constructions = mergeItems(defaultCatalog.constructions, saved.constructions).map((item) => ({
+    ...item,
+    installationPrice: Number.isFinite(item.installationPrice) ? item.installationPrice : legacyInstallationPrice,
+  }))
+  const services = { ...defaultCatalog.services, ...savedServices }
+  delete services.installation
+
+  if (savedServices.deliveryBase === 4000 && savedServices.deliveryKmRate === 70) {
+    services.deliveryBase = 1500
+    services.deliveryKmRate = 50
+  }
+
   return {
-    constructions: mergeItems(defaultCatalog.constructions, saved.constructions),
+    constructions,
     glass: mergeItems(defaultCatalog.glass, saved.glass),
     hardware: mergeItems(defaultCatalog.hardware, saved.hardware),
     hardwareClass: mergeItems(defaultCatalog.hardwareClass, saved.hardwareClass),
-    services: { ...defaultCatalog.services, ...saved.services },
+    services,
   }
 }
 

@@ -12,6 +12,9 @@ export type CalculatorForm = {
   delivery: boolean
   deliveryZone: DeliveryZone
   deliveryKm: number
+  discountEnabled: boolean
+  discountPercent: number
+  designerEnabled: boolean
   clientName: string
   clientPhone: string
   note: string
@@ -26,6 +29,7 @@ export type CalculationResult = {
   product: number
   installation: number
   delivery: number
+  designer: number
   subtotal: number
   discount: number
   total: number
@@ -97,6 +101,9 @@ export const createInitialForm = (catalog: PricingCatalog): CalculatorForm => {
     delivery: false,
     deliveryZone: 'inside',
     deliveryKm: 0,
+    discountEnabled: false,
+    discountPercent: catalog.services.discountPercent,
+    designerEnabled: false,
     clientName: '',
     clientPhone: '',
     note: '',
@@ -141,21 +148,38 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
   const applySurcharge = (value: number) => roundToTen(value * surchargeFactor)
 
   const baseProduct = Object.keys(errors).length > 0 ? 0 : ceilToTen(glassPrice + hardwarePrice) + construction.basePrice
-  const product = applySurcharge(baseProduct)
-  const installation = form.installation ? applySurcharge(catalog.services.installation) : 0
+  const baseProductWithSurcharge = applySurcharge(baseProduct)
+  const baseInstallation = form.installation ? construction.installationPrice : 0
   const deliveryBase =
     form.delivery && form.deliveryZone === 'outside'
       ? catalog.services.deliveryBase + Math.max(0, Number(form.deliveryKm) || 0) * catalog.services.deliveryKmRate
       : catalog.services.deliveryBase
-  const delivery = form.delivery ? applySurcharge(deliveryBase) : 0
+  const baseDelivery = form.delivery ? deliveryBase : 0
+  const designerPercent = Math.max(0, Number(catalog.services.designerPercent) || 0)
+  const designerFactor = form.designerEnabled ? 1 + designerPercent / 100 : 1
+  const product = roundToTen(baseProductWithSurcharge * designerFactor)
+  const installation = roundToTen(baseInstallation * designerFactor)
+  const delivery = roundToTen(baseDelivery * designerFactor)
   const subtotal = product + installation + delivery
-  const total = roundToTen(subtotal - (subtotal / 100) * catalog.services.discountPercent)
+  const designer = subtotal - baseProductWithSurcharge - baseInstallation - baseDelivery
+  const discountPercent = Math.min(100, Math.max(0, Number(form.discountPercent) || 0))
+  const total = form.discountEnabled
+    ? roundToTen(subtotal - (subtotal / 100) * discountPercent)
+    : subtotal
   const discount = subtotal - total
+  const lines = [
+    { label: 'Стоимость изделий', value: product },
+    { label: 'Монтаж', value: installation },
+    { label: 'Доставка', value: delivery },
+    { label: 'Сумма без скидки', value: subtotal },
+  ]
+  if (form.discountEnabled) lines.push({ label: `Скидка ${discountPercent}%`, value: discount })
 
   return {
     product,
     installation,
     delivery,
+    designer,
     subtotal,
     discount,
     total,
@@ -163,35 +187,41 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
     hardwarePrice,
     hasSurcharge,
     errors,
-    lines: [
-      { label: 'Стоимость изделий', value: product },
-      { label: 'Монтаж', value: installation },
-      { label: 'Доставка', value: delivery },
-      { label: 'Сумма без скидки', value: subtotal },
-      { label: `Скидка ${catalog.services.discountPercent}%`, value: discount },
-    ],
+    lines,
   }
 }
 
 export const combineCalculationResults = (results: CalculationResult[]): CalculationResult => {
   const sum = (pick: (result: CalculationResult) => number) => results.reduce((total, result) => total + pick(result), 0)
-  const firstLines = results[0]?.lines ?? []
+  const product = sum((result) => result.product)
+  const installation = sum((result) => result.installation)
+  const delivery = sum((result) => result.delivery)
+  const subtotal = sum((result) => result.subtotal)
+  const discount = sum((result) => result.discount)
+  const lines = [
+    { label: 'Стоимость изделий', value: product },
+    { label: 'Монтаж', value: installation },
+    { label: 'Доставка', value: delivery },
+    { label: 'Сумма без скидки', value: subtotal },
+  ]
+  const discountLabel = results
+    .flatMap((result) => result.lines)
+    .find((line) => line.label.startsWith('Скидка'))?.label
+  if (discount > 0) lines.push({ label: discountLabel ?? 'Скидка', value: discount })
 
   return {
-    product: sum((result) => result.product),
-    installation: sum((result) => result.installation),
-    delivery: sum((result) => result.delivery),
-    subtotal: sum((result) => result.subtotal),
-    discount: sum((result) => result.discount),
+    product,
+    installation,
+    delivery,
+    designer: sum((result) => result.designer),
+    subtotal,
+    discount,
     total: sum((result) => result.total),
     glassArea: sum((result) => result.glassArea),
     hardwarePrice: sum((result) => result.hardwarePrice),
     hasSurcharge: results.some((result) => result.hasSurcharge),
     errors: {},
-    lines: firstLines.map((line, index) => ({
-      label: line.label,
-      value: results.reduce((total, result) => total + (result.lines[index]?.value ?? 0), 0),
-    })),
+    lines,
   }
 }
 
