@@ -231,8 +231,12 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
   const hasSurcharge = height > catalog.services.heightSurchargeAfter
   const surchargeFactor = hasSurcharge ? 1 + catalog.services.heightSurchargePercent / 100 : 1
   const applySurcharge = (value: number) => roundToTen(value * surchargeFactor)
+  const productMarkupFactor = 1 + Math.max(0, Number(catalog.services.productMarkupPercent) || 0) / 100
+  const hardwareMarkupFactor = 1 + Math.max(0, Number(catalog.services.hardwareMarkupPercent) || 0) / 100
 
-  const baseProduct = Object.keys(errors).length > 0 ? 0 : ceilToTen(glassPrice + hardwarePrice) + construction.basePrice
+  const baseProduct = Object.keys(errors).length > 0
+    ? 0
+    : ceilToTen((glassPrice + construction.basePrice) * productMarkupFactor + hardwarePrice * hardwareMarkupFactor)
   const baseProductWithSurcharge = applySurcharge(baseProduct)
   const baseInstallation = form.installation ? construction.installationPrice : 0
   const deliveryBase =

@@ -2041,6 +2041,7 @@ type PriceSectionId =
   | 'hardwareClass'
   | 'constructions'
   | 'services'
+  | 'showerSettings'
   | 'mirrorMaterials'
   | 'mirrorServices'
   | 'mirrorSettings'
@@ -2276,8 +2277,6 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onMirrorCatalog, onRe
           <div className="price-list price-accordion-body" id="price-services">
             <ServiceRow label="Доставка по городу" value={catalog.services.deliveryBase} onChange={(value) => updateService('deliveryBase', value)} />
             <ServiceRow label="За городом, ₽/км" value={catalog.services.deliveryKmRate} onChange={(value) => updateService('deliveryKmRate', value)} />
-            <ServiceRow label="Скидка по умолчанию, %" value={catalog.services.discountPercent} onChange={(value) => updateService('discountPercent', value)} />
-            <ServiceRow label="Дизайнер, %" value={catalog.services.designerPercent} onChange={(value) => updateService('designerPercent', value)} />
             <ServiceRow
               label="Высота +%, после"
               value={catalog.services.heightSurchargeAfter}
@@ -2288,6 +2287,24 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onMirrorCatalog, onRe
               value={catalog.services.heightSurchargePercent}
               onChange={(value) => updateService('heightSurchargePercent', value)}
             />
+          </div>
+        ) : null}
+      </section>
+
+      <section className={openSection === 'showerSettings' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+        <PriceAccordionHeader
+          controlsId="price-shower-settings"
+          isOpen={openSection === 'showerSettings'}
+          meta="Наценки и комиссии"
+          title="Настройки душевых"
+          onToggle={() => toggleSection('showerSettings')}
+        />
+        {openSection === 'showerSettings' ? (
+          <div className="price-list price-accordion-body" id="price-shower-settings">
+            <ServiceRow label="Наценка на изделие, %" value={catalog.services.productMarkupPercent} onChange={(value) => updateService('productMarkupPercent', value)} />
+            <ServiceRow label="Наценка на фурнитуру, %" value={catalog.services.hardwareMarkupPercent} onChange={(value) => updateService('hardwareMarkupPercent', value)} />
+            <ServiceRow label="Дизайнер, %" value={catalog.services.designerPercent} onChange={(value) => updateService('designerPercent', value)} />
+            <ServiceRow label="Скидка по умолчанию, %" value={catalog.services.discountPercent} onChange={(value) => updateService('discountPercent', value)} />
           </div>
         ) : null}
       </section>

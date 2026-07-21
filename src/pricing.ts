@@ -27,6 +27,8 @@ export type PriceOption = {
 export type ServicePrices = {
   deliveryBase: number
   deliveryKmRate: number
+  productMarkupPercent: number
+  hardwareMarkupPercent: number
   discountPercent: number
   designerPercent: number
   heightSurchargeAfter: number
@@ -236,6 +238,8 @@ export const defaultCatalog: PricingCatalog = {
   services: {
     deliveryBase: 1500,
     deliveryKmRate: 50,
+    productMarkupPercent: 0,
+    hardwareMarkupPercent: 0,
     discountPercent: 5,
     designerPercent: 10,
     heightSurchargeAfter: 2200,
