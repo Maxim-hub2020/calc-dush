@@ -136,12 +136,10 @@ export const calculateMirrorQuote = (catalog: MirrorPricingCatalog, form: Mirror
   const total = form.discountEnabled ? roundToTen(subtotal * (1 - discountPercent / 100)) : subtotal
   const discount = subtotal - total
   const lines = [
-    { label: 'Стоимость изделий', value: product },
-    { label: 'Работы и монтаж', value: installation },
+    { label: 'Стоимость изделия', value: product + installation },
     { label: 'Доставка', value: delivery },
-    { label: 'Сумма без скидки', value: subtotal },
   ]
-  if (form.discountEnabled) lines.push({ label: `Скидка ${discountPercent}%`, value: discount })
+  if (discount > 0) lines.push({ label: `Скидка ${discountPercent}%`, value: discount })
 
   return {
     product,

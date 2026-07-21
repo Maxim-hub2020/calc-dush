@@ -31,14 +31,17 @@ import {
   createQuote,
   getConstruction,
   getOption,
+  getPublicProductPrice,
   getQuoteItemTitle,
   getQuoteItems,
   isMirrorQuoteItem,
   money,
   resetDimensionsForConstruction,
   shortMoney,
+  updateQuoteManually,
   type CalculatorForm,
   type CalculationResult,
+  type ManualQuotePatch,
   type Quote,
   type QuoteDraftItem,
 } from './calculator'
@@ -50,8 +53,6 @@ import {
   getMirrorMaterial,
   getMirrorService,
   getMirrorTitle,
-  mirrorArea,
-  mirrorPerimeter,
   type MirrorForm,
 } from './mirrorCalculator'
 import {
@@ -473,6 +474,12 @@ function App() {
     setQuotes((current) => current.filter((quote) => quote.id !== id))
   }
 
+  const saveManualQuote = (id: string, patch: ManualQuotePatch) => {
+    setQuotes((current) => current.map((quote) => quote.id === id ? updateQuoteManually(quote, patch) : quote))
+    const quote = quotes.find((item) => item.id === id)
+    setNotice(`${quote?.number ?? 'КП'} обновлено вручную`)
+  }
+
   const resetPrices = () => {
     const nextCatalog = resetCatalog()
     const nextMirrorCatalog = resetMirrorCatalog()
@@ -588,6 +595,7 @@ function App() {
             pdfQuoteId={pdfQuoteId}
             onDelete={deleteQuote}
             onLoad={loadQuoteToCalculator}
+            onManualSave={saveManualQuote}
             onPdf={(quote) => void downloadQuotePdf(quote)}
             onStatus={updateQuoteStatus}
           />
@@ -1067,7 +1075,7 @@ function MirrorCalculatorScreen({
             <section className="section-block">
               <div className="section-title">
                 <h2>Размер зеркала</h2>
-                <span>{mirrorArea(form).toFixed(2)} м²</span>
+                <span>мм</span>
               </div>
               <div className="dimension-list mirror-dimensions">
                 <label className="field-row">
@@ -1094,10 +1102,6 @@ function MirrorCalculatorScreen({
                   />
                   {result.errors.height ? <em>{result.errors.height}</em> : null}
                 </label>
-              </div>
-              <div className="mirror-metrics">
-                <span>Площадь <strong>{mirrorArea(form).toFixed(2)} м²</strong></span>
-                <span>Периметр <strong>{mirrorPerimeter(form).toFixed(2)} м.п.</strong></span>
               </div>
             </section>
           ) : null}
@@ -1254,10 +1258,6 @@ function MirrorCalculatorScreen({
             <span>{material.label}</span>
           </figcaption>
         </figure>
-        <div className="visualization-specs">
-          <div><span>Площадь</span><strong>{mirrorArea(form).toFixed(2)} м²</strong></div>
-          <div><span>Работы</span><strong>{form.options.length}</strong></div>
-        </div>
         <div className="visualization-guarantee">
           <ShieldCheck size={18} aria-hidden="true" />
           <span>Размеры и особенности монтажа уточняются после замера</span>
@@ -1513,6 +1513,7 @@ function SummaryDock({ result, orderResult, positionCount, positionIndex, hasErr
     <aside className="summary-dock">
       <div className="summary-headline">
         <span>Предварительная стоимость</span>
+        {orderResult.discount > 0 ? <del>{money(orderResult.subtotal)}</del> : null}
         <strong>{money(orderResult.total)}</strong>
         <small>
           Позиция {positionIndex + 1}: {money(result.total)}
@@ -1554,12 +1555,14 @@ type ArchiveScreenProps = {
   pdfQuoteId: string
   onDelete: (id: string) => void
   onLoad: (quote: Quote, itemId?: string) => void
+  onManualSave: (id: string, patch: ManualQuotePatch) => void
   onPdf: (quote: Quote) => void
   onStatus: (id: string, status: Quote['status']) => void
 }
 
-function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }: ArchiveScreenProps) {
+function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onPdf, onStatus }: ArchiveScreenProps) {
   const [query, setQuery] = useState('')
+  const [manualQuote, setManualQuote] = useState<Quote | null>(null)
   const normalized = query.trim().toLowerCase()
   const filtered = quotes.filter((quote) => {
     const items = getQuoteItems(quote)
@@ -1643,7 +1646,11 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
             <div className="quote-actions">
               <button type="button" onClick={() => onLoad(quote)}>
                 <Pencil size={16} />
-                Редактировать
+                Калькулятор
+              </button>
+              <button type="button" onClick={() => setManualQuote(quote)}>
+                <Settings2 size={16} />
+                Изменить КП
               </button>
               <button disabled={pdfQuoteId === quote.id} type="button" onClick={() => onPdf(quote)}>
                 <FileDown size={16} />
@@ -1663,6 +1670,197 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onPdf, onStatus }
             <strong>КП не найдены</strong>
           </div>
         ) : null}
+      </section>
+      {manualQuote ? (
+        <QuoteEditorDialog
+          quote={manualQuote}
+          onClose={() => setManualQuote(null)}
+          onSave={(patch) => {
+            onManualSave(manualQuote.id, patch)
+            setManualQuote(null)
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+type QuoteEditorDialogProps = {
+  quote: Quote
+  onClose: () => void
+  onSave: (patch: ManualQuotePatch) => void
+}
+
+function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
+  const [draft, setDraft] = useState<ManualQuotePatch>(() => ({
+    clientName: quote.form.clientName,
+    clientPhone: quote.form.clientPhone,
+    note: quote.form.note,
+    discountEnabled: quote.form.discountEnabled,
+    discountPercent: quote.form.discountPercent,
+    items: getQuoteItems(quote).map((item) => ({
+      id: item.id,
+      title: getQuoteItemTitle(item),
+      product: getPublicProductPrice(item.result),
+      delivery: item.result.delivery,
+    })),
+  }))
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [])
+
+  const updateItem = (id: string, patch: Partial<ManualQuotePatch['items'][number]>) => {
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item) => item.id === id ? { ...item, ...patch } : item),
+    }))
+  }
+
+  const subtotal = draft.items.reduce((sum, item) => (
+    sum + Math.max(0, Number(item.product) || 0) + Math.max(0, Number(item.delivery) || 0)
+  ), 0)
+  const discountPercent = Math.min(100, Math.max(0, Number(draft.discountPercent) || 0))
+  const total = draft.discountEnabled
+    ? draft.items.reduce((sum, item) => {
+        const itemSubtotal = Math.max(0, Number(item.product) || 0) + Math.max(0, Number(item.delivery) || 0)
+        return sum + Math.round(itemSubtotal * (1 - discountPercent / 100) / 10) * 10
+      }, 0)
+    : subtotal
+  const hasDiscount = total < subtotal
+
+  return (
+    <div className="quote-editor-backdrop">
+      <section aria-labelledby="quote-editor-title" aria-modal="true" className="quote-editor-dialog" role="dialog">
+        <header>
+          <div>
+            <span>{quote.number}</span>
+            <h2 id="quote-editor-title">Редактирование КП</h2>
+          </div>
+          <button aria-label="Закрыть редактор КП" title="Закрыть" type="button" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="quote-editor-body">
+          <section className="quote-editor-section">
+            <div className="quote-editor-section-title">
+              <h3>Клиент</h3>
+              <span>Данные в PDF</span>
+            </div>
+            <div className="client-grid">
+              <label className="text-field">
+                <span>Имя</span>
+                <input
+                  value={draft.clientName}
+                  onChange={(event) => setDraft((current) => ({ ...current, clientName: event.target.value }))}
+                />
+              </label>
+              <label className="text-field">
+                <span>Телефон</span>
+                <input
+                  value={draft.clientPhone}
+                  onChange={(event) => setDraft((current) => ({ ...current, clientPhone: event.target.value }))}
+                />
+              </label>
+              <label className="text-field is-wide">
+                <span>Комментарий</span>
+                <input
+                  value={draft.note}
+                  onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))}
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="quote-editor-section">
+            <div className="quote-editor-section-title">
+              <h3>Позиции</h3>
+              <span>{draft.items.length}</span>
+            </div>
+            <div className="manual-quote-items">
+              {draft.items.map((item, index) => (
+                <div className="manual-quote-item" key={item.id}>
+                  <span className="manual-quote-index">{index + 1}</span>
+                  <label className="text-field manual-quote-title">
+                    <span>Наименование</span>
+                    <input value={item.title} onChange={(event) => updateItem(item.id, { title: event.target.value })} />
+                  </label>
+                  <label className="manual-money-field">
+                    <span>Стоимость изделия</span>
+                    <span className="manual-money-input">
+                      <input
+                        inputMode="numeric"
+                        min={0}
+                        type="number"
+                        value={item.product}
+                        onChange={(event) => updateItem(item.id, { product: Number(event.target.value) })}
+                      />
+                      <small>₽</small>
+                    </span>
+                  </label>
+                  <label className="manual-money-field">
+                    <span>Доставка</span>
+                    <span className="manual-money-input">
+                      <input
+                        inputMode="numeric"
+                        min={0}
+                        type="number"
+                        value={item.delivery}
+                        onChange={(event) => updateItem(item.id, { delivery: Number(event.target.value) })}
+                      />
+                      <small>₽</small>
+                    </span>
+                  </label>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="quote-editor-section quote-editor-discount">
+            <ToggleRow
+              checked={draft.discountEnabled}
+              label="Скидка"
+              value={draft.discountEnabled ? `${discountPercent}%` : 'Не применяется'}
+              onChange={(discountEnabled) => setDraft((current) => ({ ...current, discountEnabled }))}
+            />
+            {draft.discountEnabled ? (
+              <label className="manual-money-field discount-field">
+                <span>Размер скидки</span>
+                <span className="manual-money-input">
+                  <input
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    type="number"
+                    value={draft.discountPercent}
+                    onChange={(event) => setDraft((current) => ({ ...current, discountPercent: Number(event.target.value) }))}
+                  />
+                  <small>%</small>
+                </span>
+              </label>
+            ) : null}
+            <div className={hasDiscount ? 'manual-total has-discount' : 'manual-total'}>
+              <span>Итого</span>
+              <div>
+                {hasDiscount ? <del>{money(subtotal)}</del> : null}
+                <strong>{money(total)}</strong>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <footer>
+          <button type="button" onClick={onClose}>Отмена</button>
+          <button className="primary-action" type="button" onClick={() => onSave(draft)}>
+            <Save size={18} />
+            Сохранить изменения
+          </button>
+        </footer>
       </section>
     </div>
   )

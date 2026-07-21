@@ -103,6 +103,22 @@ export type MirrorQuoteDraftItem = {
 
 export type QuoteDraftItem = ShowerQuoteDraftItem | MirrorQuoteDraftItem
 
+export type ManualQuoteItemPatch = {
+  id: string
+  title: string
+  product: number
+  delivery: number
+}
+
+export type ManualQuotePatch = {
+  clientName: string
+  clientPhone: string
+  note: string
+  discountEnabled: boolean
+  discountPercent: number
+  items: ManualQuoteItemPatch[]
+}
+
 const roundToTen = (value: number) => Math.round(value / 10) * 10
 const ceilToTen = (value: number) => Math.ceil(value / 10) * 10
 
@@ -117,6 +133,23 @@ export const shortMoney = (value: number) =>
   new Intl.NumberFormat('ru-RU', {
     maximumFractionDigits: 0,
   }).format(Number.isFinite(value) ? value : 0)
+
+export const getPublicProductPrice = (result: CalculationResult) => result.product + result.installation
+
+export const buildCalculationLines = (
+  product: number,
+  installation: number,
+  delivery: number,
+  discount: number,
+  discountPercent: number,
+): CalculationLine[] => {
+  const lines: CalculationLine[] = [
+    { label: 'Стоимость изделия', value: product + installation },
+    { label: 'Доставка', value: delivery },
+  ]
+  if (discount > 0) lines.push({ label: `Скидка ${discountPercent}%`, value: discount })
+  return lines
+}
 
 export const findById = <T extends { id: string }>(items: T[], id: string, fallback: T) =>
   items.find((item) => item.id === id) ?? fallback
@@ -207,13 +240,7 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
     ? roundToTen(subtotal - (subtotal / 100) * discountPercent)
     : subtotal
   const discount = subtotal - total
-  const lines = [
-    { label: 'Стоимость изделий', value: product },
-    { label: 'Работы и монтаж', value: installation },
-    { label: 'Доставка', value: delivery },
-    { label: 'Сумма без скидки', value: subtotal },
-  ]
-  if (form.discountEnabled) lines.push({ label: `Скидка ${discountPercent}%`, value: discount })
+  const lines = buildCalculationLines(product, installation, delivery, discount, discountPercent)
 
   return {
     product,
@@ -239,16 +266,11 @@ export const combineCalculationResults = (results: CalculationResult[]): Calcula
   const delivery = sum((result) => result.delivery)
   const subtotal = sum((result) => result.subtotal)
   const discount = sum((result) => result.discount)
-  const lines = [
-    { label: 'Стоимость изделий', value: product },
-    { label: 'Работы и монтаж', value: installation },
-    { label: 'Доставка', value: delivery },
-    { label: 'Сумма без скидки', value: subtotal },
-  ]
   const discountLabel = results
     .flatMap((result) => result.lines)
     .find((line) => line.label.startsWith('Скидка'))?.label
-  if (discount > 0) lines.push({ label: discountLabel ?? 'Скидка', value: discount })
+  const discountPercent = Number(discountLabel?.match(/[\d,.]+/)?.[0]?.replace(',', '.') ?? 0)
+  const lines = buildCalculationLines(product, installation, delivery, discount, discountPercent)
 
   return {
     product,
@@ -356,5 +378,59 @@ export const createQuote = (
     status: 'new',
     result: combineCalculationResults(items.map((item) => item.result)),
     items,
+  }
+}
+
+export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quote => {
+  const patches = new Map(patch.items.map((item) => [item.id, item]))
+  const discountPercent = Math.min(100, Math.max(0, Number(patch.discountPercent) || 0))
+  const updatedItems = getQuoteItems(quote).map((item): QuoteItem => {
+    const itemPatch = patches.get(item.id)
+    if (!itemPatch) return item
+    const product = Math.max(0, Number(itemPatch.product) || 0)
+    const delivery = Math.max(0, Number(itemPatch.delivery) || 0)
+    const subtotal = product + delivery
+    const total = patch.discountEnabled
+      ? roundToTen(subtotal * (1 - discountPercent / 100))
+      : subtotal
+    const discount = subtotal - total
+    const sharedForm = {
+      clientName: patch.clientName,
+      clientPhone: patch.clientPhone,
+      note: patch.note,
+      discountEnabled: patch.discountEnabled,
+      discountPercent,
+    }
+    const result: CalculationResult = {
+      ...item.result,
+      product,
+      installation: 0,
+      delivery,
+      manager: 0,
+      designer: 0,
+      subtotal,
+      discount,
+      total,
+      lines: buildCalculationLines(product, 0, delivery, discount, discountPercent),
+    }
+
+    if (isMirrorQuoteItem(item)) {
+      const form: MirrorForm = { ...item.form, ...sharedForm }
+      return { ...item, form, result, mirrorTitle: itemPatch.title }
+    }
+    const form: CalculatorForm = { ...item.form, ...sharedForm }
+    return { ...item, form, result, constructionTitle: itemPatch.title }
+  })
+  const firstItem = updatedItems[0]
+  const result = combineCalculationResults(updatedItems.map((item) => item.result))
+
+  return {
+    ...firstItem,
+    id: quote.id,
+    number: quote.number,
+    createdAt: quote.createdAt,
+    status: quote.status,
+    result,
+    items: updatedItems,
   }
 }

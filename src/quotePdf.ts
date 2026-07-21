@@ -98,23 +98,49 @@ const detailTable = (rows: Array<[string, string]>): Content => ({
   },
 })
 
-const showerConfigurationRows = (item: ShowerQuoteItem, construction: Construction): Array<[string, string]> => [
-  ['Конструкция', item.constructionTitle],
-  ...dimensionRows(item, construction),
-  ['Стекло', item.glassLabel],
-  ['Фурнитура', item.hardwareLabel],
-  ['Класс фурнитуры', item.hardwareClassLabel],
-  ['Монтаж', item.form.installation ? 'Включен' : 'Не включен'],
-  [
-    'Доставка',
-    item.form.delivery
-      ? item.form.deliveryZone === 'outside'
-        ? `За городом, ${item.form.deliveryKm} км`
-        : 'По городу'
-      : 'Не включена',
-  ],
-  ['Скидка', item.form.discountEnabled ? `${item.form.discountPercent}%` : 'Не применена'],
-]
+const showerConfigurationRows = (item: ShowerQuoteItem, construction: Construction): Array<[string, string]> => {
+  const rows: Array<[string, string]> = [
+    ['Конструкция', item.constructionTitle],
+    ...dimensionRows(item, construction),
+    ['Стекло', item.glassLabel],
+    ['Фурнитура', item.hardwareLabel],
+    ['Класс фурнитуры', item.hardwareClassLabel],
+    [
+      'Доставка',
+      item.form.delivery
+        ? item.form.deliveryZone === 'outside'
+          ? `За городом, ${item.form.deliveryKm} км`
+          : 'По городу'
+        : 'Не включена',
+    ],
+  ]
+  if (item.result.discount > 0) rows.push(['Скидка', `${item.form.discountPercent}%`])
+  return rows
+}
+
+const itemPriceCell = (item: QuoteItem): TableCell => item.result.discount > 0
+  ? {
+      stack: [
+        {
+          text: money(item.result.subtotal),
+          alignment: 'right',
+          color: pdfColors.muted,
+          decoration: 'lineThrough',
+          fontSize: 9,
+        },
+        { text: money(item.result.total), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 2, 0, 0] },
+      ],
+      fillColor: pdfColors.accentSoft,
+      margin: [8, 4, 8, 4],
+    }
+  : {
+      text: money(item.result.total),
+      alignment: 'right',
+      bold: true,
+      color: pdfColors.heading,
+      fillColor: pdfColors.accentSoft,
+      margin: [8, 7, 8, 7],
+    }
 
 const buildShowerQuoteItemBlock = (item: ShowerQuoteItem, index: number): Content => {
   const construction = getConstruction(defaultCatalog, item.form.constructionId)
@@ -129,7 +155,7 @@ const buildShowerQuoteItemBlock = (item: ShowerQuoteItem, index: number): Conten
           body: [[
             { text: `Позиция ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
             { text: item.constructionTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
-            { text: money(item.result.total), alignment: 'right', bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+            itemPriceCell(item),
           ]],
         },
         layout: 'noBorders',
@@ -152,19 +178,21 @@ const buildShowerQuoteItemBlock = (item: ShowerQuoteItem, index: number): Conten
   }
 }
 
-const mirrorConfigurationRows = (item: MirrorQuoteItem): Array<[string, string]> => [
-  ['Изделие', 'Зеркало на заказ'],
-  ['Размер', `${item.form.width} × ${item.form.height} мм`],
-  ['Площадь', `${item.result.glassArea.toFixed(2)} м²`],
-  ['Материал', item.materialLabel],
-  ...item.serviceLines
-    .filter((line) => line.visibleInQuote)
-    .map((line): [string, string] => [
-      line.label,
-      `${line.quantity.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${line.unitLabel}`,
-    ]),
-  ['Скидка', item.form.discountEnabled ? `${item.form.discountPercent}%` : 'Не применена'],
-]
+const mirrorConfigurationRows = (item: MirrorQuoteItem): Array<[string, string]> => {
+  const rows: Array<[string, string]> = [
+    ['Изделие', item.mirrorTitle],
+    ['Размер', `${item.form.width} × ${item.form.height} мм`],
+    ['Материал', item.materialLabel],
+    ...item.serviceLines
+      .filter((line) => line.visibleInQuote)
+      .map((line): [string, string] => [
+        line.label,
+        `${line.quantity.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${line.unitLabel}`,
+      ]),
+  ]
+  if (item.result.discount > 0) rows.push(['Скидка', `${item.form.discountPercent}%`])
+  return rows
+}
 
 const buildMirrorQuoteItemBlock = (item: MirrorQuoteItem, index: number): Content => ({
   unbreakable: true,
@@ -176,7 +204,7 @@ const buildMirrorQuoteItemBlock = (item: MirrorQuoteItem, index: number): Conten
         body: [[
           { text: `Позиция ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
           { text: item.mirrorTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
-          { text: money(item.result.total), alignment: 'right', bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+          itemPriceCell(item),
         ]],
       },
       layout: 'noBorders',
@@ -220,14 +248,33 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
       { text: quote.form.note, color: pdfColors.heading },
     )
   }
-  const costRows: TableCell[][] = quote.result.lines.map((line) => [
-    { text: line.label, color: pdfColors.text, margin: [0, 5, 0, 5] },
-    { text: money(line.value), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 5, 0, 5] },
-  ])
+  const hasDiscount = quote.result.discount > 0
+  const costRows: TableCell[][] = [
+    [
+      { text: 'Стоимость изделия', color: pdfColors.text, margin: [0, 5, 0, 5] },
+      { text: money(quote.result.product + quote.result.installation), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 5, 0, 5] },
+    ],
+    [
+      { text: 'Доставка', color: pdfColors.text, margin: [0, 5, 0, 5] },
+      { text: money(quote.result.delivery), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 5, 0, 5] },
+    ],
+  ]
+  const discountRow: TableCell[] | null = hasDiscount ? [
+    { text: `Стоимость до скидки ${quote.form.discountPercent}%`, color: pdfColors.muted, margin: [0, 6, 0, 6] },
+    {
+      text: money(quote.result.subtotal),
+      alignment: 'right',
+      bold: true,
+      color: pdfColors.muted,
+      decoration: 'lineThrough',
+      margin: [0, 6, 0, 6],
+    },
+  ] : null
   const costTableBody: TableCell[][] = [
     ...costRows,
+    ...(discountRow ? [discountRow] : []),
     [
-      { text: 'Итого', bold: true, fontSize: 14, color: '#ffffff', margin: [10, 9, 0, 9], fillColor: pdfColors.accent },
+      { text: hasDiscount ? 'Итого со скидкой' : 'Итого', bold: true, fontSize: 14, color: '#ffffff', margin: [10, 9, 0, 9], fillColor: pdfColors.accent },
       { text: money(quote.result.total), alignment: 'right', bold: true, fontSize: 16, color: '#ffffff', margin: [0, 8, 10, 8], fillColor: pdfColors.accent },
     ],
   ]
