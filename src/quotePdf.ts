@@ -4,6 +4,7 @@ import {
   getConstruction,
   getPublicProductPrice,
   getQuoteItemDetails,
+  getQuoteItemQuantity,
   getQuoteItemTitle,
   getQuoteItems,
   getQuoteTotal,
@@ -148,6 +149,7 @@ const tableHeaderCell = (text: string): TableCell => ({
 
 const buildQuoteTableRow = (item: QuoteItem, index: number): TableCell[] => {
   const price = getPublicProductPrice(item.result)
+  const quantity = getQuoteItemQuantity(item)
   return [
     { text: String(index + 1), alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
     {
@@ -159,10 +161,10 @@ const buildQuoteTableRow = (item: QuoteItem, index: number): TableCell[] => {
       margin: [0, 4, 0, 4],
     },
     { stack: itemParameterStack(item), margin: [0, 4, 0, 3] },
-    { text: '1', alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
+    { text: String(quantity), alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
     { text: 'шт.', alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
     { text: shortMoney(price), alignment: 'right', bold: true, color: pdfColors.heading, noWrap: true, margin: [0, 21, 0, 0] },
-    { text: shortMoney(price), alignment: 'right', bold: true, color: pdfColors.heading, noWrap: true, margin: [0, 21, 0, 0] },
+    { text: shortMoney(price * quantity), alignment: 'right', bold: true, color: pdfColors.heading, noWrap: true, margin: [0, 21, 0, 0] },
   ]
 }
 

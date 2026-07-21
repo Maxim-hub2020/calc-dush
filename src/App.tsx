@@ -16,6 +16,7 @@ import {
   LoaderCircle,
   LogIn,
   LogOut,
+  Minus,
   Pencil,
   Plus,
   RefreshCw,
@@ -38,12 +39,15 @@ import {
   getConstruction,
   getOption,
   getPublicProductPrice,
+  getQuoteItemQuantity,
   getQuoteItemDetails,
   getQuoteItemTitle,
   getQuoteItems,
   getQuoteTotal,
   isMirrorQuoteItem,
   money,
+  multiplyCalculationResult,
+  normalizeQuoteQuantity,
   resetDimensionsForConstruction,
   shortMoney,
   updateQuoteManually,
@@ -142,12 +146,14 @@ const cloneForm = (form: CalculatorForm): CalculatorForm => ({
 type ShowerDraftPosition = {
   id: string
   kind: 'shower'
+  quantity: number
   form: CalculatorForm
 }
 
 type MirrorDraftPosition = {
   id: string
   kind: 'mirror'
+  quantity: number
   form: MirrorForm
 }
 
@@ -158,6 +164,7 @@ type PositionSummary = {
   index: number
   kind: ProductKind
   title: string
+  quantity: number
   total: number
   hasErrors: boolean
 }
@@ -183,7 +190,7 @@ const createDraftPosition = (catalog: PricingCatalog, customer?: Partial<SharedF
     form.discountPercent = customer.discountPercent ?? form.discountPercent
     form.designerEnabled = customer.designerEnabled ?? form.designerEnabled
   }
-  return { id: crypto.randomUUID(), kind: 'shower', form }
+  return { id: crypto.randomUUID(), kind: 'shower', quantity: 1, form }
 }
 
 const createMirrorDraftPosition = (
@@ -192,6 +199,7 @@ const createMirrorDraftPosition = (
 ): MirrorDraftPosition => ({
   id: crypto.randomUUID(),
   kind: 'mirror',
+  quantity: 1,
   form: createInitialMirrorForm(catalog, customer),
 })
 
@@ -219,15 +227,22 @@ function App() {
 
   const activePosition = positions.find((position) => position.id === activePositionId) ?? positions[0]
   const positionResults = useMemo(
-    () => positions.map((position) => position.kind === 'mirror'
-      ? { ...position, result: calculateMirrorQuote(mirrorCatalog, position.form) }
-      : { ...position, result: calculateQuote(catalog, position.form) }),
+    () => positions.map((position) => {
+      const unitResult = position.kind === 'mirror'
+        ? calculateMirrorQuote(mirrorCatalog, position.form)
+        : calculateQuote(catalog, position.form)
+      return {
+        ...position,
+        unitResult,
+        result: multiplyCalculationResult(unitResult, position.quantity),
+      }
+    }),
     [catalog, mirrorCatalog, positions],
   )
   const activeResult = positionResults.find((position) => position.id === activePosition.id)?.result
-    ?? (activePosition.kind === 'mirror'
+    ?? multiplyCalculationResult(activePosition.kind === 'mirror'
       ? calculateMirrorQuote(mirrorCatalog, activePosition.form)
-      : calculateQuote(catalog, activePosition.form))
+      : calculateQuote(catalog, activePosition.form), activePosition.quantity)
   const orderResult = useMemo(
     () => combineCalculationResults(positionResults.map((position) => position.result)),
     [positionResults],
@@ -240,6 +255,7 @@ function App() {
       title: position.kind === 'mirror'
         ? getMirrorTitle(position.form)
         : getConstruction(catalog, position.form.constructionId).shortTitle,
+      quantity: position.quantity,
       total: position.result.total,
       hasErrors: Object.keys(position.result.errors).length > 0,
     })),
@@ -460,8 +476,8 @@ function App() {
 
   const createQuoteFromPositions = () => {
     const drafts: QuoteDraftItem[] = positionResults.map((position) => position.kind === 'mirror'
-      ? { kind: 'mirror', form: cloneMirrorForm(position.form), result: position.result }
-      : { kind: 'shower', form: cloneForm(position.form), result: position.result })
+      ? { kind: 'mirror', quantity: position.quantity, form: cloneMirrorForm(position.form), result: position.unitResult }
+      : { kind: 'shower', quantity: position.quantity, form: cloneForm(position.form), result: position.unitResult })
     const quote = createQuote(catalog, mirrorCatalog, drafts)
     const editingQuote = quotes.find((item) => item.id === editingQuoteId)
     if (!editingQuote) return quote
@@ -530,8 +546,8 @@ function App() {
 
   const duplicatePosition = () => {
     const next: DraftPosition = activePosition.kind === 'mirror'
-      ? { id: crypto.randomUUID(), kind: 'mirror', form: cloneMirrorForm(activePosition.form) }
-      : { id: crypto.randomUUID(), kind: 'shower', form: cloneForm(activePosition.form) }
+      ? { id: crypto.randomUUID(), kind: 'mirror', quantity: activePosition.quantity, form: cloneMirrorForm(activePosition.form) }
+      : { id: crypto.randomUUID(), kind: 'shower', quantity: activePosition.quantity, form: cloneForm(activePosition.form) }
     const activeIndex = positions.findIndex((position) => position.id === activePositionId)
     setPositions((current) => [
       ...current.slice(0, activeIndex + 1),
@@ -559,8 +575,8 @@ function App() {
   const loadQuoteToCalculator = (quote: Quote, itemId?: string) => {
     const items = getQuoteItems(quote)
     const nextPositions: DraftPosition[] = items.map((item) => isMirrorQuoteItem(item)
-      ? { id: crypto.randomUUID(), kind: 'mirror', form: cloneMirrorForm(item.form) }
-      : { id: crypto.randomUUID(), kind: 'shower', form: cloneForm(item.form) })
+      ? { id: crypto.randomUUID(), kind: 'mirror', quantity: getQuoteItemQuantity(item), form: cloneMirrorForm(item.form) }
+      : { id: crypto.randomUUID(), kind: 'shower', quantity: getQuoteItemQuantity(item), form: cloneForm(item.form) })
     const selectedIndex = itemId ? Math.max(0, items.findIndex((item) => item.id === itemId)) : 0
     const selected = nextPositions[selectedIndex]
     setPositions(nextPositions)
@@ -575,6 +591,12 @@ function App() {
     if (!position) return
     setActivePositionId(positionId)
     setActiveTab(position.kind === 'mirror' ? 'mirrors' : 'showers')
+  }
+
+  const updatePositionQuantity = (quantity: number) => {
+    setPositions((current) => current.map((position) => position.id === activePositionId
+      ? { ...position, quantity: normalizeQuoteQuantity(quantity) }
+      : position))
   }
 
   const openProductTab = (kind: ProductKind) => {
@@ -717,6 +739,7 @@ function App() {
           <CalculatorScreen
             catalog={catalog}
             form={activePosition.form}
+            quantity={activePosition.quantity}
             result={activeResult}
             orderResult={orderResult}
             positionSummaries={positionSummaries}
@@ -728,6 +751,7 @@ function App() {
             onDuplicatePosition={duplicatePosition}
             onForm={updateForm}
             onPdf={downloadCurrentQuotePdf}
+            onQuantity={updatePositionQuantity}
             onSave={saveCurrentQuote}
             onSelectPosition={selectPosition}
             onSelectConstruction={selectConstruction}
@@ -745,12 +769,14 @@ function App() {
             isPdfBusy={pdfQuoteId !== ''}
             orderResult={orderResult}
             positionSummaries={positionSummaries}
+            quantity={activePosition.quantity}
             result={activeResult}
             onAddPosition={() => addPosition('mirror')}
             onDeletePosition={deletePosition}
             onDuplicatePosition={duplicatePosition}
             onForm={updateMirrorForm}
             onPdf={downloadCurrentQuotePdf}
+            onQuantity={updatePositionQuantity}
             onSave={saveCurrentQuote}
             onSelectPosition={selectPosition}
           />
@@ -840,6 +866,7 @@ function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
 type CalculatorScreenProps = {
   catalog: PricingCatalog
   form: CalculatorForm
+  quantity: number
   result: CalculationResult
   orderResult: CalculationResult
   positionSummaries: PositionSummary[]
@@ -852,6 +879,7 @@ type CalculatorScreenProps = {
   onDuplicatePosition: () => void
   onForm: (patch: Partial<CalculatorForm>) => void
   onPdf: () => void
+  onQuantity: (quantity: number) => void
   onSave: () => void
   onOpenArchive: () => void
   onOpenQuote: (quote: Quote) => void
@@ -872,6 +900,7 @@ const configSections: Array<{ id: ConfigSectionId; label: string }> = [
 function CalculatorScreen({
   catalog,
   form,
+  quantity,
   result,
   orderResult,
   positionSummaries,
@@ -884,6 +913,7 @@ function CalculatorScreen({
   onDuplicatePosition,
   onForm,
   onPdf,
+  onQuantity,
   onSave,
   onOpenArchive,
   onOpenQuote,
@@ -900,10 +930,12 @@ function CalculatorScreen({
     <div className="screen-stack calculator-screen">
       <PositionSwitcher
         activeId={activePositionId}
+        activeQuantity={quantity}
         positions={positionSummaries}
         onAdd={onAddPosition}
         onDelete={onDeletePosition}
         onDuplicate={onDuplicatePosition}
+        onQuantity={onQuantity}
         onSelect={onSelectPosition}
       />
 
@@ -1153,6 +1185,7 @@ function CalculatorScreen({
 type MirrorCalculatorScreenProps = {
   catalog: MirrorPricingCatalog
   form: MirrorForm
+  quantity: number
   result: CalculationResult
   orderResult: CalculationResult
   positionSummaries: PositionSummary[]
@@ -1163,6 +1196,7 @@ type MirrorCalculatorScreenProps = {
   onDuplicatePosition: () => void
   onForm: (patch: Partial<MirrorForm>) => void
   onPdf: () => void
+  onQuantity: (quantity: number) => void
   onSave: () => void
   onSelectPosition: (id: string) => void
 }
@@ -1180,6 +1214,7 @@ const mirrorSections: Array<{ id: MirrorSectionId; label: string }> = [
 function MirrorCalculatorScreen({
   catalog,
   form,
+  quantity,
   result,
   orderResult,
   positionSummaries,
@@ -1190,6 +1225,7 @@ function MirrorCalculatorScreen({
   onDuplicatePosition,
   onForm,
   onPdf,
+  onQuantity,
   onSave,
   onSelectPosition,
 }: MirrorCalculatorScreenProps) {
@@ -1217,10 +1253,12 @@ function MirrorCalculatorScreen({
     <div className="screen-stack calculator-screen mirror-calculator-screen">
       <PositionSwitcher
         activeId={activePositionId}
+        activeQuantity={quantity}
         positions={positionSummaries}
         onAdd={onAddPosition}
         onDelete={onDeletePosition}
         onDuplicate={onDuplicatePosition}
+        onQuantity={onQuantity}
         onSelect={onSelectPosition}
       />
 
@@ -1545,19 +1583,62 @@ function RecentCalculations({ catalog, quotes, onOpenArchive, onOpenQuote }: Rec
 
 type PositionSwitcherProps = {
   activeId: string
+  activeQuantity: number
   positions: PositionSummary[]
   onAdd: () => void
   onDelete: (id: string) => void
   onDuplicate: () => void
+  onQuantity: (quantity: number) => void
   onSelect: (id: string) => void
 }
 
-function PositionSwitcher({ activeId, positions, onAdd, onDelete, onDuplicate, onSelect }: PositionSwitcherProps) {
+function PositionSwitcher({
+  activeId,
+  activeQuantity,
+  positions,
+  onAdd,
+  onDelete,
+  onDuplicate,
+  onQuantity,
+  onSelect,
+}: PositionSwitcherProps) {
   return (
     <section className="section-block position-section">
       <div className="section-title position-title">
         <h2>Позиции</h2>
         <div className="position-tools">
+          <div className="position-quantity" role="group" aria-label="Количество активной позиции">
+            <span>Количество</span>
+            <div>
+              <button
+                aria-label="Уменьшить количество"
+                disabled={activeQuantity <= 1}
+                title="Уменьшить количество"
+                type="button"
+                onClick={() => onQuantity(activeQuantity - 1)}
+              >
+                <Minus size={15} />
+              </button>
+              <input
+                aria-label="Количество активной позиции"
+                inputMode="numeric"
+                max={999}
+                min={1}
+                type="number"
+                value={activeQuantity}
+                onChange={(event) => onQuantity(Number(event.target.value))}
+              />
+              <button
+                aria-label="Увеличить количество"
+                disabled={activeQuantity >= 999}
+                title="Увеличить количество"
+                type="button"
+                onClick={() => onQuantity(activeQuantity + 1)}
+              >
+                <Plus size={15} />
+              </button>
+            </div>
+          </div>
           <button title="Дублировать позицию" type="button" onClick={onDuplicate}>
             <Copy size={17} />
             <span className="sr-only">Дублировать позицию</span>
@@ -1583,7 +1664,7 @@ function PositionSwitcher({ activeId, positions, onAdd, onDelete, onDuplicate, o
               <button className="position-tab-select" type="button" onClick={() => onSelect(position.id)}>
                 <span>{position.kind === 'mirror' ? 'Зеркало' : 'Душевая'} · {position.index + 1}</span>
                 <strong>{position.title}</strong>
-                <small>{shortMoney(position.total)} ₽</small>
+                <small>{position.quantity} шт. · {shortMoney(position.total)} ₽</small>
               </button>
               {canDelete ? (
                 <button
@@ -1890,6 +1971,7 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
     items: getQuoteItems(quote).map((item) => ({
       id: item.id,
       title: getQuoteItemTitle(item),
+      quantity: getQuoteItemQuantity(item),
       product: getPublicProductPrice(item.result),
       delivery: item.result.delivery,
       details: getQuoteItemDetails(item),
@@ -1971,13 +2053,16 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
   }
 
   const subtotal = draft.items.reduce((sum, item) => (
-    sum + Math.max(0, Number(item.product) || 0) + Math.max(0, Number(item.delivery) || 0)
+    sum + (
+      Math.max(0, Number(item.product) || 0) + Math.max(0, Number(item.delivery) || 0)
+    ) * normalizeQuoteQuantity(item.quantity)
   ), 0)
   const discountPercent = Math.min(100, Math.max(0, Number(draft.discountPercent) || 0))
   const calculatedTotal = draft.discountEnabled
     ? draft.items.reduce((sum, item) => {
         const itemSubtotal = Math.max(0, Number(item.product) || 0) + Math.max(0, Number(item.delivery) || 0)
         return sum + Math.round(itemSubtotal * (1 - discountPercent / 100) / 10) * 10
+          * normalizeQuoteQuantity(item.quantity)
       }, 0)
     : subtotal
   const total = draft.manualTotalEnabled
@@ -2044,8 +2129,24 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
                       <span>Наименование</span>
                       <input value={item.title} onChange={(event) => updateItem(item.id, { title: event.target.value })} />
                     </label>
-                    <label className="manual-money-field">
-                      <span>Изделие</span>
+                    <label className="manual-money-field manual-quantity-field">
+                      <span>Кол-во</span>
+                      <span className="manual-money-input">
+                        <input
+                          inputMode="numeric"
+                          max={999}
+                          min={1}
+                          type="number"
+                          value={item.quantity}
+                          onChange={(event) => updateItem(item.id, {
+                            quantity: normalizeQuoteQuantity(event.target.value),
+                          })}
+                        />
+                        <small>шт.</small>
+                      </span>
+                    </label>
+                    <label className="manual-money-field manual-product-field">
+                      <span>Изделие за шт.</span>
                       <span className="manual-money-input">
                         <input
                           inputMode="numeric"
@@ -2057,8 +2158,8 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
                         <small>₽</small>
                       </span>
                     </label>
-                    <label className="manual-money-field">
-                      <span>Доставка</span>
+                    <label className="manual-money-field manual-delivery-field">
+                      <span>Доставка за шт.</span>
                       <span className="manual-money-input">
                         <input
                           inputMode="numeric"

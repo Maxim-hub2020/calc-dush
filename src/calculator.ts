@@ -57,6 +57,7 @@ export type QuoteDetailLine = {
 export type ShowerQuoteItem = {
   id: string
   kind?: 'shower'
+  quantity?: number
   form: CalculatorForm
   result: CalculationResult
   constructionTitle: string
@@ -77,6 +78,7 @@ export type MirrorQuoteServiceLine = {
 export type MirrorQuoteItem = {
   id: string
   kind: 'mirror'
+  quantity?: number
   form: MirrorForm
   result: CalculationResult
   mirrorTitle: string
@@ -100,12 +102,14 @@ export type Quote = QuoteItem & QuoteMetadata
 
 export type ShowerQuoteDraftItem = {
   kind: 'shower'
+  quantity?: number
   form: CalculatorForm
   result: CalculationResult
 }
 
 export type MirrorQuoteDraftItem = {
   kind: 'mirror'
+  quantity?: number
   form: MirrorForm
   result: CalculationResult
 }
@@ -115,6 +119,7 @@ export type QuoteDraftItem = ShowerQuoteDraftItem | MirrorQuoteDraftItem
 export type ManualQuoteItemPatch = {
   id: string
   title: string
+  quantity: number
   product: number
   delivery: number
   details: QuoteDetailLine[]
@@ -147,6 +152,13 @@ export const shortMoney = (value: number) =>
   }).format(Number.isFinite(value) ? value : 0)
 
 export const getPublicProductPrice = (result: CalculationResult) => result.product + result.installation
+
+export const normalizeQuoteQuantity = (value: unknown) => {
+  const quantity = Math.floor(Number(value) || 1)
+  return Math.min(999, Math.max(1, quantity))
+}
+
+export const getQuoteItemQuantity = (item: Pick<QuoteItem, 'quantity'>) => normalizeQuoteQuantity(item.quantity)
 
 export const buildCalculationLines = (
   product: number,
@@ -305,6 +317,28 @@ export const combineCalculationResults = (results: CalculationResult[]): Calcula
   }
 }
 
+export const multiplyCalculationResult = (
+  result: CalculationResult,
+  quantityValue: unknown,
+): CalculationResult => {
+  const quantity = normalizeQuoteQuantity(quantityValue)
+  return {
+    ...result,
+    product: result.product * quantity,
+    installation: result.installation * quantity,
+    delivery: result.delivery * quantity,
+    manager: (result.manager ?? 0) * quantity,
+    designer: result.designer * quantity,
+    subtotal: result.subtotal * quantity,
+    discount: result.discount * quantity,
+    total: result.total * quantity,
+    glassArea: result.glassArea * quantity,
+    hardwarePrice: result.hardwarePrice * quantity,
+    errors: { ...result.errors },
+    lines: result.lines.map((line) => ({ ...line, value: line.value * quantity })),
+  }
+}
+
 const createShowerQuoteItem = (catalog: PricingCatalog, draft: ShowerQuoteDraftItem): ShowerQuoteItem => {
   const construction = getConstruction(catalog, draft.form.constructionId)
   const glass = getOption(catalog.glass, draft.form.glassId)
@@ -314,6 +348,7 @@ const createShowerQuoteItem = (catalog: PricingCatalog, draft: ShowerQuoteDraftI
   return {
     id: crypto.randomUUID(),
     kind: 'shower',
+    quantity: normalizeQuoteQuantity(draft.quantity),
     form: draft.form,
     result: draft.result,
     constructionTitle: construction.title,
@@ -329,6 +364,7 @@ const createMirrorQuoteItem = (
 ): MirrorQuoteItem => ({
   id: crypto.randomUUID(),
   kind: 'mirror',
+  quantity: normalizeQuoteQuantity(draft.quantity),
   form: draft.form,
   result: draft.result,
   mirrorTitle: getMirrorTitle(draft.form),
@@ -383,11 +419,14 @@ export const getQuoteTotal = (quote: Quote) => Number.isFinite(quote.manualTotal
   : quote.result.total
 
 export const getQuoteItems = (quote: Quote): QuoteItem[] => {
-  if (quote.items?.length) return quote.items
+  if (quote.items?.length) {
+    return quote.items.map((item) => ({ ...item, quantity: getQuoteItemQuantity(item) }))
+  }
   if (quote.kind === 'mirror') {
     return [{
       id: quote.id,
       kind: 'mirror',
+      quantity: normalizeQuoteQuantity(quote.quantity),
       form: quote.form,
       result: quote.result,
       mirrorTitle: quote.mirrorTitle,
@@ -398,6 +437,7 @@ export const getQuoteItems = (quote: Quote): QuoteItem[] => {
   return [{
     id: quote.id,
     kind: 'shower',
+    quantity: normalizeQuoteQuantity(quote.quantity),
     form: quote.form,
     result: quote.result,
     constructionTitle: quote.constructionTitle,
@@ -426,7 +466,9 @@ export const createQuote = (
     number: `КП-${new Date().getFullYear()}-${id.slice(0, 4).toUpperCase()}`,
     createdAt,
     status: 'new',
-    result: combineCalculationResults(items.map((item) => item.result)),
+    result: combineCalculationResults(items.map((item) => (
+      multiplyCalculationResult(item.result, getQuoteItemQuantity(item))
+    ))),
     items,
   }
 }
@@ -439,6 +481,7 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
     if (!item) return []
     const product = Math.max(0, Number(itemPatch.product) || 0)
     const delivery = Math.max(0, Number(itemPatch.delivery) || 0)
+    const quantity = normalizeQuoteQuantity(itemPatch.quantity)
     const subtotal = product + delivery
     const total = patch.discountEnabled
       ? roundToTen(subtotal * (1 - discountPercent / 100))
@@ -466,14 +509,16 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
 
     if (isMirrorQuoteItem(item)) {
       const form: MirrorForm = { ...item.form, ...sharedForm }
-      return [{ ...item, form, result, mirrorTitle: itemPatch.title, details: itemPatch.details }]
+      return [{ ...item, quantity, form, result, mirrorTitle: itemPatch.title, details: itemPatch.details }]
     }
     const form: CalculatorForm = { ...item.form, ...sharedForm }
-    return [{ ...item, form, result, constructionTitle: itemPatch.title, details: itemPatch.details }]
+    return [{ ...item, quantity, form, result, constructionTitle: itemPatch.title, details: itemPatch.details }]
   })
   if (updatedItems.length === 0) return quote
   const firstItem = updatedItems[0]
-  const result = combineCalculationResults(updatedItems.map((item) => item.result))
+  const result = combineCalculationResults(updatedItems.map((item) => (
+    multiplyCalculationResult(item.result, getQuoteItemQuantity(item))
+  )))
   const manualTotal = patch.manualTotalEnabled
     ? Math.max(0, Number(patch.manualTotal) || 0)
     : undefined
