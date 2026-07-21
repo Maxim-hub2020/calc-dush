@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Archive,
   Box,
@@ -6,13 +6,19 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Cloud,
+  CloudOff,
   Copy,
   FileDown,
   Image,
   Layers3,
   ListPlus,
+  LoaderCircle,
+  LogIn,
+  LogOut,
   Pencil,
   Plus,
+  RefreshCw,
   Ruler,
   RotateCcw,
   Save,
@@ -74,17 +80,37 @@ import {
   loadCatalog,
   loadMirrorCatalog,
   loadQuotes,
+  mergeCatalog,
+  mergeMirrorCatalog,
   resetCatalog,
   resetMirrorCatalog,
   saveCatalog,
   saveMirrorCatalog,
   saveQuotes,
 } from './storage'
+import {
+  clearServerSession,
+  loadServerCatalogs,
+  loadServerSession,
+  loginToServer,
+  saveServerCatalogs,
+  ServerSyncError,
+  type ServerSession,
+} from './serverSync'
 import { shareQuotePdf, type QuotePdfPreview } from './quotePdf'
 import mirrorVisualization from './assets/mirror-visualization.png'
 
 type ProductKind = 'shower' | 'mirror'
 type TabId = 'showers' | 'mirrors' | 'archive' | 'prices'
+type PriceSyncStatus = 'signed-out' | 'loading' | 'saving' | 'synced' | 'error'
+
+type PriceSyncState = {
+  status: PriceSyncStatus
+  username: string
+  message: string
+  updatedAt: string
+  ready: boolean
+}
 
 const tabs: Array<{ id: TabId; label: string; icon: typeof Calculator }> = [
   { id: 'showers', label: 'Душевые', icon: Calculator },
@@ -180,6 +206,16 @@ function App() {
   const [editingQuoteId, setEditingQuoteId] = useState('')
   const [pdfQuoteId, setPdfQuoteId] = useState('')
   const [pdfPreview, setPdfPreview] = useState<QuotePdfPreview | null>(null)
+  const [serverSession, setServerSession] = useState<ServerSession | null>(() => loadServerSession())
+  const [syncStatus, setSyncStatus] = useState<PriceSyncStatus>(serverSession ? 'loading' : 'signed-out')
+  const [syncMessage, setSyncMessage] = useState('')
+  const [syncUpdatedAt, setSyncUpdatedAt] = useState('')
+  const [serverSyncReady, setServerSyncReady] = useState(false)
+  const [syncAttempt, setSyncAttempt] = useState(0)
+  const catalogRef = useRef(catalog)
+  const mirrorCatalogRef = useRef(mirrorCatalog)
+  catalogRef.current = catalog
+  mirrorCatalogRef.current = mirrorCatalog
 
   const activePosition = positions.find((position) => position.id === activePositionId) ?? positions[0]
   const positionResults = useMemo(
@@ -212,6 +248,89 @@ function App() {
   useEffect(() => saveCatalog(catalog), [catalog])
   useEffect(() => saveMirrorCatalog(mirrorCatalog), [mirrorCatalog])
   useEffect(() => saveQuotes(quotes), [quotes])
+  useEffect(() => {
+    let cancelled = false
+    if (!serverSession) {
+      setServerSyncReady(false)
+      setSyncStatus('signed-out')
+      return undefined
+    }
+
+    const hydrateFromServer = async () => {
+      setServerSyncReady(false)
+      setSyncStatus('loading')
+      setSyncMessage('')
+      try {
+        const remote = await loadServerCatalogs()
+        if (cancelled) return
+        const remoteShower = remote.shower_catalog as Partial<PricingCatalog>
+        const remoteMirror = remote.mirror_catalog as Partial<MirrorPricingCatalog>
+        const hasRemoteShower = Array.isArray(remoteShower.constructions) && remoteShower.constructions.length > 0
+        const hasRemoteMirror = Array.isArray(remoteMirror.materials) && remoteMirror.materials.length > 0
+        const nextCatalog = hasRemoteShower
+          ? mergeCatalog(remote.shower_catalog as PricingCatalog)
+          : catalogRef.current
+        const nextMirrorCatalog = hasRemoteMirror
+          ? mergeMirrorCatalog(remote.mirror_catalog as MirrorPricingCatalog)
+          : mirrorCatalogRef.current
+
+        setCatalog(nextCatalog)
+        setMirrorCatalog(nextMirrorCatalog)
+
+        const saved = !hasRemoteShower || !hasRemoteMirror
+          ? await saveServerCatalogs(nextCatalog, nextMirrorCatalog)
+          : remote
+        if (cancelled) return
+        setSyncUpdatedAt(saved.updated_at || new Date().toISOString())
+        setSyncStatus('synced')
+        setServerSyncReady(true)
+      } catch (error) {
+        if (cancelled) return
+        if (error instanceof ServerSyncError && error.code === 'auth') {
+          clearServerSession()
+          setServerSession(null)
+          setSyncStatus('signed-out')
+        } else {
+          setSyncStatus('error')
+        }
+        setSyncMessage(error instanceof Error ? error.message : 'Не удалось загрузить цены')
+      }
+    }
+
+    void hydrateFromServer()
+    return () => {
+      cancelled = true
+    }
+  }, [serverSession, syncAttempt])
+  useEffect(() => {
+    if (!serverSession || !serverSyncReady) return undefined
+    let cancelled = false
+    setSyncStatus('saving')
+    const timer = window.setTimeout(() => {
+      void saveServerCatalogs(catalog, mirrorCatalog)
+        .then((saved) => {
+          if (cancelled) return
+          setSyncUpdatedAt(saved.updated_at || new Date().toISOString())
+          setSyncMessage('')
+          setSyncStatus('synced')
+        })
+        .catch((error) => {
+          if (cancelled) return
+          if (error instanceof ServerSyncError && error.code === 'auth') {
+            clearServerSession()
+            setServerSession(null)
+            setSyncStatus('signed-out')
+          } else {
+            setSyncStatus('error')
+          }
+          setSyncMessage(error instanceof Error ? error.message : 'Не удалось сохранить цены')
+        })
+    }, 700)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [catalog, mirrorCatalog, serverSession, serverSyncReady])
   useEffect(() => {
     setPositions((current) => {
       let changed = false
@@ -507,6 +626,52 @@ function App() {
     setNotice('Цены сброшены')
   }
 
+  const loginForServerSync = async (username: string, password: string) => {
+    setSyncStatus('loading')
+    setSyncMessage('')
+    try {
+      const session = await loginToServer(username, password)
+      setServerSession(session)
+      setNotice('Вход выполнен, загружаю цены с сервера')
+    } catch (error) {
+      setSyncStatus('signed-out')
+      setSyncMessage(error instanceof Error ? error.message : 'Не удалось войти')
+      throw error
+    }
+  }
+
+  const logoutFromServerSync = () => {
+    clearServerSession()
+    setServerSession(null)
+    setSyncMessage('')
+    setSyncUpdatedAt('')
+    setNotice('Синхронизация отключена')
+  }
+
+  const retryServerSync = async () => {
+    if (!serverSession) return
+    if (!serverSyncReady) {
+      setSyncAttempt((current) => current + 1)
+      return
+    }
+    setSyncStatus('saving')
+    setSyncMessage('')
+    try {
+      const saved = await saveServerCatalogs(catalogRef.current, mirrorCatalogRef.current)
+      setSyncUpdatedAt(saved.updated_at || new Date().toISOString())
+      setSyncStatus('synced')
+    } catch (error) {
+      if (error instanceof ServerSyncError && error.code === 'auth') {
+        clearServerSession()
+        setServerSession(null)
+        setSyncStatus('signed-out')
+      } else {
+        setSyncStatus('error')
+      }
+      setSyncMessage(error instanceof Error ? error.message : 'Не удалось сохранить цены')
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -608,8 +773,18 @@ function App() {
             catalog={catalog}
             mirrorCatalog={mirrorCatalog}
             onCatalog={setCatalog}
+            onLogin={loginForServerSync}
+            onLogout={logoutFromServerSync}
             onMirrorCatalog={setMirrorCatalog}
             onReset={resetPrices}
+            onRetry={() => void retryServerSync()}
+            syncState={{
+              status: syncStatus,
+              username: serverSession?.username ?? '',
+              message: syncMessage,
+              updatedAt: syncUpdatedAt,
+              ready: serverSyncReady,
+            }}
           />
         ) : null}
       </main>
@@ -2031,8 +2206,12 @@ type PricesScreenProps = {
   catalog: PricingCatalog
   mirrorCatalog: MirrorPricingCatalog
   onCatalog: (catalog: PricingCatalog) => void
+  onLogin: (username: string, password: string) => Promise<void>
+  onLogout: () => void
   onMirrorCatalog: (catalog: MirrorPricingCatalog) => void
   onReset: () => void
+  onRetry: () => void
+  syncState: PriceSyncState
 }
 
 type PriceSectionId =
@@ -2046,7 +2225,92 @@ type PriceSectionId =
   | 'mirrorServices'
   | 'mirrorSettings'
 
-function PricesScreen({ catalog, mirrorCatalog, onCatalog, onMirrorCatalog, onReset }: PricesScreenProps) {
+type PriceServerSyncPanelProps = Pick<PricesScreenProps, 'onLogin' | 'onLogout' | 'onRetry' | 'syncState'>
+
+function PriceServerSyncPanel({ onLogin, onLogout, onRetry, syncState }: PriceServerSyncPanelProps) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const busy = syncState.status === 'loading' || syncState.status === 'saving'
+  const statusLabel = syncState.status === 'loading'
+    ? 'Подключение к серверу'
+    : syncState.status === 'saving'
+      ? 'Сохраняю изменения'
+      : syncState.status === 'synced'
+        ? `Синхронизировано${syncState.updatedAt ? ` · ${formatDate(syncState.updatedAt)}` : ''}`
+        : syncState.status === 'error'
+          ? 'Ошибка синхронизации'
+          : 'Вход через CRM'
+  const SyncIcon = syncState.status === 'error' || !syncState.username ? CloudOff : Cloud
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    try {
+      await onLogin(username, password)
+      setPassword('')
+    } catch {
+      // Ошибка уже показана в статусе синхронизации.
+    }
+  }
+
+  return (
+    <section className={`section-block server-sync-panel is-${syncState.status}`}>
+      <div className="server-sync-head">
+        <span className="server-sync-icon" aria-hidden="true">
+          {busy ? <LoaderCircle className="is-spinning" size={22} /> : <SyncIcon size={22} />}
+        </span>
+        <div>
+          <h2>Сервер цен</h2>
+          <span>{statusLabel}</span>
+          {syncState.username ? <strong>{syncState.username}</strong> : null}
+        </div>
+        {syncState.username ? (
+          <div className="server-sync-actions">
+            {syncState.status === 'error' ? (
+              <button aria-label="Повторить синхронизацию" title="Повторить" type="button" onClick={onRetry}>
+                <RefreshCw size={17} />
+              </button>
+            ) : null}
+            <button aria-label="Выйти из синхронизации" title="Выйти" type="button" onClick={onLogout}>
+              <LogOut size={17} />
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      {!syncState.username ? (
+        <form className="server-login-form" onSubmit={(event) => void submit(event)}>
+          <label>
+            <span>Логин или email CRM</span>
+            <input
+              autoComplete="username"
+              required
+              type="text"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Пароль</span>
+            <input
+              autoComplete="current-password"
+              required
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+          <button disabled={busy} type="submit">
+            {busy ? <LoaderCircle className="is-spinning" size={17} /> : <LogIn size={17} />}
+            Войти
+          </button>
+        </form>
+      ) : null}
+      {syncState.message ? <p className="server-sync-message" role="alert">{syncState.message}</p> : null}
+    </section>
+  )
+}
+
+function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, onMirrorCatalog, onReset, onRetry, syncState }: PricesScreenProps) {
   const [openSection, setOpenSection] = useState<PriceSectionId | null>(null)
   const toggleSection = (section: PriceSectionId) => {
     setOpenSection((current) => (current === section ? null : section))
@@ -2189,10 +2453,13 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onMirrorCatalog, onRe
 
   return (
     <div className="screen-stack prices-screen">
+      <PriceServerSyncPanel onLogin={onLogin} onLogout={onLogout} onRetry={onRetry} syncState={syncState} />
+      {syncState.username && syncState.ready ? (
+        <>
       <section className="section-block admin-head">
         <div>
           <h2>Цены</h2>
-          <span>Сохраняются на этом устройстве</span>
+          <span>Сохраняются на сервере и этом устройстве</span>
         </div>
         <button type="button" onClick={onReset}>
           <RotateCcw size={16} />
@@ -2364,6 +2631,8 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onMirrorCatalog, onRe
           </div>
         ) : null}
       </section>
+        </>
+      ) : null}
     </div>
   )
 }

@@ -19,21 +19,25 @@ const writeJson = (key: string, value: unknown) => {
   localStorage.setItem(key, JSON.stringify(value))
 }
 
-const mergeCatalog = (saved: PricingCatalog): PricingCatalog => {
+export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalog => {
   const mergeItems = <T extends { id: string }>(defaults: T[], items?: T[]) => {
     if (!Array.isArray(items) || items.length === 0) return defaults
     const defaultsById = new Map(defaults.map((item) => [item.id, item]))
     return items.map((item) => ({ ...defaultsById.get(item.id), ...item } as T))
   }
 
-  const savedServices = saved.services as Partial<PricingCatalog['services']> & { installation?: number }
+  const savedServices = (saved.services ?? {}) as Partial<PricingCatalog['services']> & { installation?: number }
   const legacyInstallationPrice = Number.isFinite(savedServices.installation)
     ? Number(savedServices.installation)
     : 5000
-  const constructions = mergeItems(defaultCatalog.constructions, saved.constructions).map((item) => ({
-    ...item,
-    installationPrice: Number.isFinite(item.installationPrice) ? item.installationPrice : legacyInstallationPrice,
-  }))
+  const constructions = mergeItems(defaultCatalog.constructions, saved.constructions).map((item) => {
+    const currentDefault = defaultCatalog.constructions.find((entry) => entry.id === item.id)
+    return {
+      ...item,
+      imageUrl: currentDefault?.imageUrl ?? defaultCatalog.constructions[0].imageUrl,
+      installationPrice: Number.isFinite(item.installationPrice) ? item.installationPrice : legacyInstallationPrice,
+    }
+  })
   const services = { ...defaultCatalog.services, ...savedServices }
   delete services.installation
 
@@ -58,7 +62,7 @@ export const resetCatalog = () => {
   return defaultCatalog
 }
 
-const mergeMirrorCatalog = (saved: MirrorPricingCatalog): MirrorPricingCatalog => {
+export const mergeMirrorCatalog = (saved: Partial<MirrorPricingCatalog> = {}): MirrorPricingCatalog => {
   const mergeItems = <T extends { id: string }>(defaults: T[], items?: T[]) => {
     if (!Array.isArray(items) || items.length === 0) return defaults
     return items.map((item) => ({ ...defaults.find((entry) => entry.id === item.id), ...item } as T))

@@ -992,6 +992,161 @@
   align-items: flex-start;
 }
 
+.server-sync-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.server-sync-head {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+}
+
+.server-sync-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--muted);
+}
+
+.server-sync-panel.is-synced .server-sync-icon {
+  background: #eaf8f1;
+  color: #16704f;
+}
+
+.server-sync-panel.is-loading .server-sync-icon,
+.server-sync-panel.is-saving .server-sync-icon {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.server-sync-panel.is-error .server-sync-icon {
+  background: #fff1f1;
+  color: var(--danger);
+}
+
+.server-sync-head h2 {
+  margin: 0;
+  color: var(--heading);
+  font-family: var(--font-display);
+  font-size: var(--type-section);
+  line-height: 1.2;
+}
+
+.server-sync-head span,
+.server-sync-head strong {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--type-meta);
+  line-height: 1.25;
+}
+
+.server-sync-head span {
+  color: var(--muted);
+  font-weight: 680;
+}
+
+.server-sync-head strong {
+  color: var(--heading);
+  font-weight: 760;
+}
+
+.server-sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.server-sync-actions button {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--heading);
+}
+
+.server-login-form {
+  display: grid;
+  gap: 10px;
+}
+
+.server-login-form label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.server-login-form label > span {
+  color: var(--muted);
+  font-size: var(--type-meta);
+  font-weight: 720;
+}
+
+.server-login-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fbfcfe;
+  color: var(--heading);
+  font: inherit;
+  font-size: var(--type-control);
+}
+
+.server-login-form input:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(33, 105, 218, 0.12);
+}
+
+.server-login-form button {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--type-control);
+  font-weight: 780;
+}
+
+.server-login-form button:disabled {
+  border-color: #aab9c5;
+  background: #aab9c5;
+}
+
+.server-sync-message {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--type-label);
+  font-weight: 700;
+}
+
+.is-spinning {
+  animation: sync-spin 0.85s linear infinite;
+}
+
+@keyframes sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .admin-head button {
   padding: 0 12px;
 }
@@ -2075,6 +2230,15 @@
 
   .app-main {
     padding: 22px 24px 30px;
+  }
+
+  .server-login-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+    align-items: end;
+  }
+
+  .server-login-form button {
+    min-width: 120px;
   }
 
   .notice {

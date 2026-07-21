@@ -1,5 +1,4 @@
 __CALCULATOR_DOMAIN__ {
-    root * /srv/shower-calculator/current
     encode zstd gzip
 
     header {
@@ -14,6 +13,27 @@ __CALCULATOR_DOMAIN__ {
     @no_cache path /index.html /sw.js /manifest.webmanifest /version.json
     header @no_cache Cache-Control "no-cache, no-store, must-revalidate"
 
-    try_files {path} {path}/ /index.html
-    file_server
+    @api_preflight {
+        method OPTIONS
+        path /api/*
+    }
+    handle @api_preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, PATCH, POST, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Access-Control-Max-Age "86400"
+        respond "" 204
+    }
+
+    handle /api/* {
+        header Access-Control-Allow-Origin "*"
+        header Cache-Control "no-store"
+        reverse_proxy backend:8000
+    }
+
+    handle {
+        root * /srv/shower-calculator/current
+        try_files {path} {path}/ /index.html
+        file_server
+    }
 }
