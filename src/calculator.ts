@@ -371,17 +371,6 @@ export const getQuoteItemDetails = (item: QuoteItem): QuoteDetailLine[] => {
     { id: `${item.id}:hardware`, label: 'Фурнитура', value: item.hardwareLabel },
     { id: `${item.id}:hardware-class`, label: 'Класс фурнитуры', value: item.hardwareClassLabel },
   ]
-  if (item.result.delivery > 0) {
-    details.push({
-      id: `${item.id}:delivery`,
-      label: 'Доставка',
-      value: item.form.delivery
-        ? item.form.deliveryZone === 'outside'
-          ? `За городом, ${item.form.deliveryKm} км`
-          : 'По городу'
-        : 'Включена',
-    })
-  }
   return details
 }
 

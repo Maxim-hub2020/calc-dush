@@ -2,16 +2,16 @@ import type { Content, TableCell, TDocumentDefinitions } from 'pdfmake/interface
 import { Capacitor } from '@capacitor/core'
 import {
   getConstruction,
+  getPublicProductPrice,
   getQuoteItemDetails,
   getQuoteItemTitle,
   getQuoteItems,
   getQuoteTotal,
   isMirrorQuoteItem,
   money,
-  type MirrorQuoteItem,
+  shortMoney,
   type Quote,
   type QuoteItem,
-  type ShowerQuoteItem,
 } from './calculator'
 import { defaultCatalog, type Construction } from './pricing'
 
@@ -29,9 +29,7 @@ const pdfLoadTimeoutMs = 20_000
 
 const formatPdfDate = (date: string) =>
   new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
+    day: '2-digit', month: '2-digit', year: 'numeric',
   }).format(new Date(date))
 
 const buildSketchSvg = (sketch: Construction['sketch']) => {
@@ -81,182 +79,142 @@ const buildMirrorSvg = () => (
   + '</svg>'
 )
 
-const detailTable = (rows: Array<[string, string]>): Content => ({
-  table: {
-    widths: ['42%', '*'],
-    body: rows.map(([label, value]) => [
-      { text: label, color: pdfColors.muted, margin: [0, 2, 0, 2] },
-      { text: value, bold: true, color: pdfColors.heading, margin: [0, 2, 0, 2] },
-    ]),
-  },
-  layout: {
-    hLineColor: () => pdfColors.line,
-    vLineWidth: () => 0,
-    paddingLeft: () => 0,
-    paddingRight: () => 8,
-  },
-})
+const brandLogoSvg = (
+  '<svg width="64" height="58" viewBox="0 0 64 58" xmlns="http://www.w3.org/2000/svg">'
+  + '<path d="M7 50 L28 5 L37 5 L17 50 Z" fill="#1d252c"/>'
+  + '<path d="M26 50 L43 12 L59 50 H48 L42 36 H29 L23 50 Z" fill="#5d6a73"/>'
+  + '<path d="M12 40 H49" stroke="#ffffff" stroke-width="3" opacity="0.72"/>'
+  + '</svg>'
+)
 
-const quoteItemDetailRows = (item: QuoteItem): Array<[string, string]> => getQuoteItemDetails(item)
-  .filter((line) => line.label.trim() || line.value.trim())
-  .map((line) => [line.label, line.value])
-
-const quoteItemDetailContent = (item: QuoteItem): Content[] => {
-  const rows = quoteItemDetailRows(item)
-  return rows.length ? [detailTable(rows)] : [{ text: '' }]
+const contactIconSvg = (kind: 'phone' | 'web' | 'location') => {
+  if (kind === 'phone') {
+    return '<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M6.5 3.5 L9 8 L7.5 10 C8.7 12.7 10.8 14.8 13.5 16 L15.5 14.5 L20 17 C20 19.2 18.2 21 16 21 C9.4 20.2 3.8 14.6 3 8 C3 5.8 4.8 4 6.5 3.5 Z" fill="none" stroke="#23313b" stroke-width="1.8" stroke-linejoin="round"/></svg>'
+  }
+  if (kind === 'web') {
+    return '<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#23313b" stroke-width="1.7"/><path d="M3.5 12 H20.5 M12 3.5 C15 6.8 15 17.2 12 20.5 M12 3.5 C9 6.8 9 17.2 12 20.5" fill="none" stroke="#23313b" stroke-width="1.4"/></svg>'
+  }
+  return '<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21 C16 16.4 19 13.4 19 9.5 A7 7 0 1 0 5 9.5 C5 13.4 8 16.4 12 21 Z" fill="none" stroke="#23313b" stroke-width="1.7"/><circle cx="12" cy="9.5" r="2.2" fill="none" stroke="#23313b" stroke-width="1.5"/></svg>'
 }
 
-const itemPriceCell = (item: QuoteItem): TableCell => item.result.discount > 0
-  ? {
-      stack: [
-        {
-          text: money(item.result.subtotal),
-          alignment: 'right',
-          color: pdfColors.muted,
-          decoration: 'lineThrough',
-          fontSize: 8,
-        },
-        { text: money(item.result.total), alignment: 'right', bold: true, color: pdfColors.heading, fontSize: 10, margin: [0, 1, 0, 0] },
-      ],
-      fillColor: pdfColors.accentSoft,
-      margin: [6, 3, 6, 3],
-    }
-  : {
-      text: money(item.result.total),
-      alignment: 'right',
-      bold: true,
-      color: pdfColors.heading,
-      fillColor: pdfColors.accentSoft,
-      margin: [6, 5, 6, 5],
-    }
+const benefitIconSvg = (kind: 'time' | 'warranty' | 'delivery') => {
+  if (kind === 'time') {
+    return '<svg width="25" height="25" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg"><circle cx="13" cy="14" r="8" fill="none" stroke="#263640" stroke-width="1.5"/><path d="M13 9 V14 L16.5 16 M10 3 H16 M13 3 V6" fill="none" stroke="#263640" stroke-width="1.5" stroke-linecap="round"/></svg>'
+  }
+  if (kind === 'warranty') {
+    return '<svg width="25" height="25" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg"><path d="M13 3 L21 7 V13 C21 18 17.5 21.5 13 23 C8.5 21.5 5 18 5 13 V7 Z" fill="none" stroke="#263640" stroke-width="1.5"/><path d="M10 13 L12 15 L16.5 10.5" fill="none" stroke="#263640" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  }
+  return '<svg width="25" height="25" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg"><path d="M3 8 H16 V19 H3 Z M16 12 H21 L24 16 V19 H16 Z" fill="none" stroke="#263640" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="20" r="2" fill="#ffffff" stroke="#263640" stroke-width="1.5"/><circle cx="20" cy="20" r="2" fill="#ffffff" stroke="#263640" stroke-width="1.5"/></svg>'
+}
 
-const buildShowerQuoteItemBlock = (item: ShowerQuoteItem, index: number): Content => {
-  const construction = getConstruction(defaultCatalog, item.form.constructionId)
-
+const contactRow = (kind: 'phone' | 'web' | 'location', title: string, subtitle?: string): Content => {
+  const stack: Content[] = [{ text: title, bold: true, color: pdfColors.heading, fontSize: 8.5 }]
+  if (subtitle) stack.push({ text: subtitle, color: pdfColors.muted, fontSize: 7.5, margin: [0, 1, 0, 0] })
   return {
-    unbreakable: true,
-    margin: [0, 7, 0, 0],
-    stack: [
-      {
-        table: {
-          widths: [62, '*', 104],
-          body: [[
-            { text: `Поз. ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [6, 5, 6, 5] },
-            { text: item.constructionTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [6, 5, 6, 5] },
-            itemPriceCell(item),
-          ]],
-        },
-        layout: 'noBorders',
-      },
-      {
-        columns: [
-          { width: '*', stack: quoteItemDetailContent(item) },
-          {
-            width: 118,
-            stack: [
-              { svg: buildSketchSvg(construction.sketch), width: 104, alignment: 'center' },
-              { text: construction.shortTitle, alignment: 'center', bold: true, color: pdfColors.heading, fontSize: 8, margin: [0, 2, 0, 0] },
-            ],
-          },
-        ],
-        columnGap: 12,
-        margin: [0, 4, 0, 0],
-      },
+    columns: [
+      { width: 20, svg: contactIconSvg(kind), fit: [15, 15], margin: [0, 1, 0, 0] },
+      { width: '*', stack },
     ],
+    columnGap: 4,
+    margin: [0, 0, 0, 6],
   }
 }
 
-const buildMirrorQuoteItemBlock = (item: MirrorQuoteItem, index: number): Content => ({
-  unbreakable: true,
-  margin: [0, 7, 0, 0],
-  stack: [
-    {
-      table: {
-        widths: [62, '*', 104],
-        body: [[
-          { text: `Поз. ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [6, 5, 6, 5] },
-          { text: item.mirrorTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [6, 5, 6, 5] },
-          itemPriceCell(item),
-        ]],
-      },
-      layout: 'noBorders',
-    },
-    {
-      columns: [
-        { width: '*', stack: quoteItemDetailContent(item) },
-        {
-          width: 118,
-          stack: [
-            { svg: buildMirrorSvg(), width: 104, alignment: 'center' },
-            { text: 'Зеркало', alignment: 'center', bold: true, color: pdfColors.heading, fontSize: 8, margin: [0, 2, 0, 0] },
-          ],
-        },
-      ],
-      columnGap: 12,
-      margin: [0, 4, 0, 0],
-    },
-  ],
+const productPreviewSvg = (item: QuoteItem) => isMirrorQuoteItem(item)
+  ? buildMirrorSvg()
+  : buildSketchSvg(getConstruction(defaultCatalog, item.form.constructionId).sketch)
+
+const itemParameterStack = (item: QuoteItem): Content[] => {
+  const lines = getQuoteItemDetails(item).filter((line) => line.label.trim() || line.value.trim())
+  if (lines.length === 0) return [{ text: '—', color: pdfColors.muted }]
+  return lines.map((line) => ({
+    text: [
+      { text: line.label.trim() ? `${line.label}: ` : '', color: pdfColors.text },
+      { text: line.value || '—', bold: true, color: pdfColors.heading },
+    ],
+    margin: [0, 0, 0, 2],
+  }))
+}
+
+const tableHeaderCell = (text: string): TableCell => ({
+  text,
+  bold: true,
+  alignment: 'center',
+  color: pdfColors.heading,
+  fillColor: '#f5f7f8',
+  fontSize: 7.5,
+  margin: [0, 4, 0, 4],
 })
 
-const buildQuoteItemBlock = (item: QuoteItem, index: number): Content => (
-  isMirrorQuoteItem(item)
-    ? buildMirrorQuoteItemBlock(item, index)
-    : buildShowerQuoteItemBlock(item, index)
-)
+const buildQuoteTableRow = (item: QuoteItem, index: number): TableCell[] => {
+  const price = getPublicProductPrice(item.result)
+  return [
+    { text: String(index + 1), alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
+    {
+      columns: [
+        { width: 48, svg: productPreviewSvg(item), fit: [44, 56], alignment: 'center' },
+        { width: '*', text: getQuoteItemTitle(item), alignment: 'center', bold: true, color: pdfColors.heading, margin: [0, 15, 0, 0] },
+      ],
+      columnGap: 4,
+      margin: [0, 4, 0, 4],
+    },
+    { stack: itemParameterStack(item), margin: [0, 4, 0, 3] },
+    { text: '1', alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
+    { text: 'шт.', alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
+    { text: shortMoney(price), alignment: 'right', bold: true, color: pdfColors.heading, noWrap: true, margin: [0, 21, 0, 0] },
+    { text: shortMoney(price), alignment: 'right', bold: true, color: pdfColors.heading, noWrap: true, margin: [0, 21, 0, 0] },
+  ]
+}
+
+const benefitBlock = (kind: 'time' | 'warranty' | 'delivery', title: string, value: string): Content => ({
+  columns: [
+    { width: 28, svg: benefitIconSvg(kind), fit: [22, 22], margin: [0, 1, 0, 0] },
+    {
+      width: '*',
+      stack: [
+        { text: title, color: pdfColors.muted, fontSize: 7.5 },
+        { text: value, color: pdfColors.heading, fontSize: 8, margin: [0, 1, 0, 0] },
+      ],
+    },
+  ],
+  columnGap: 4,
+})
 
 export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
   const items = getQuoteItems(quote)
-  const clientRows: Array<[string, string]> = [
-    ['Клиент', quote.form.clientName || 'Не указан'],
-    ['Телефон', quote.form.clientPhone || 'Не указан'],
-  ]
-  const clientStack: Content[] = [
-    { text: 'Клиент', style: 'sectionTitle', margin: [0, 4, 0, 4] },
-    detailTable(clientRows),
-  ]
-  if (quote.form.note) {
-    clientStack.push(
-      { text: 'Комментарий', color: pdfColors.muted, margin: [0, 7, 0, 2] },
-      { text: quote.form.note, color: pdfColors.heading },
-    )
-  }
   const hasDiscount = quote.result.discount > 0
-  const hasManualTotal = Number.isFinite(quote.manualTotal)
+  const storedDiscountPercent = Number(quote.form.discountPercent)
+  const discountPercent = Number.isFinite(storedDiscountPercent) && storedDiscountPercent > 0
+    ? storedDiscountPercent
+    : quote.result.subtotal > 0
+      ? Math.round((quote.result.discount / quote.result.subtotal) * 10_000) / 100
+      : 0
+  const discountPercentLabel = discountPercent.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
   const quoteTotal = getQuoteTotal(quote)
-  const totalLabel = hasManualTotal ? 'Итого по КП' : hasDiscount ? 'Итого со скидкой' : 'Итого'
-  const costRows: TableCell[][] = [
+  const customerParts = [
+    quote.form.clientName ? `Клиент: ${quote.form.clientName}` : '',
+    quote.form.clientPhone ? `Телефон: ${quote.form.clientPhone}` : '',
+  ].filter(Boolean)
+  const summaryRows: TableCell[][] = [
     [
-      { text: 'Стоимость изделия', color: pdfColors.text, margin: [0, 3, 0, 3] },
-      { text: money(quote.result.product + quote.result.installation), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 3, 0, 3] },
+      { text: 'Стоимость изделий', color: pdfColors.text, margin: [0, 3, 0, 3] },
+      { text: money(quote.result.product + quote.result.installation), alignment: 'right', color: pdfColors.heading, margin: [0, 3, 0, 3] },
     ],
     [
       { text: 'Доставка', color: pdfColors.text, margin: [0, 3, 0, 3] },
-      { text: money(quote.result.delivery), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 3, 0, 3] },
+      { text: money(quote.result.delivery), alignment: 'right', color: pdfColors.heading, margin: [0, 3, 0, 3] },
     ],
   ]
-  const discountRow: TableCell[] | null = hasDiscount ? [
-    { text: `Стоимость до скидки ${quote.form.discountPercent}%`, color: pdfColors.muted, margin: [0, 3, 0, 3] },
-    {
-      text: money(quote.result.subtotal),
-      alignment: 'right',
-      bold: true,
-      color: pdfColors.muted,
-      decoration: 'lineThrough',
-      margin: [0, 3, 0, 3],
-    },
-  ] : null
-  const costTableBody: TableCell[][] = [
-    ...costRows,
-    ...(discountRow ? [discountRow] : []),
-    [
-      { text: totalLabel, bold: true, fontSize: 12, color: '#ffffff', margin: [8, 7, 0, 7], fillColor: pdfColors.accent },
-      { text: money(quoteTotal), alignment: 'right', bold: true, fontSize: 14, color: '#ffffff', margin: [0, 6, 8, 6], fillColor: pdfColors.accent },
-    ],
-  ]
+  if (hasDiscount) {
+    summaryRows.push([
+      { text: `Стоимость до скидки (${discountPercentLabel}%)`, color: pdfColors.muted, margin: [0, 3, 0, 3] },
+      { text: money(quote.result.subtotal), alignment: 'right', color: pdfColors.muted, decoration: 'lineThrough', margin: [0, 3, 0, 3] },
+    ])
+  }
 
   return {
     pageSize: 'A4',
-    pageMargins: [34, 28, 34, 36],
+    pageMargins: [30, 28, 30, 28],
     info: {
       title: `${quote.number} - коммерческое предложение`,
       subject: `${items.length} поз. - ${items.map(getQuoteItemTitle).join(', ')}`,
@@ -264,83 +222,152 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
     },
     defaultStyle: {
       font: 'Roboto',
-      fontSize: 9,
+      fontSize: 8,
       color: pdfColors.text,
-      lineHeight: 1.2,
+      lineHeight: 1.15,
     },
     styles: {
-      documentTitle: { fontSize: 19, bold: true, color: pdfColors.heading },
-      sectionTitle: { fontSize: 11, bold: true, color: pdfColors.heading, margin: [0, 8, 0, 4] },
+      documentTitle: { fontSize: 16, bold: true, color: pdfColors.heading },
+      sectionTitle: { fontSize: 10, bold: true, color: pdfColors.heading },
     },
     content: [
       {
         columns: [
           {
             width: '*',
+            columns: [
+              { width: 46, svg: brandLogoSvg, fit: [40, 40] },
+              {
+                width: '*',
+                stack: [
+                  { text: 'АМАЛЬГАМА', bold: true, color: pdfColors.heading, fontSize: 16, margin: [0, 5, 0, 0] },
+                  { text: 'зеркала · душевые · мебель', color: pdfColors.heading, fontSize: 7, margin: [0, 2, 0, 0] },
+                ],
+              },
+            ],
+            columnGap: 5,
+          },
+          {
+            width: 158,
             stack: [
-              { text: 'Амальгама', color: pdfColors.accent, bold: true, fontSize: 10 },
-              { text: 'Коммерческое предложение', style: 'documentTitle', margin: [0, 3, 0, 0] },
+              contactRow('phone', '8 929 819-16-84', 'WhatsApp / Telegram / Max'),
+              contactRow('web', 'amalgama-rostov.ru'),
+              contactRow('location', 'Ростов-на-Дону и область'),
             ],
           },
+        ],
+        columnGap: 16,
+      },
+      {
+        text: 'Коммерческое предложение',
+        style: 'documentTitle',
+        margin: [0, 3, 0, 0],
+      },
+      {
+        text: `№ ${quote.number} от ${formatPdfDate(quote.createdAt)}`,
+        color: pdfColors.heading,
+        fontSize: 10,
+        margin: [0, 3, 0, 0],
+      },
+      ...(customerParts.length ? [{ text: customerParts.join(' · '), color: pdfColors.text, margin: [0, 5, 0, 0] } as Content] : []),
+      ...(quote.form.note ? [{ text: quote.form.note, color: pdfColors.muted, margin: [0, 3, 0, 0] } as Content] : []),
+      {
+        text: 'Состав и стоимость заказа',
+        style: 'sectionTitle',
+        margin: [0, 21, 0, 5],
+      },
+      {
+        table: {
+          headerRows: 1,
+          dontBreakRows: true,
+          widths: [20, 120, 142, 34, 38, 56, 58],
+          body: [
+            [
+              tableHeaderCell('№'),
+              tableHeaderCell('Наименование'),
+              tableHeaderCell('Параметры'),
+              tableHeaderCell('Кол-во'),
+              tableHeaderCell('Ед. изм.'),
+              tableHeaderCell('Цена, ₽'),
+              tableHeaderCell('Сумма, ₽'),
+            ],
+            ...items.map((item, index) => buildQuoteTableRow(item, index)),
+          ],
+        },
+        layout: {
+          hLineWidth: () => 0.7,
+          vLineWidth: () => 0.7,
+          hLineColor: () => '#cfd8de',
+          vLineColor: () => '#cfd8de',
+          paddingLeft: () => 4,
+          paddingRight: () => 4,
+          paddingTop: () => 2,
+          paddingBottom: () => 2,
+        },
+      },
+      {
+        columns: [
+          { width: '34%', text: '' },
           {
-            width: 132,
-            table: {
-              widths: ['*'],
-              body: [[{
-                stack: [
-                  { text: quote.number, bold: true, fontSize: 11, color: pdfColors.heading },
-                  { text: formatPdfDate(quote.createdAt), color: pdfColors.muted, margin: [0, 2, 0, 0] },
-                  { text: `${items.length} поз.`, color: pdfColors.accent, bold: true, margin: [0, 2, 0, 0] },
-                ],
-                fillColor: pdfColors.accentSoft,
-                margin: [8, 6, 8, 6],
-              }]],
-            },
-            layout: 'noBorders',
+            width: '*',
+            stack: [
+              {
+                table: {
+                  widths: ['*', 88],
+                  body: summaryRows,
+                },
+                layout: 'noBorders',
+              },
+              {
+                table: {
+                  widths: ['*', 88],
+                  body: [[
+                    { text: 'Итого к оплате', bold: true, fontSize: 10, color: pdfColors.heading, fillColor: '#e7f0f4', margin: [8, 6, 0, 6] },
+                    { text: money(quoteTotal), alignment: 'right', bold: true, fontSize: 12, color: pdfColors.heading, fillColor: '#cfe3ec', margin: [0, 5, 8, 5] },
+                  ]],
+                },
+                layout: 'noBorders',
+                margin: [0, 2, 0, 0],
+              },
+            ],
           },
         ],
-        columnGap: 18,
-      },
-      {
-        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 511, y2: 0, lineWidth: 1, lineColor: pdfColors.line }],
-        margin: [0, 10, 0, 2],
-      },
-      {
-        stack: clientStack,
-        margin: [0, 2, 0, 0],
-      },
-      ...items.map((item, index) => buildQuoteItemBlock(item, index)),
-      {
-        unbreakable: true,
-        stack: [
-          { text: 'Итого по предложению', style: 'sectionTitle' },
-          {
-            table: {
-              widths: ['*', 130],
-              body: costTableBody,
-            },
-            layout: {
-              hLineColor: () => pdfColors.line,
-              vLineWidth: () => 0,
-              paddingLeft: () => 0,
-              paddingRight: () => 0,
-            },
-          },
-        ],
-      },
-      {
-        text: 'Итоговая стоимость рассчитана по выбранной комплектации и указанным размерам.',
-        color: pdfColors.muted,
-        fontSize: 9,
         margin: [0, 7, 0, 0],
+      },
+      {
+        columns: [
+          { width: '*', stack: [benefitBlock('time', 'Срок изготовления:', '7-10 рабочих дней')] },
+          { width: '*', stack: [benefitBlock('warranty', 'Гарантия на изделия:', 'до 2 лет')] },
+          { width: '*', stack: [benefitBlock('delivery', 'Доставка и монтаж', 'по Ростову-на-Дону и области')] },
+        ],
+        columnGap: 14,
+        margin: [0, 14, 0, 0],
+      },
+      {
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 535, y2: 0, lineWidth: 0.8, lineColor: pdfColors.line }],
+        margin: [0, 11, 0, 8],
+      },
+      {
+        text: 'Спасибо за обращение!',
+        alignment: 'center',
+        bold: true,
+        color: pdfColors.heading,
+        fontSize: 11,
+      },
+      {
+        text: 'Мы ценим ваше доверие и всегда рады помочь!',
+        alignment: 'center',
+        color: pdfColors.muted,
+        fontSize: 8.5,
+        margin: [0, 2, 0, 0],
       },
     ],
     footer: (currentPage, pageCount) => ({
-      columns: [
-        { text: quote.number, color: pdfColors.muted, fontSize: 8 },
-        { text: `${currentPage} / ${pageCount}`, alignment: 'right', color: pdfColors.muted, fontSize: 8 },
-      ],
-      margin: [34, 9, 34, 0],
+      text: pageCount > 1 ? `${quote.number} · ${currentPage} / ${pageCount}` : '',
+      alignment: 'right',
+      color: pdfColors.muted,
+      fontSize: 7,
+      margin: [30, 8, 30, 0],
     }),
   }
 }
