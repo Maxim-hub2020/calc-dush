@@ -32,8 +32,10 @@ import {
   getConstruction,
   getOption,
   getPublicProductPrice,
+  getQuoteItemDetails,
   getQuoteItemTitle,
   getQuoteItems,
+  getQuoteTotal,
   isMirrorQuoteItem,
   money,
   resetDimensionsForConstruction,
@@ -1351,7 +1353,7 @@ function RecentCalculations({ catalog, quotes, onOpenArchive, onOpenQuote }: Rec
                 <strong>{title}</strong>
                 <small>{formatDate(quote.createdAt)}</small>
               </span>
-              <b>{shortMoney(quote.result.total)} ₽</b>
+              <b>{shortMoney(getQuoteTotal(quote))} ₽</b>
             </button>
           )
         }) : (
@@ -1571,10 +1573,20 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onP
       quote.form.clientName,
       quote.form.clientPhone,
       statuses[quote.status],
-      String(quote.result.total),
+      String(getQuoteTotal(quote)),
       ...items.flatMap((item) => isMirrorQuoteItem(item)
-        ? [item.mirrorTitle, item.materialLabel, ...item.serviceLines.map((line) => line.label)]
-        : [item.constructionTitle, item.glassLabel, item.hardwareLabel, item.hardwareClassLabel]),
+        ? [
+            item.mirrorTitle,
+            item.materialLabel,
+            ...getQuoteItemDetails(item).flatMap((line) => [line.label, line.value]),
+          ]
+        : [
+            item.constructionTitle,
+            item.glassLabel,
+            item.hardwareLabel,
+            item.hardwareClassLabel,
+            ...getQuoteItemDetails(item).flatMap((line) => [line.label, line.value]),
+          ]),
     ]
       .join(' ')
       .toLowerCase()
@@ -1624,7 +1636,7 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onP
               <span>
                 <b>{items.length > 1 ? `${items.length} позиции` : getQuoteItemTitle(firstItem)}</b>
                 <small>
-                  {quote.form.clientName || 'Без имени'} · {money(quote.result.total)}
+                  {quote.form.clientName || 'Без имени'} · {money(getQuoteTotal(quote))}
                 </small>
               </span>
               <ChevronRight size={19} />
@@ -1698,13 +1710,17 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
     note: quote.form.note,
     discountEnabled: quote.form.discountEnabled,
     discountPercent: quote.form.discountPercent,
+    manualTotalEnabled: Number.isFinite(quote.manualTotal),
+    manualTotal: getQuoteTotal(quote),
     items: getQuoteItems(quote).map((item) => ({
       id: item.id,
       title: getQuoteItemTitle(item),
       product: getPublicProductPrice(item.result),
       delivery: item.result.delivery,
+      details: getQuoteItemDetails(item),
     })),
   }))
+  const [expandedItemIds, setExpandedItemIds] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -1721,17 +1737,78 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
     }))
   }
 
+  const addDetail = (itemId: string) => {
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item) => item.id === itemId
+        ? {
+            ...item,
+            details: [...item.details, { id: crypto.randomUUID(), label: '', value: '' }],
+          }
+        : item),
+    }))
+    setExpandedItemIds((current) => new Set(current).add(itemId))
+  }
+
+  const updateDetail = (
+    itemId: string,
+    detailId: string,
+    patch: Partial<ManualQuotePatch['items'][number]['details'][number]>,
+  ) => {
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item) => item.id === itemId
+        ? {
+            ...item,
+            details: item.details.map((detail) => detail.id === detailId ? { ...detail, ...patch } : detail),
+          }
+        : item),
+    }))
+  }
+
+  const deleteDetail = (itemId: string, detailId: string) => {
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item) => item.id === itemId
+        ? { ...item, details: item.details.filter((detail) => detail.id !== detailId) }
+        : item),
+    }))
+  }
+
+  const deleteItem = (itemId: string) => {
+    setDraft((current) => current.items.length <= 1
+      ? current
+      : { ...current, items: current.items.filter((item) => item.id !== itemId) })
+    setExpandedItemIds((current) => {
+      const next = new Set(current)
+      next.delete(itemId)
+      return next
+    })
+  }
+
+  const toggleItemDetails = (itemId: string) => {
+    setExpandedItemIds((current) => {
+      const next = new Set(current)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
+  }
+
   const subtotal = draft.items.reduce((sum, item) => (
     sum + Math.max(0, Number(item.product) || 0) + Math.max(0, Number(item.delivery) || 0)
   ), 0)
   const discountPercent = Math.min(100, Math.max(0, Number(draft.discountPercent) || 0))
-  const total = draft.discountEnabled
+  const calculatedTotal = draft.discountEnabled
     ? draft.items.reduce((sum, item) => {
         const itemSubtotal = Math.max(0, Number(item.product) || 0) + Math.max(0, Number(item.delivery) || 0)
         return sum + Math.round(itemSubtotal * (1 - discountPercent / 100) / 10) * 10
       }, 0)
     : subtotal
-  const hasDiscount = total < subtotal
+  const total = draft.manualTotalEnabled
+    ? Math.max(0, Number(draft.manualTotal) || 0)
+    : calculatedTotal
+  const hasDiscount = draft.discountEnabled && discountPercent > 0 && calculatedTotal < subtotal
 
   return (
     <div className="quote-editor-backdrop">
@@ -1752,7 +1829,7 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
               <h3>Клиент</h3>
               <span>Данные в PDF</span>
             </div>
-            <div className="client-grid">
+            <div className="client-grid quote-editor-client-grid">
               <label className="text-field">
                 <span>Имя</span>
                 <input
@@ -1783,69 +1860,153 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
               <span>{draft.items.length}</span>
             </div>
             <div className="manual-quote-items">
-              {draft.items.map((item, index) => (
-                <div className="manual-quote-item" key={item.id}>
-                  <span className="manual-quote-index">{index + 1}</span>
-                  <label className="text-field manual-quote-title">
-                    <span>Наименование</span>
-                    <input value={item.title} onChange={(event) => updateItem(item.id, { title: event.target.value })} />
-                  </label>
-                  <label className="manual-money-field">
-                    <span>Стоимость изделия</span>
-                    <span className="manual-money-input">
-                      <input
-                        inputMode="numeric"
-                        min={0}
-                        type="number"
-                        value={item.product}
-                        onChange={(event) => updateItem(item.id, { product: Number(event.target.value) })}
-                      />
-                      <small>₽</small>
-                    </span>
-                  </label>
-                  <label className="manual-money-field">
-                    <span>Доставка</span>
-                    <span className="manual-money-input">
-                      <input
-                        inputMode="numeric"
-                        min={0}
-                        type="number"
-                        value={item.delivery}
-                        onChange={(event) => updateItem(item.id, { delivery: Number(event.target.value) })}
-                      />
-                      <small>₽</small>
-                    </span>
-                  </label>
-                </div>
-              ))}
+              {draft.items.map((item, index) => {
+                const isExpanded = expandedItemIds.has(item.id)
+                return (
+                  <div className="manual-quote-item" key={item.id}>
+                    <span className="manual-quote-index">{index + 1}</span>
+                    <label className="text-field manual-quote-title">
+                      <span>Наименование</span>
+                      <input value={item.title} onChange={(event) => updateItem(item.id, { title: event.target.value })} />
+                    </label>
+                    <label className="manual-money-field">
+                      <span>Изделие</span>
+                      <span className="manual-money-input">
+                        <input
+                          inputMode="numeric"
+                          min={0}
+                          type="number"
+                          value={item.product}
+                          onChange={(event) => updateItem(item.id, { product: Number(event.target.value) })}
+                        />
+                        <small>₽</small>
+                      </span>
+                    </label>
+                    <label className="manual-money-field">
+                      <span>Доставка</span>
+                      <span className="manual-money-input">
+                        <input
+                          inputMode="numeric"
+                          min={0}
+                          type="number"
+                          value={item.delivery}
+                          onChange={(event) => updateItem(item.id, { delivery: Number(event.target.value) })}
+                        />
+                        <small>₽</small>
+                      </span>
+                    </label>
+                    <button
+                      aria-label={`Удалить позицию ${index + 1}`}
+                      className="manual-item-delete"
+                      disabled={draft.items.length <= 1}
+                      title={draft.items.length <= 1 ? 'В КП должна остаться хотя бы одна позиция' : 'Удалить позицию'}
+                      type="button"
+                      onClick={() => deleteItem(item.id)}
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                    <button
+                      aria-expanded={isExpanded}
+                      className="manual-details-toggle"
+                      type="button"
+                      onClick={() => toggleItemDetails(item.id)}
+                    >
+                      {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      <span>Состав позиции</span>
+                      <small>{item.details.length}</small>
+                    </button>
+                    {isExpanded ? (
+                      <div className="manual-detail-list">
+                        {item.details.map((detail, detailIndex) => (
+                          <div className="manual-detail-row" key={detail.id}>
+                            <input
+                              aria-label={`Параметр ${detailIndex + 1} позиции ${index + 1}`}
+                              placeholder="Параметр"
+                              value={detail.label}
+                              onChange={(event) => updateDetail(item.id, detail.id, { label: event.target.value })}
+                            />
+                            <input
+                              aria-label={`Значение ${detailIndex + 1} позиции ${index + 1}`}
+                              placeholder="Значение"
+                              value={detail.value}
+                              onChange={(event) => updateDetail(item.id, detail.id, { value: event.target.value })}
+                            />
+                            <button
+                              aria-label={`Удалить строку ${detailIndex + 1}`}
+                              title="Удалить строку"
+                              type="button"
+                              onClick={() => deleteDetail(item.id, detail.id)}
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ))}
+                        <button className="manual-detail-add" type="button" onClick={() => addDetail(item.id)}>
+                          <Plus size={16} />
+                          Добавить строку
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
           </section>
 
-          <section className="quote-editor-section quote-editor-discount">
-            <ToggleRow
-              checked={draft.discountEnabled}
-              label="Скидка"
-              value={draft.discountEnabled ? `${discountPercent}%` : 'Не применяется'}
-              onChange={(discountEnabled) => setDraft((current) => ({ ...current, discountEnabled }))}
-            />
-            {draft.discountEnabled ? (
-              <label className="manual-money-field discount-field">
-                <span>Размер скидки</span>
-                <span className="manual-money-input">
-                  <input
-                    inputMode="decimal"
-                    min={0}
-                    max={100}
-                    type="number"
-                    value={draft.discountPercent}
-                    onChange={(event) => setDraft((current) => ({ ...current, discountPercent: Number(event.target.value) }))}
-                  />
-                  <small>%</small>
-                </span>
-              </label>
-            ) : null}
+          <section className="quote-editor-section quote-editor-pricing">
+            <div className="quote-price-control">
+              <ToggleRow
+                checked={draft.discountEnabled}
+                label="Скидка"
+                value={draft.discountEnabled ? `${discountPercent}%` : 'Нет'}
+                onChange={(discountEnabled) => setDraft((current) => ({ ...current, discountEnabled }))}
+              />
+              {draft.discountEnabled ? (
+                <label className="manual-money-field discount-field">
+                  <span>Размер</span>
+                  <span className="manual-money-input">
+                    <input
+                      inputMode="decimal"
+                      min={0}
+                      max={100}
+                      type="number"
+                      value={draft.discountPercent}
+                      onChange={(event) => setDraft((current) => ({ ...current, discountPercent: Number(event.target.value) }))}
+                    />
+                    <small>%</small>
+                  </span>
+                </label>
+              ) : null}
+            </div>
+            <div className="quote-price-control">
+              <ToggleRow
+                checked={draft.manualTotalEnabled}
+                label="Ручная цена"
+                value={draft.manualTotalEnabled ? 'Вручную' : 'По расчету'}
+                onChange={(manualTotalEnabled) => setDraft((current) => ({
+                  ...current,
+                  manualTotalEnabled,
+                  manualTotal: manualTotalEnabled ? calculatedTotal : current.manualTotal,
+                }))}
+              />
+              {draft.manualTotalEnabled ? (
+                <label className="manual-money-field manual-total-field">
+                  <span>Цена КП</span>
+                  <span className="manual-money-input">
+                    <input
+                      inputMode="numeric"
+                      min={0}
+                      type="number"
+                      value={draft.manualTotal}
+                      onChange={(event) => setDraft((current) => ({ ...current, manualTotal: Number(event.target.value) }))}
+                    />
+                    <small>₽</small>
+                  </span>
+                </label>
+              ) : null}
+            </div>
             <div className={hasDiscount ? 'manual-total has-discount' : 'manual-total'}>
-              <span>Итого</span>
+              <span>Итого по КП</span>
               <div>
                 {hasDiscount ? <del>{money(subtotal)}</del> : null}
                 <strong>{money(total)}</strong>

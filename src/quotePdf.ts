@@ -2,8 +2,10 @@ import type { Content, TableCell, TDocumentDefinitions } from 'pdfmake/interface
 import { Capacitor } from '@capacitor/core'
 import {
   getConstruction,
+  getQuoteItemDetails,
   getQuoteItemTitle,
   getQuoteItems,
+  getQuoteTotal,
   isMirrorQuoteItem,
   money,
   type MirrorQuoteItem,
@@ -31,9 +33,6 @@ const formatPdfDate = (date: string) =>
     month: 'long',
     year: 'numeric',
   }).format(new Date(date))
-
-const dimensionRows = (quote: ShowerQuoteItem, construction: Construction): Array<[string, string]> =>
-  construction.fields.map((field) => [field.label, `${quote.form.dimensions[field.key] ?? 0} мм`])
 
 const buildSketchSvg = (sketch: Construction['sketch']) => {
   const panelCount: Record<Construction['sketch'], number> = {
@@ -86,8 +85,8 @@ const detailTable = (rows: Array<[string, string]>): Content => ({
   table: {
     widths: ['42%', '*'],
     body: rows.map(([label, value]) => [
-      { text: label, color: pdfColors.muted, margin: [0, 4, 0, 4] },
-      { text: value, bold: true, color: pdfColors.heading, margin: [0, 4, 0, 4] },
+      { text: label, color: pdfColors.muted, margin: [0, 2, 0, 2] },
+      { text: value, bold: true, color: pdfColors.heading, margin: [0, 2, 0, 2] },
     ]),
   },
   layout: {
@@ -98,24 +97,13 @@ const detailTable = (rows: Array<[string, string]>): Content => ({
   },
 })
 
-const showerConfigurationRows = (item: ShowerQuoteItem, construction: Construction): Array<[string, string]> => {
-  const rows: Array<[string, string]> = [
-    ['Конструкция', item.constructionTitle],
-    ...dimensionRows(item, construction),
-    ['Стекло', item.glassLabel],
-    ['Фурнитура', item.hardwareLabel],
-    ['Класс фурнитуры', item.hardwareClassLabel],
-    [
-      'Доставка',
-      item.form.delivery
-        ? item.form.deliveryZone === 'outside'
-          ? `За городом, ${item.form.deliveryKm} км`
-          : 'По городу'
-        : 'Не включена',
-    ],
-  ]
-  if (item.result.discount > 0) rows.push(['Скидка', `${item.form.discountPercent}%`])
-  return rows
+const quoteItemDetailRows = (item: QuoteItem): Array<[string, string]> => getQuoteItemDetails(item)
+  .filter((line) => line.label.trim() || line.value.trim())
+  .map((line) => [line.label, line.value])
+
+const quoteItemDetailContent = (item: QuoteItem): Content[] => {
+  const rows = quoteItemDetailRows(item)
+  return rows.length ? [detailTable(rows)] : [{ text: '' }]
 }
 
 const itemPriceCell = (item: QuoteItem): TableCell => item.result.discount > 0
@@ -126,12 +114,12 @@ const itemPriceCell = (item: QuoteItem): TableCell => item.result.discount > 0
           alignment: 'right',
           color: pdfColors.muted,
           decoration: 'lineThrough',
-          fontSize: 9,
+          fontSize: 8,
         },
-        { text: money(item.result.total), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 2, 0, 0] },
+        { text: money(item.result.total), alignment: 'right', bold: true, color: pdfColors.heading, fontSize: 10, margin: [0, 1, 0, 0] },
       ],
       fillColor: pdfColors.accentSoft,
-      margin: [8, 4, 8, 4],
+      margin: [6, 3, 6, 3],
     }
   : {
       text: money(item.result.total),
@@ -139,7 +127,7 @@ const itemPriceCell = (item: QuoteItem): TableCell => item.result.discount > 0
       bold: true,
       color: pdfColors.heading,
       fillColor: pdfColors.accentSoft,
-      margin: [8, 7, 8, 7],
+      margin: [6, 5, 6, 5],
     }
 
 const buildShowerQuoteItemBlock = (item: ShowerQuoteItem, index: number): Content => {
@@ -147,14 +135,14 @@ const buildShowerQuoteItemBlock = (item: ShowerQuoteItem, index: number): Conten
 
   return {
     unbreakable: true,
-    margin: [0, 12, 0, 2],
+    margin: [0, 7, 0, 0],
     stack: [
       {
         table: {
-          widths: [78, '*', 118],
+          widths: [62, '*', 104],
           body: [[
-            { text: `Позиция ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
-            { text: item.constructionTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+            { text: `Поз. ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [6, 5, 6, 5] },
+            { text: item.constructionTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [6, 5, 6, 5] },
             itemPriceCell(item),
           ]],
         },
@@ -162,48 +150,32 @@ const buildShowerQuoteItemBlock = (item: ShowerQuoteItem, index: number): Conten
       },
       {
         columns: [
-          { width: '*', stack: [detailTable(showerConfigurationRows(item, construction))] },
+          { width: '*', stack: quoteItemDetailContent(item) },
           {
-            width: 160,
+            width: 118,
             stack: [
-              { svg: buildSketchSvg(construction.sketch), width: 145, alignment: 'center' },
-              { text: construction.shortTitle, alignment: 'center', bold: true, color: pdfColors.heading, margin: [0, 3, 0, 0] },
+              { svg: buildSketchSvg(construction.sketch), width: 104, alignment: 'center' },
+              { text: construction.shortTitle, alignment: 'center', bold: true, color: pdfColors.heading, fontSize: 8, margin: [0, 2, 0, 0] },
             ],
           },
         ],
-        columnGap: 18,
-        margin: [0, 8, 0, 0],
+        columnGap: 12,
+        margin: [0, 4, 0, 0],
       },
     ],
   }
 }
 
-const mirrorConfigurationRows = (item: MirrorQuoteItem): Array<[string, string]> => {
-  const rows: Array<[string, string]> = [
-    ['Изделие', item.mirrorTitle],
-    ['Размер', `${item.form.width} × ${item.form.height} мм`],
-    ['Материал', item.materialLabel],
-    ...item.serviceLines
-      .filter((line) => line.visibleInQuote)
-      .map((line): [string, string] => [
-        line.label,
-        `${line.quantity.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${line.unitLabel}`,
-      ]),
-  ]
-  if (item.result.discount > 0) rows.push(['Скидка', `${item.form.discountPercent}%`])
-  return rows
-}
-
 const buildMirrorQuoteItemBlock = (item: MirrorQuoteItem, index: number): Content => ({
   unbreakable: true,
-  margin: [0, 12, 0, 2],
+  margin: [0, 7, 0, 0],
   stack: [
     {
       table: {
-        widths: [78, '*', 118],
+        widths: [62, '*', 104],
         body: [[
-          { text: `Позиция ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
-          { text: item.mirrorTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [8, 7, 8, 7] },
+          { text: `Поз. ${index + 1}`, bold: true, color: pdfColors.accent, fillColor: pdfColors.accentSoft, margin: [6, 5, 6, 5] },
+          { text: item.mirrorTitle, bold: true, color: pdfColors.heading, fillColor: pdfColors.accentSoft, margin: [6, 5, 6, 5] },
           itemPriceCell(item),
         ]],
       },
@@ -211,17 +183,17 @@ const buildMirrorQuoteItemBlock = (item: MirrorQuoteItem, index: number): Conten
     },
     {
       columns: [
-        { width: '*', stack: [detailTable(mirrorConfigurationRows(item))] },
+        { width: '*', stack: quoteItemDetailContent(item) },
         {
-          width: 160,
+          width: 118,
           stack: [
-            { svg: buildMirrorSvg(), width: 145, alignment: 'center' },
-            { text: 'Зеркало', alignment: 'center', bold: true, color: pdfColors.heading, margin: [0, 3, 0, 0] },
+            { svg: buildMirrorSvg(), width: 104, alignment: 'center' },
+            { text: 'Зеркало', alignment: 'center', bold: true, color: pdfColors.heading, fontSize: 8, margin: [0, 2, 0, 0] },
           ],
         },
       ],
-      columnGap: 18,
-      margin: [0, 8, 0, 0],
+      columnGap: 12,
+      margin: [0, 4, 0, 0],
     },
   ],
 })
@@ -239,49 +211,52 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
     ['Телефон', quote.form.clientPhone || 'Не указан'],
   ]
   const clientStack: Content[] = [
-    { text: 'Клиент', style: 'sectionTitle', margin: [0, 8, 0, 7] },
+    { text: 'Клиент', style: 'sectionTitle', margin: [0, 4, 0, 4] },
     detailTable(clientRows),
   ]
   if (quote.form.note) {
     clientStack.push(
-      { text: 'Комментарий', color: pdfColors.muted, margin: [0, 12, 0, 3] },
+      { text: 'Комментарий', color: pdfColors.muted, margin: [0, 7, 0, 2] },
       { text: quote.form.note, color: pdfColors.heading },
     )
   }
   const hasDiscount = quote.result.discount > 0
+  const hasManualTotal = Number.isFinite(quote.manualTotal)
+  const quoteTotal = getQuoteTotal(quote)
+  const totalLabel = hasManualTotal ? 'Итого по КП' : hasDiscount ? 'Итого со скидкой' : 'Итого'
   const costRows: TableCell[][] = [
     [
-      { text: 'Стоимость изделия', color: pdfColors.text, margin: [0, 5, 0, 5] },
-      { text: money(quote.result.product + quote.result.installation), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 5, 0, 5] },
+      { text: 'Стоимость изделия', color: pdfColors.text, margin: [0, 3, 0, 3] },
+      { text: money(quote.result.product + quote.result.installation), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 3, 0, 3] },
     ],
     [
-      { text: 'Доставка', color: pdfColors.text, margin: [0, 5, 0, 5] },
-      { text: money(quote.result.delivery), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 5, 0, 5] },
+      { text: 'Доставка', color: pdfColors.text, margin: [0, 3, 0, 3] },
+      { text: money(quote.result.delivery), alignment: 'right', bold: true, color: pdfColors.heading, margin: [0, 3, 0, 3] },
     ],
   ]
   const discountRow: TableCell[] | null = hasDiscount ? [
-    { text: `Стоимость до скидки ${quote.form.discountPercent}%`, color: pdfColors.muted, margin: [0, 6, 0, 6] },
+    { text: `Стоимость до скидки ${quote.form.discountPercent}%`, color: pdfColors.muted, margin: [0, 3, 0, 3] },
     {
       text: money(quote.result.subtotal),
       alignment: 'right',
       bold: true,
       color: pdfColors.muted,
       decoration: 'lineThrough',
-      margin: [0, 6, 0, 6],
+      margin: [0, 3, 0, 3],
     },
   ] : null
   const costTableBody: TableCell[][] = [
     ...costRows,
     ...(discountRow ? [discountRow] : []),
     [
-      { text: hasDiscount ? 'Итого со скидкой' : 'Итого', bold: true, fontSize: 14, color: '#ffffff', margin: [10, 9, 0, 9], fillColor: pdfColors.accent },
-      { text: money(quote.result.total), alignment: 'right', bold: true, fontSize: 16, color: '#ffffff', margin: [0, 8, 10, 8], fillColor: pdfColors.accent },
+      { text: totalLabel, bold: true, fontSize: 12, color: '#ffffff', margin: [8, 7, 0, 7], fillColor: pdfColors.accent },
+      { text: money(quoteTotal), alignment: 'right', bold: true, fontSize: 14, color: '#ffffff', margin: [0, 6, 8, 6], fillColor: pdfColors.accent },
     ],
   ]
 
   return {
     pageSize: 'A4',
-    pageMargins: [42, 40, 42, 46],
+    pageMargins: [34, 28, 34, 36],
     info: {
       title: `${quote.number} - коммерческое предложение`,
       subject: `${items.length} поз. - ${items.map(getQuoteItemTitle).join(', ')}`,
@@ -289,13 +264,13 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
     },
     defaultStyle: {
       font: 'Roboto',
-      fontSize: 10,
+      fontSize: 9,
       color: pdfColors.text,
       lineHeight: 1.2,
     },
     styles: {
-      documentTitle: { fontSize: 22, bold: true, color: pdfColors.heading },
-      sectionTitle: { fontSize: 13, bold: true, color: pdfColors.heading, margin: [0, 14, 0, 7] },
+      documentTitle: { fontSize: 19, bold: true, color: pdfColors.heading },
+      sectionTitle: { fontSize: 11, bold: true, color: pdfColors.heading, margin: [0, 8, 0, 4] },
     },
     content: [
       {
@@ -303,22 +278,22 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
           {
             width: '*',
             stack: [
-              { text: 'Амальгама', color: pdfColors.accent, bold: true, fontSize: 12 },
-              { text: 'Коммерческое предложение', style: 'documentTitle', margin: [0, 5, 0, 0] },
+              { text: 'Амальгама', color: pdfColors.accent, bold: true, fontSize: 10 },
+              { text: 'Коммерческое предложение', style: 'documentTitle', margin: [0, 3, 0, 0] },
             ],
           },
           {
-            width: 150,
+            width: 132,
             table: {
               widths: ['*'],
               body: [[{
                 stack: [
-                  { text: quote.number, bold: true, fontSize: 13, color: pdfColors.heading },
-                  { text: formatPdfDate(quote.createdAt), color: pdfColors.muted, margin: [0, 4, 0, 0] },
-                  { text: `${items.length} поз.`, color: pdfColors.accent, bold: true, margin: [0, 4, 0, 0] },
+                  { text: quote.number, bold: true, fontSize: 11, color: pdfColors.heading },
+                  { text: formatPdfDate(quote.createdAt), color: pdfColors.muted, margin: [0, 2, 0, 0] },
+                  { text: `${items.length} поз.`, color: pdfColors.accent, bold: true, margin: [0, 2, 0, 0] },
                 ],
                 fillColor: pdfColors.accentSoft,
-                margin: [10, 8, 10, 8],
+                margin: [8, 6, 8, 6],
               }]],
             },
             layout: 'noBorders',
@@ -328,11 +303,11 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
       },
       {
         canvas: [{ type: 'line', x1: 0, y1: 0, x2: 511, y2: 0, lineWidth: 1, lineColor: pdfColors.line }],
-        margin: [0, 18, 0, 4],
+        margin: [0, 10, 0, 2],
       },
       {
         stack: clientStack,
-        margin: [0, 4, 0, 0],
+        margin: [0, 2, 0, 0],
       },
       ...items.map((item, index) => buildQuoteItemBlock(item, index)),
       {
@@ -357,7 +332,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
         text: 'Итоговая стоимость рассчитана по выбранной комплектации и указанным размерам.',
         color: pdfColors.muted,
         fontSize: 9,
-        margin: [0, 12, 0, 0],
+        margin: [0, 7, 0, 0],
       },
     ],
     footer: (currentPage, pageCount) => ({
@@ -365,7 +340,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
         { text: quote.number, color: pdfColors.muted, fontSize: 8 },
         { text: `${currentPage} / ${pageCount}`, alignment: 'right', color: pdfColors.muted, fontSize: 8 },
       ],
-      margin: [42, 12, 42, 0],
+      margin: [34, 9, 34, 0],
     }),
   }
 }

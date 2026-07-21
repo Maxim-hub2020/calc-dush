@@ -1,4 +1,4 @@
-import type { Construction, PriceOption, PricingCatalog } from './pricing'
+import { defaultCatalog, type Construction, type PriceOption, type PricingCatalog } from './pricing'
 import {
   getMirrorCalculatedOptions,
   getMirrorMaterial,
@@ -48,6 +48,12 @@ export type CalculationResult = {
   lines: CalculationLine[]
 }
 
+export type QuoteDetailLine = {
+  id: string
+  label: string
+  value: string
+}
+
 export type ShowerQuoteItem = {
   id: string
   kind?: 'shower'
@@ -57,6 +63,7 @@ export type ShowerQuoteItem = {
   glassLabel: string
   hardwareLabel: string
   hardwareClassLabel: string
+  details?: QuoteDetailLine[]
 }
 
 export type MirrorQuoteServiceLine = {
@@ -75,6 +82,7 @@ export type MirrorQuoteItem = {
   mirrorTitle: string
   materialLabel: string
   serviceLines: MirrorQuoteServiceLine[]
+  details?: QuoteDetailLine[]
 }
 
 export type QuoteItem = ShowerQuoteItem | MirrorQuoteItem
@@ -85,6 +93,7 @@ type QuoteMetadata = {
   createdAt: string
   status: 'new' | 'sent' | 'accepted' | 'archived'
   items?: QuoteItem[]
+  manualTotal?: number
 }
 
 export type Quote = QuoteItem & QuoteMetadata
@@ -108,6 +117,7 @@ export type ManualQuoteItemPatch = {
   title: string
   product: number
   delivery: number
+  details: QuoteDetailLine[]
 }
 
 export type ManualQuotePatch = {
@@ -116,6 +126,8 @@ export type ManualQuotePatch = {
   note: string
   discountEnabled: boolean
   discountPercent: number
+  manualTotalEnabled: boolean
+  manualTotal: number
   items: ManualQuoteItemPatch[]
 }
 
@@ -332,6 +344,51 @@ export const isShowerQuoteItem = (item: QuoteItem): item is ShowerQuoteItem => i
 export const getQuoteItemTitle = (item: QuoteItem) =>
   isMirrorQuoteItem(item) ? item.mirrorTitle : item.constructionTitle
 
+export const getQuoteItemDetails = (item: QuoteItem): QuoteDetailLine[] => {
+  if (Array.isArray(item.details)) return item.details
+  if (isMirrorQuoteItem(item)) {
+    return [
+      { id: `${item.id}:size`, label: 'Размер', value: `${item.form.width} × ${item.form.height} мм` },
+      { id: `${item.id}:material`, label: 'Материал', value: item.materialLabel },
+      ...item.serviceLines
+        .filter((line) => line.visibleInQuote)
+        .map((line, index) => ({
+          id: `${item.id}:service:${index}`,
+          label: line.label,
+          value: `${line.quantity.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${line.unitLabel}`,
+        })),
+    ]
+  }
+
+  const construction = getConstruction(defaultCatalog, item.form.constructionId)
+  const details: QuoteDetailLine[] = [
+    ...construction.fields.map((field) => ({
+      id: `${item.id}:dimension:${field.key}`,
+      label: field.label,
+      value: `${item.form.dimensions[field.key] ?? 0} мм`,
+    })),
+    { id: `${item.id}:glass`, label: 'Стекло', value: item.glassLabel },
+    { id: `${item.id}:hardware`, label: 'Фурнитура', value: item.hardwareLabel },
+    { id: `${item.id}:hardware-class`, label: 'Класс фурнитуры', value: item.hardwareClassLabel },
+  ]
+  if (item.result.delivery > 0) {
+    details.push({
+      id: `${item.id}:delivery`,
+      label: 'Доставка',
+      value: item.form.delivery
+        ? item.form.deliveryZone === 'outside'
+          ? `За городом, ${item.form.deliveryKm} км`
+          : 'По городу'
+        : 'Включена',
+    })
+  }
+  return details
+}
+
+export const getQuoteTotal = (quote: Quote) => Number.isFinite(quote.manualTotal)
+  ? Math.max(0, Number(quote.manualTotal))
+  : quote.result.total
+
 export const getQuoteItems = (quote: Quote): QuoteItem[] => {
   if (quote.items?.length) return quote.items
   if (quote.kind === 'mirror') {
@@ -382,11 +439,11 @@ export const createQuote = (
 }
 
 export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quote => {
-  const patches = new Map(patch.items.map((item) => [item.id, item]))
+  const itemsById = new Map(getQuoteItems(quote).map((item) => [item.id, item]))
   const discountPercent = Math.min(100, Math.max(0, Number(patch.discountPercent) || 0))
-  const updatedItems = getQuoteItems(quote).map((item): QuoteItem => {
-    const itemPatch = patches.get(item.id)
-    if (!itemPatch) return item
+  const updatedItems = patch.items.flatMap((itemPatch): QuoteItem[] => {
+    const item = itemsById.get(itemPatch.id)
+    if (!item) return []
     const product = Math.max(0, Number(itemPatch.product) || 0)
     const delivery = Math.max(0, Number(itemPatch.delivery) || 0)
     const subtotal = product + delivery
@@ -416,13 +473,17 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
 
     if (isMirrorQuoteItem(item)) {
       const form: MirrorForm = { ...item.form, ...sharedForm }
-      return { ...item, form, result, mirrorTitle: itemPatch.title }
+      return [{ ...item, form, result, mirrorTitle: itemPatch.title, details: itemPatch.details }]
     }
     const form: CalculatorForm = { ...item.form, ...sharedForm }
-    return { ...item, form, result, constructionTitle: itemPatch.title }
+    return [{ ...item, form, result, constructionTitle: itemPatch.title, details: itemPatch.details }]
   })
+  if (updatedItems.length === 0) return quote
   const firstItem = updatedItems[0]
   const result = combineCalculationResults(updatedItems.map((item) => item.result))
+  const manualTotal = patch.manualTotalEnabled
+    ? Math.max(0, Number(patch.manualTotal) || 0)
+    : undefined
 
   return {
     ...firstItem,
@@ -432,5 +493,6 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
     status: quote.status,
     result,
     items: updatedItems,
+    manualTotal,
   }
 }
