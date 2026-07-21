@@ -43,6 +43,7 @@ import {
   getOption,
   getPublicProductPrice,
   getQuoteDelivery,
+  getNextQuoteNumber,
   getQuoteItemQuantity,
   getQuoteItemDetails,
   getQuoteItemTitle,
@@ -489,13 +490,13 @@ function App() {
     const drafts: QuoteDraftItem[] = positionResults.map((position) => position.kind === 'mirror'
       ? { kind: 'mirror', quantity: position.quantity, form: cloneMirrorForm(position.form), result: position.unitResult }
       : { kind: 'shower', quantity: position.quantity, form: cloneForm(position.form), result: position.unitResult })
-    const quote = createQuote(catalog, mirrorCatalog, drafts, orderDelivery)
     const editingQuote = quotes.find((item) => item.id === editingQuoteId)
+    const quoteNumber = editingQuote?.number ?? getNextQuoteNumber(quotes)
+    const quote = createQuote(catalog, mirrorCatalog, drafts, orderDelivery, quoteNumber)
     if (!editingQuote) return quote
     return {
       ...quote,
       id: editingQuote.id,
-      number: editingQuote.number,
       createdAt: editingQuote.createdAt,
       status: editingQuote.status,
     }

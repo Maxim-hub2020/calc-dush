@@ -502,11 +502,26 @@ export const getQuoteDelivery = (quote: Quote): QuoteDelivery => {
   return normalizeQuoteDelivery({ enabled: quote.result.delivery > 0 })
 }
 
+export const getNextQuoteNumber = (quotes: Array<Pick<Quote, 'number'>>) => {
+  const usedNumbers = quotes
+    .map((quote) => quote.number.trim())
+    .filter((number) => /^\d{4}$/.test(number))
+    .map(Number)
+  const nextNumber = usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1001
+
+  if (nextNumber > 9999) {
+    throw new Error('Закончились доступные четырехзначные номера КП')
+  }
+
+  return String(nextNumber)
+}
+
 export const createQuote = (
   catalog: PricingCatalog,
   mirrorCatalog: MirrorPricingCatalog,
   drafts: QuoteDraftItem[],
   orderDelivery: QuoteDelivery,
+  number: string,
 ): Quote => {
   if (drafts.length === 0) throw new Error('КП должно содержать хотя бы одну позицию')
   const items = drafts.map((draft) => draft.kind === 'mirror'
@@ -523,7 +538,7 @@ export const createQuote = (
   return {
     ...firstItem,
     id,
-    number: `КП-${new Date().getFullYear()}-${id.slice(0, 4).toUpperCase()}`,
+    number,
     createdAt,
     status: 'new',
     result: applyQuoteDelivery(itemResult, calculateQuoteDelivery(catalog, normalizedDelivery)),

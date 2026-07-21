@@ -409,7 +409,7 @@ export const createQuotePdfBlob = (quote: Quote) =>
     worker.postMessage(quote)
   })
 
-const pdfFileName = (quote: Quote) => `${quote.number.replace(/[^\p{L}\p{N}._-]+/gu, '-')}.pdf`
+const pdfFileName = (quote: Quote) => `${quote.number.trim()}.pdf`
 
 const blobToBase64 = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
