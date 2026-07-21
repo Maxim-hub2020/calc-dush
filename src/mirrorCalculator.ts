@@ -117,21 +117,16 @@ export const calculateMirrorQuote = (catalog: MirrorPricingCatalog, form: Mirror
   const rawWork = valid
     ? options.filter((item) => item.category === 'work').reduce((sum, item) => sum + item.total, 0)
     : 0
-  const rawDelivery = valid
-    ? options.filter((item) => item.category === 'delivery').reduce((sum, item) => sum + item.total, 0)
-    : 0
-
   const baseProduct = rawMaterial * (1 + Math.max(0, catalog.settings.materialMarkupPercent) / 100)
   const baseInstallation = rawWork * (1 + Math.max(0, catalog.settings.serviceMarkupPercent) / 100)
-  const baseDelivery = rawDelivery * (1 + Math.max(0, catalog.settings.serviceMarkupPercent) / 100)
-  const baseSubtotal = baseProduct + baseInstallation + baseDelivery
+  const baseSubtotal = baseProduct + baseInstallation
   const manager = form.managerEnabled ? baseSubtotal * Math.max(0, catalog.settings.managerPercent) / 100 : 0
   const designer = form.designerEnabled ? baseSubtotal * Math.max(0, catalog.settings.designerPercent) / 100 : 0
   const commissionFactor = baseSubtotal > 0 ? (baseSubtotal + manager + designer) / baseSubtotal : 1
   const product = roundToTen(baseProduct * commissionFactor)
   const installation = roundToTen(baseInstallation * commissionFactor)
-  const delivery = roundToTen(baseDelivery * commissionFactor)
-  const subtotal = product + installation + delivery
+  const delivery = 0
+  const subtotal = product + installation
   const discountPercent = Math.min(100, Math.max(0, Number(form.discountPercent) || 0))
   const total = form.discountEnabled ? roundToTen(subtotal * (1 - discountPercent / 100)) : subtotal
   const discount = subtotal - total

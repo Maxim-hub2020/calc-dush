@@ -69,7 +69,6 @@ export const defaultMirrorCatalog: MirrorPricingCatalog = {
     material('glass-tempered-8', 'Стекло 8 мм закалённое', 6500),
   ],
   services: [
-    service('delivery-city', 'Доставка', 1500, 'piece', true, 'delivery'),
     service('installation-glue', 'Монтаж: приклейка', 2200, 'area', true),
     service('installation-hanging', 'Монтаж: навеска', 3000, 'piece', true),
     service('dismantling', 'Демонтаж', 3000, 'piece', true),
@@ -83,7 +82,6 @@ export const defaultMirrorCatalog: MirrorPricingCatalog = {
     service('floor-lift', 'Подъём на этаж', 300, 'piece', true),
     service('heating-material', 'Материал подогрева', 1500, 'piece', true),
     service('touch-switch', 'Выключатель сенсорный', 1500, 'piece', true),
-    service('delivery-bataysk', 'Доставка в Батайск', 2000, 'piece', true, 'delivery'),
     service('installation-hanging-multiple', 'Навеска от 2 шт.', 2000, 'piece', true),
     service('clock', 'Часы', 4000, 'piece', true),
     service('hole', 'Отверстие', 400, 'piece', true),

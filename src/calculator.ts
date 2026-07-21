@@ -9,6 +9,12 @@ import type { MirrorPricingCatalog, MirrorUnit } from './mirrorPricing'
 
 export type DeliveryZone = 'inside' | 'outside'
 
+export type QuoteDelivery = {
+  enabled: boolean
+  zone: DeliveryZone
+  km: number
+}
+
 export type CalculatorForm = {
   constructionId: string
   dimensions: Record<string, number>
@@ -95,6 +101,7 @@ type QuoteMetadata = {
   createdAt: string
   status: 'new' | 'sent' | 'accepted' | 'archived'
   items?: QuoteItem[]
+  orderDelivery?: QuoteDelivery
   manualTotal?: number
 }
 
@@ -121,7 +128,6 @@ export type ManualQuoteItemPatch = {
   title: string
   quantity: number
   product: number
-  delivery: number
   details: QuoteDetailLine[]
 }
 
@@ -133,6 +139,8 @@ export type ManualQuotePatch = {
   discountPercent: number
   manualTotalEnabled: boolean
   manualTotal: number
+  orderDelivery: QuoteDelivery
+  deliveryPrice: number
   items: ManualQuoteItemPatch[]
 }
 
@@ -159,6 +167,21 @@ export const normalizeQuoteQuantity = (value: unknown) => {
 }
 
 export const getQuoteItemQuantity = (item: Pick<QuoteItem, 'quantity'>) => normalizeQuoteQuantity(item.quantity)
+
+export const normalizeQuoteDelivery = (delivery?: Partial<QuoteDelivery> | null): QuoteDelivery => ({
+  enabled: Boolean(delivery?.enabled),
+  zone: delivery?.zone === 'outside' ? 'outside' : 'inside',
+  km: Math.max(0, Number(delivery?.km) || 0),
+})
+
+export const calculateQuoteDelivery = (catalog: PricingCatalog, delivery: QuoteDelivery) => {
+  const normalized = normalizeQuoteDelivery(delivery)
+  if (!normalized.enabled) return 0
+  const distancePrice = normalized.zone === 'outside'
+    ? normalized.km * Math.max(0, Number(catalog.services.deliveryKmRate) || 0)
+    : 0
+  return roundToTen(Math.max(0, Number(catalog.services.deliveryBase) || 0) + distancePrice)
+}
 
 export const buildCalculationLines = (
   product: number,
@@ -251,18 +274,13 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
     : ceilToTen((glassPrice + construction.basePrice) * productMarkupFactor + hardwarePrice * hardwareMarkupFactor)
   const baseProductWithSurcharge = applySurcharge(baseProduct)
   const baseInstallation = form.installation ? construction.installationPrice : 0
-  const deliveryBase =
-    form.delivery && form.deliveryZone === 'outside'
-      ? catalog.services.deliveryBase + Math.max(0, Number(form.deliveryKm) || 0) * catalog.services.deliveryKmRate
-      : catalog.services.deliveryBase
-  const baseDelivery = form.delivery ? deliveryBase : 0
   const designerPercent = Math.max(0, Number(catalog.services.designerPercent) || 0)
   const designerFactor = form.designerEnabled ? 1 + designerPercent / 100 : 1
   const product = roundToTen(baseProductWithSurcharge * designerFactor)
   const installation = roundToTen(baseInstallation * designerFactor)
-  const delivery = roundToTen(baseDelivery * designerFactor)
-  const subtotal = product + installation + delivery
-  const designer = subtotal - baseProductWithSurcharge - baseInstallation - baseDelivery
+  const delivery = 0
+  const subtotal = product + installation
+  const designer = subtotal - baseProductWithSurcharge - baseInstallation
   const discountPercent = Math.min(100, Math.max(0, Number(form.discountPercent) || 0))
   const total = form.discountEnabled
     ? roundToTen(subtotal - (subtotal / 100) * discountPercent)
@@ -314,6 +332,28 @@ export const combineCalculationResults = (results: CalculationResult[]): Calcula
     hasSurcharge: results.some((result) => result.hasSurcharge),
     errors: {},
     lines,
+  }
+}
+
+export const applyQuoteDelivery = (
+  result: CalculationResult,
+  deliveryPriceValue: unknown,
+): CalculationResult => {
+  const delivery = roundToTen(Math.max(0, Number(deliveryPriceValue) || 0))
+  const discountLabel = result.lines.find((line) => line.label.startsWith('Скидка'))?.label
+  const discountPercent = Number(discountLabel?.match(/[\d,.]+/)?.[0]?.replace(',', '.') ?? 0)
+  return {
+    ...result,
+    delivery,
+    subtotal: result.subtotal + delivery,
+    total: result.total + delivery,
+    lines: buildCalculationLines(
+      result.product,
+      result.installation,
+      delivery,
+      result.discount,
+      discountPercent,
+    ),
   }
 }
 
@@ -369,13 +409,15 @@ const createMirrorQuoteItem = (
   result: draft.result,
   mirrorTitle: getMirrorTitle(draft.form),
   materialLabel: getMirrorMaterial(catalog, draft.form.materialId).label,
-  serviceLines: getMirrorCalculatedOptions(catalog, draft.form).map((item) => ({
-    label: item.label,
-    quantity: item.quantity,
-    unit: item.unit,
-    unitLabel: item.unitLabel,
-    visibleInQuote: item.visibleInQuote,
-  })),
+  serviceLines: getMirrorCalculatedOptions(catalog, draft.form)
+    .filter((item) => item.category !== 'delivery')
+    .map((item) => ({
+      label: item.label,
+      quantity: item.quantity,
+      unit: item.unit,
+      unitLabel: item.unitLabel,
+      visibleInQuote: item.visibleInQuote,
+    })),
 })
 
 export const isMirrorQuoteItem = (item: QuoteItem): item is MirrorQuoteItem => item.kind === 'mirror'
@@ -391,7 +433,7 @@ export const getQuoteItemDetails = (item: QuoteItem): QuoteDetailLine[] => {
       { id: `${item.id}:size`, label: 'Размер', value: `${item.form.width} × ${item.form.height} мм` },
       { id: `${item.id}:material`, label: 'Материал', value: item.materialLabel },
       ...item.serviceLines
-        .filter((line) => line.visibleInQuote)
+        .filter((line) => line.visibleInQuote && !line.label.trim().toLowerCase().startsWith('доставка'))
         .map((line, index) => ({
           id: `${item.id}:service:${index}`,
           label: line.label,
@@ -447,10 +489,24 @@ export const getQuoteItems = (quote: Quote): QuoteItem[] => {
   }]
 }
 
+export const getQuoteDelivery = (quote: Quote): QuoteDelivery => {
+  if (quote.orderDelivery) return normalizeQuoteDelivery(quote.orderDelivery)
+  const legacyShower = getQuoteItems(quote).find(isShowerQuoteItem)
+  if (legacyShower?.form.delivery) {
+    return normalizeQuoteDelivery({
+      enabled: true,
+      zone: legacyShower.form.deliveryZone,
+      km: legacyShower.form.deliveryKm,
+    })
+  }
+  return normalizeQuoteDelivery({ enabled: quote.result.delivery > 0 })
+}
+
 export const createQuote = (
   catalog: PricingCatalog,
   mirrorCatalog: MirrorPricingCatalog,
   drafts: QuoteDraftItem[],
+  orderDelivery: QuoteDelivery,
 ): Quote => {
   if (drafts.length === 0) throw new Error('КП должно содержать хотя бы одну позицию')
   const items = drafts.map((draft) => draft.kind === 'mirror'
@@ -459,6 +515,10 @@ export const createQuote = (
   const firstItem = items[0]
   const createdAt = new Date().toISOString()
   const id = crypto.randomUUID()
+  const normalizedDelivery = normalizeQuoteDelivery(orderDelivery)
+  const itemResult = combineCalculationResults(items.map((item) => (
+    multiplyCalculationResult(item.result, getQuoteItemQuantity(item))
+  )))
 
   return {
     ...firstItem,
@@ -466,10 +526,9 @@ export const createQuote = (
     number: `КП-${new Date().getFullYear()}-${id.slice(0, 4).toUpperCase()}`,
     createdAt,
     status: 'new',
-    result: combineCalculationResults(items.map((item) => (
-      multiplyCalculationResult(item.result, getQuoteItemQuantity(item))
-    ))),
+    result: applyQuoteDelivery(itemResult, calculateQuoteDelivery(catalog, normalizedDelivery)),
     items,
+    orderDelivery: normalizedDelivery,
   }
 }
 
@@ -480,9 +539,8 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
     const item = itemsById.get(itemPatch.id)
     if (!item) return []
     const product = Math.max(0, Number(itemPatch.product) || 0)
-    const delivery = Math.max(0, Number(itemPatch.delivery) || 0)
     const quantity = normalizeQuoteQuantity(itemPatch.quantity)
-    const subtotal = product + delivery
+    const subtotal = product
     const total = patch.discountEnabled
       ? roundToTen(subtotal * (1 - discountPercent / 100))
       : subtotal
@@ -498,27 +556,35 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
       ...item.result,
       product,
       installation: 0,
-      delivery,
+      delivery: 0,
       manager: 0,
       designer: 0,
       subtotal,
       discount,
       total,
-      lines: buildCalculationLines(product, 0, delivery, discount, discountPercent),
+      lines: buildCalculationLines(product, 0, 0, discount, discountPercent),
     }
 
     if (isMirrorQuoteItem(item)) {
       const form: MirrorForm = { ...item.form, ...sharedForm }
       return [{ ...item, quantity, form, result, mirrorTitle: itemPatch.title, details: itemPatch.details }]
     }
-    const form: CalculatorForm = { ...item.form, ...sharedForm }
+    const form: CalculatorForm = {
+      ...item.form,
+      ...sharedForm,
+      delivery: false,
+      deliveryZone: 'inside',
+      deliveryKm: 0,
+    }
     return [{ ...item, quantity, form, result, constructionTitle: itemPatch.title, details: itemPatch.details }]
   })
   if (updatedItems.length === 0) return quote
   const firstItem = updatedItems[0]
-  const result = combineCalculationResults(updatedItems.map((item) => (
+  const itemResult = combineCalculationResults(updatedItems.map((item) => (
     multiplyCalculationResult(item.result, getQuoteItemQuantity(item))
   )))
+  const orderDelivery = normalizeQuoteDelivery(patch.orderDelivery)
+  const result = applyQuoteDelivery(itemResult, orderDelivery.enabled ? patch.deliveryPrice : 0)
   const manualTotal = patch.manualTotalEnabled
     ? Math.max(0, Number(patch.manualTotal) || 0)
     : undefined
@@ -531,6 +597,7 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
     status: quote.status,
     result,
     items: updatedItems,
+    orderDelivery,
     manualTotal,
   }
 }

@@ -70,7 +70,8 @@ export const mergeMirrorCatalog = (saved: Partial<MirrorPricingCatalog> = {}): M
 
   return {
     materials: mergeItems(defaultMirrorCatalog.materials, saved.materials),
-    services: mergeItems(defaultMirrorCatalog.services, saved.services),
+    services: mergeItems(defaultMirrorCatalog.services, saved.services)
+      .filter((item) => item.category !== 'delivery'),
     settings: { ...defaultMirrorCatalog.settings, ...saved.settings },
   }
 }

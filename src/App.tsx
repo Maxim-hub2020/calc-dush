@@ -28,10 +28,13 @@ import {
   Settings2,
   ShieldCheck,
   Trash2,
+  Truck,
   X,
 } from 'lucide-react'
 import './App.css'
 import {
+  applyQuoteDelivery,
+  calculateQuoteDelivery,
   calculateQuote,
   combineCalculationResults,
   createInitialForm,
@@ -39,6 +42,7 @@ import {
   getConstruction,
   getOption,
   getPublicProductPrice,
+  getQuoteDelivery,
   getQuoteItemQuantity,
   getQuoteItemDetails,
   getQuoteItemTitle,
@@ -47,6 +51,7 @@ import {
   isMirrorQuoteItem,
   money,
   multiplyCalculationResult,
+  normalizeQuoteDelivery,
   normalizeQuoteQuantity,
   resetDimensionsForConstruction,
   shortMoney,
@@ -55,6 +60,7 @@ import {
   type CalculationResult,
   type ManualQuotePatch,
   type Quote,
+  type QuoteDelivery,
   type QuoteDraftItem,
 } from './calculator'
 import {
@@ -208,6 +214,7 @@ function App() {
   const [mirrorCatalog, setMirrorCatalog] = useState<MirrorPricingCatalog>(() => loadMirrorCatalog())
   const [quotes, setQuotes] = useState<Quote[]>(() => loadQuotes())
   const [positions, setPositions] = useState<DraftPosition[]>(() => [createDraftPosition(loadCatalog())])
+  const [orderDelivery, setOrderDelivery] = useState<QuoteDelivery>(() => normalizeQuoteDelivery(null))
   const [activePositionId, setActivePositionId] = useState(() => positions[0].id)
   const [activeTab, setActiveTab] = useState<TabId>('showers')
   const [notice, setNotice] = useState('')
@@ -244,9 +251,13 @@ function App() {
       ? calculateMirrorQuote(mirrorCatalog, activePosition.form)
       : calculateQuote(catalog, activePosition.form), activePosition.quantity)
   const orderResult = useMemo(
-    () => combineCalculationResults(positionResults.map((position) => position.result)),
-    [positionResults],
+    () => applyQuoteDelivery(
+      combineCalculationResults(positionResults.map((position) => position.result)),
+      calculateQuoteDelivery(catalog, orderDelivery),
+    ),
+    [catalog, orderDelivery, positionResults],
   )
+  const orderDeliveryPrice = calculateQuoteDelivery(catalog, orderDelivery)
   const positionSummaries = useMemo<PositionSummary[]>(
     () => positionResults.map((position, index) => ({
       id: position.id,
@@ -478,7 +489,7 @@ function App() {
     const drafts: QuoteDraftItem[] = positionResults.map((position) => position.kind === 'mirror'
       ? { kind: 'mirror', quantity: position.quantity, form: cloneMirrorForm(position.form), result: position.unitResult }
       : { kind: 'shower', quantity: position.quantity, form: cloneForm(position.form), result: position.unitResult })
-    const quote = createQuote(catalog, mirrorCatalog, drafts)
+    const quote = createQuote(catalog, mirrorCatalog, drafts, orderDelivery)
     const editingQuote = quotes.find((item) => item.id === editingQuoteId)
     if (!editingQuote) return quote
     return {
@@ -574,12 +585,22 @@ function App() {
 
   const loadQuoteToCalculator = (quote: Quote, itemId?: string) => {
     const items = getQuoteItems(quote)
-    const nextPositions: DraftPosition[] = items.map((item) => isMirrorQuoteItem(item)
-      ? { id: crypto.randomUUID(), kind: 'mirror', quantity: getQuoteItemQuantity(item), form: cloneMirrorForm(item.form) }
-      : { id: crypto.randomUUID(), kind: 'shower', quantity: getQuoteItemQuantity(item), form: cloneForm(item.form) })
+    const nextPositions: DraftPosition[] = items.map((item) => {
+      if (isMirrorQuoteItem(item)) {
+        const form = cloneMirrorForm(item.form)
+        form.options = form.options.filter((option) => getMirrorService(mirrorCatalog, option.serviceId).category !== 'delivery')
+        return { id: crypto.randomUUID(), kind: 'mirror', quantity: getQuoteItemQuantity(item), form }
+      }
+      const form = cloneForm(item.form)
+      form.delivery = false
+      form.deliveryZone = 'inside'
+      form.deliveryKm = 0
+      return { id: crypto.randomUUID(), kind: 'shower', quantity: getQuoteItemQuantity(item), form }
+    })
     const selectedIndex = itemId ? Math.max(0, items.findIndex((item) => item.id === itemId)) : 0
     const selected = nextPositions[selectedIndex]
     setPositions(nextPositions)
+    setOrderDelivery(getQuoteDelivery(quote))
     setEditingQuoteId(quote.id)
     setActivePositionId(selected.id)
     setActiveTab(selected.kind === 'mirror' ? 'mirrors' : 'showers')
@@ -597,6 +618,10 @@ function App() {
     setPositions((current) => current.map((position) => position.id === activePositionId
       ? { ...position, quantity: normalizeQuoteQuantity(quantity) }
       : position))
+  }
+
+  const updateOrderDelivery = (patch: Partial<QuoteDelivery>) => {
+    setOrderDelivery((current) => normalizeQuoteDelivery({ ...current, ...patch }))
   }
 
   const openProductTab = (kind: ProductKind) => {
@@ -738,6 +763,9 @@ function App() {
         {activeTab === 'showers' && activePosition.kind === 'shower' ? (
           <CalculatorScreen
             catalog={catalog}
+            delivery={orderDelivery}
+            deliveryKmRate={catalog.services.deliveryKmRate}
+            deliveryPrice={orderDeliveryPrice}
             form={activePosition.form}
             quantity={activePosition.quantity}
             result={activeResult}
@@ -749,6 +777,7 @@ function App() {
             onDeletePosition={deletePosition}
             onDimension={updateDimension}
             onDuplicatePosition={duplicatePosition}
+            onDelivery={updateOrderDelivery}
             onForm={updateForm}
             onPdf={downloadCurrentQuotePdf}
             onQuantity={updatePositionQuantity}
@@ -765,6 +794,9 @@ function App() {
           <MirrorCalculatorScreen
             activePositionId={activePositionId}
             catalog={mirrorCatalog}
+            delivery={orderDelivery}
+            deliveryKmRate={catalog.services.deliveryKmRate}
+            deliveryPrice={orderDeliveryPrice}
             form={activePosition.form}
             isPdfBusy={pdfQuoteId !== ''}
             orderResult={orderResult}
@@ -774,6 +806,7 @@ function App() {
             onAddPosition={() => addPosition('mirror')}
             onDeletePosition={deletePosition}
             onDuplicatePosition={duplicatePosition}
+            onDelivery={updateOrderDelivery}
             onForm={updateMirrorForm}
             onPdf={downloadCurrentQuotePdf}
             onQuantity={updatePositionQuantity}
@@ -784,6 +817,7 @@ function App() {
 
         {activeTab === 'archive' ? (
           <ArchiveScreen
+            catalog={catalog}
             quotes={quotes}
             pdfQuoteId={pdfQuoteId}
             onDelete={deleteQuote}
@@ -865,6 +899,9 @@ function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
 
 type CalculatorScreenProps = {
   catalog: PricingCatalog
+  delivery: QuoteDelivery
+  deliveryKmRate: number
+  deliveryPrice: number
   form: CalculatorForm
   quantity: number
   result: CalculationResult
@@ -877,6 +914,7 @@ type CalculatorScreenProps = {
   onDeletePosition: (id: string) => void
   onDimension: (key: string, value: number) => void
   onDuplicatePosition: () => void
+  onDelivery: (patch: Partial<QuoteDelivery>) => void
   onForm: (patch: Partial<CalculatorForm>) => void
   onPdf: () => void
   onQuantity: (quantity: number) => void
@@ -899,6 +937,9 @@ const configSections: Array<{ id: ConfigSectionId; label: string }> = [
 
 function CalculatorScreen({
   catalog,
+  delivery,
+  deliveryKmRate,
+  deliveryPrice,
   form,
   quantity,
   result,
@@ -911,6 +952,7 @@ function CalculatorScreen({
   onDeletePosition,
   onDimension,
   onDuplicatePosition,
+  onDelivery,
   onForm,
   onPdf,
   onQuantity,
@@ -931,9 +973,13 @@ function CalculatorScreen({
       <PositionSwitcher
         activeId={activePositionId}
         activeQuantity={quantity}
+        delivery={delivery}
+        deliveryKmRate={deliveryKmRate}
+        deliveryPrice={deliveryPrice}
         positions={positionSummaries}
         onAdd={onAddPosition}
         onDelete={onDeletePosition}
+        onDelivery={onDelivery}
         onDuplicate={onDuplicatePosition}
         onQuantity={onQuantity}
         onSelect={onSelectPosition}
@@ -1060,44 +1106,6 @@ function CalculatorScreen({
             onChange={(installation) => onForm({ installation })}
           />
           <ToggleRow
-            checked={form.delivery}
-            label="Доставка"
-            value={money(catalog.services.deliveryBase)}
-            onChange={(delivery) => onForm({ delivery })}
-          />
-          {form.delivery ? (
-            <div className="delivery-box">
-              <div className="segmented">
-                <button
-                  className={form.deliveryZone === 'inside' ? 'is-active' : ''}
-                  type="button"
-                  onClick={() => onForm({ deliveryZone: 'inside', deliveryKm: 0 })}
-                >
-                  По городу
-                </button>
-                <button
-                  className={form.deliveryZone === 'outside' ? 'is-active' : ''}
-                  type="button"
-                  onClick={() => onForm({ deliveryZone: 'outside' })}
-                >
-                  За городом
-                </button>
-              </div>
-              {form.deliveryZone === 'outside' ? (
-                <label className="km-field">
-                  <span>Км за городом</span>
-                  <input
-                    inputMode="numeric"
-                    min={0}
-                    type="number"
-                    value={form.deliveryKm}
-                    onChange={(event) => onForm({ deliveryKm: Number(event.target.value) })}
-                  />
-                </label>
-              ) : null}
-            </div>
-          ) : null}
-          <ToggleRow
             checked={form.designerEnabled}
             label="Дизайнер"
             value={form.designerEnabled ? `Надбавка +${catalog.services.designerPercent}%` : 'Без надбавки'}
@@ -1184,6 +1192,9 @@ function CalculatorScreen({
 
 type MirrorCalculatorScreenProps = {
   catalog: MirrorPricingCatalog
+  delivery: QuoteDelivery
+  deliveryKmRate: number
+  deliveryPrice: number
   form: MirrorForm
   quantity: number
   result: CalculationResult
@@ -1194,6 +1205,7 @@ type MirrorCalculatorScreenProps = {
   onAddPosition: () => void
   onDeletePosition: (id: string) => void
   onDuplicatePosition: () => void
+  onDelivery: (patch: Partial<QuoteDelivery>) => void
   onForm: (patch: Partial<MirrorForm>) => void
   onPdf: () => void
   onQuantity: (quantity: number) => void
@@ -1213,6 +1225,9 @@ const mirrorSections: Array<{ id: MirrorSectionId; label: string }> = [
 
 function MirrorCalculatorScreen({
   catalog,
+  delivery,
+  deliveryKmRate,
+  deliveryPrice,
   form,
   quantity,
   result,
@@ -1223,6 +1238,7 @@ function MirrorCalculatorScreen({
   onAddPosition,
   onDeletePosition,
   onDuplicatePosition,
+  onDelivery,
   onForm,
   onPdf,
   onQuantity,
@@ -1233,9 +1249,11 @@ function MirrorCalculatorScreen({
   const material = getMirrorMaterial(catalog, form.materialId)
   const calculatedOptions = getMirrorCalculatedOptions(catalog, form)
   const selectedServices = new Set(form.options.map((option) => option.serviceId))
+  const availableServices = catalog.services.filter((item) => item.category !== 'delivery')
 
   const addOption = () => {
-    const service = catalog.services.find((item) => !selectedServices.has(item.id)) ?? catalog.services[0]
+    const service = availableServices.find((item) => !selectedServices.has(item.id)) ?? availableServices[0]
+    if (!service) return
     onForm({
       options: [...form.options, { id: crypto.randomUUID(), serviceId: service.id, quantity: 1 }],
     })
@@ -1254,9 +1272,13 @@ function MirrorCalculatorScreen({
       <PositionSwitcher
         activeId={activePositionId}
         activeQuantity={quantity}
+        delivery={delivery}
+        deliveryKmRate={deliveryKmRate}
+        deliveryPrice={deliveryPrice}
         positions={positionSummaries}
         onAdd={onAddPosition}
         onDelete={onDeletePosition}
+        onDelivery={onDelivery}
         onDuplicate={onDuplicatePosition}
         onQuantity={onQuantity}
         onSelect={onSelectPosition}
@@ -1357,7 +1379,7 @@ function MirrorCalculatorScreen({
                           value={option.serviceId}
                           onChange={(event) => updateOption(option.id, { serviceId: event.target.value, quantity: 1 })}
                         >
-                          {catalog.services.map((item) => (
+                          {availableServices.map((item) => (
                             <option key={item.id} value={item.id}>{item.label}</option>
                           ))}
                         </select>
@@ -1389,7 +1411,7 @@ function MirrorCalculatorScreen({
                 {form.options.length === 0 ? (
                   <button className="mirror-options-empty" type="button" onClick={addOption}>
                     <ListPlus size={22} />
-                    <span>Добавить работу, монтаж или доставку</span>
+                    <span>Добавить работу или монтаж</span>
                   </button>
                 ) : null}
               </div>
@@ -1584,9 +1606,13 @@ function RecentCalculations({ catalog, quotes, onOpenArchive, onOpenQuote }: Rec
 type PositionSwitcherProps = {
   activeId: string
   activeQuantity: number
+  delivery: QuoteDelivery
+  deliveryKmRate: number
+  deliveryPrice: number
   positions: PositionSummary[]
   onAdd: () => void
   onDelete: (id: string) => void
+  onDelivery: (patch: Partial<QuoteDelivery>) => void
   onDuplicate: () => void
   onQuantity: (quantity: number) => void
   onSelect: (id: string) => void
@@ -1595,9 +1621,13 @@ type PositionSwitcherProps = {
 function PositionSwitcher({
   activeId,
   activeQuantity,
+  delivery,
+  deliveryKmRate,
+  deliveryPrice,
   positions,
   onAdd,
   onDelete,
+  onDelivery,
   onDuplicate,
   onQuantity,
   onSelect,
@@ -1681,7 +1711,68 @@ function PositionSwitcher({
           )
         })}
       </div>
+      <DeliveryControl
+        delivery={delivery}
+        kmRate={deliveryKmRate}
+        price={deliveryPrice}
+        onChange={onDelivery}
+      />
     </section>
+  )
+}
+
+type DeliveryControlProps = {
+  delivery: QuoteDelivery
+  kmRate: number
+  price: number
+  onChange: (patch: Partial<QuoteDelivery>) => void
+}
+
+function DeliveryControl({ delivery, kmRate, price, onChange }: DeliveryControlProps) {
+  return (
+    <div className="order-delivery-control">
+      <div className="order-delivery-title">
+        <Truck size={18} aria-hidden="true" />
+        <span>Доставка по КП</span>
+        <strong>{money(price)}</strong>
+      </div>
+      <div className="segmented order-delivery-modes" role="group" aria-label="Тип доставки">
+        <button
+          className={!delivery.enabled ? 'is-active' : ''}
+          type="button"
+          onClick={() => onChange({ enabled: false })}
+        >
+          Без доставки
+        </button>
+        <button
+          className={delivery.enabled && delivery.zone === 'inside' ? 'is-active' : ''}
+          type="button"
+          onClick={() => onChange({ enabled: true, zone: 'inside', km: 0 })}
+        >
+          По городу
+        </button>
+        <button
+          className={delivery.enabled && delivery.zone === 'outside' ? 'is-active' : ''}
+          type="button"
+          onClick={() => onChange({ enabled: true, zone: 'outside' })}
+        >
+          За городом
+        </button>
+      </div>
+      {delivery.enabled && delivery.zone === 'outside' ? (
+        <label className="order-delivery-distance">
+          <span>Км за городом</span>
+          <input
+            inputMode="numeric"
+            min={0}
+            type="number"
+            value={delivery.km}
+            onChange={(event) => onChange({ km: Number(event.target.value) })}
+          />
+          <small>{shortMoney(kmRate)} ₽/км</small>
+        </label>
+      ) : null}
+    </div>
   )
 }
 
@@ -1809,6 +1900,7 @@ function SummaryDock({ result, orderResult, positionCount, positionIndex, hasErr
 }
 
 type ArchiveScreenProps = {
+  catalog: PricingCatalog
   quotes: Quote[]
   pdfQuoteId: string
   onDelete: (id: string) => void
@@ -1818,7 +1910,7 @@ type ArchiveScreenProps = {
   onStatus: (id: string, status: Quote['status']) => void
 }
 
-function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onPdf, onStatus }: ArchiveScreenProps) {
+function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onPdf, onStatus }: ArchiveScreenProps) {
   const [query, setQuery] = useState('')
   const [manualQuote, setManualQuote] = useState<Quote | null>(null)
   const normalized = query.trim().toLowerCase()
@@ -1941,6 +2033,7 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onP
       </section>
       {manualQuote ? (
         <QuoteEditorDialog
+          catalog={catalog}
           quote={manualQuote}
           onClose={() => setManualQuote(null)}
           onSave={(patch) => {
@@ -1954,12 +2047,14 @@ function ArchiveScreen({ quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onP
 }
 
 type QuoteEditorDialogProps = {
+  catalog: PricingCatalog
   quote: Quote
   onClose: () => void
   onSave: (patch: ManualQuotePatch) => void
 }
 
-function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
+function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialogProps) {
+  const initialDelivery = getQuoteDelivery(quote)
   const [draft, setDraft] = useState<ManualQuotePatch>(() => ({
     clientName: quote.form.clientName,
     clientPhone: quote.form.clientPhone,
@@ -1968,12 +2063,13 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
     discountPercent: quote.form.discountPercent,
     manualTotalEnabled: Number.isFinite(quote.manualTotal),
     manualTotal: getQuoteTotal(quote),
+    orderDelivery: initialDelivery,
+    deliveryPrice: calculateQuoteDelivery(catalog, initialDelivery),
     items: getQuoteItems(quote).map((item) => ({
       id: item.id,
       title: getQuoteItemTitle(item),
       quantity: getQuoteItemQuantity(item),
       product: getPublicProductPrice(item.result),
-      delivery: item.result.delivery,
       details: getQuoteItemDetails(item),
     })),
   }))
@@ -2052,19 +2148,30 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
     })
   }
 
-  const subtotal = draft.items.reduce((sum, item) => (
-    sum + (
-      Math.max(0, Number(item.product) || 0) + Math.max(0, Number(item.delivery) || 0)
-    ) * normalizeQuoteQuantity(item.quantity)
+  const updateDelivery = (patch: Partial<QuoteDelivery>) => {
+    setDraft((current) => {
+      const orderDelivery = normalizeQuoteDelivery({ ...current.orderDelivery, ...patch })
+      return {
+        ...current,
+        orderDelivery,
+        deliveryPrice: calculateQuoteDelivery(catalog, orderDelivery),
+      }
+    })
+  }
+
+  const productSubtotal = draft.items.reduce((sum, item) => (
+    sum + Math.max(0, Number(item.product) || 0) * normalizeQuoteQuantity(item.quantity)
   ), 0)
+  const subtotal = productSubtotal + draft.deliveryPrice
   const discountPercent = Math.min(100, Math.max(0, Number(draft.discountPercent) || 0))
-  const calculatedTotal = draft.discountEnabled
+  const calculatedProductTotal = draft.discountEnabled
     ? draft.items.reduce((sum, item) => {
-        const itemSubtotal = Math.max(0, Number(item.product) || 0) + Math.max(0, Number(item.delivery) || 0)
+        const itemSubtotal = Math.max(0, Number(item.product) || 0)
         return sum + Math.round(itemSubtotal * (1 - discountPercent / 100) / 10) * 10
           * normalizeQuoteQuantity(item.quantity)
       }, 0)
-    : subtotal
+    : productSubtotal
+  const calculatedTotal = calculatedProductTotal + draft.deliveryPrice
   const total = draft.manualTotalEnabled
     ? Math.max(0, Number(draft.manualTotal) || 0)
     : calculatedTotal
@@ -2158,19 +2265,6 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
                         <small>₽</small>
                       </span>
                     </label>
-                    <label className="manual-money-field manual-delivery-field">
-                      <span>Доставка за шт.</span>
-                      <span className="manual-money-input">
-                        <input
-                          inputMode="numeric"
-                          min={0}
-                          type="number"
-                          value={item.delivery}
-                          onChange={(event) => updateItem(item.id, { delivery: Number(event.target.value) })}
-                        />
-                        <small>₽</small>
-                      </span>
-                    </label>
                     <button
                       aria-label={`Удалить позицию ${index + 1}`}
                       className="manual-item-delete"
@@ -2227,6 +2321,15 @@ function QuoteEditorDialog({ quote, onClose, onSave }: QuoteEditorDialogProps) {
                 )
               })}
             </div>
+          </section>
+
+          <section className="quote-editor-section quote-editor-delivery">
+            <DeliveryControl
+              delivery={draft.orderDelivery}
+              kmRate={catalog.services.deliveryKmRate}
+              price={draft.deliveryPrice}
+              onChange={updateDelivery}
+            />
           </section>
 
           <section className="quote-editor-section quote-editor-pricing">
@@ -2643,8 +2746,8 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         />
         {openSection === 'services' ? (
           <div className="price-list price-accordion-body" id="price-services">
-            <ServiceRow label="Доставка по городу" value={catalog.services.deliveryBase} onChange={(value) => updateService('deliveryBase', value)} />
-            <ServiceRow label="За городом, ₽/км" value={catalog.services.deliveryKmRate} onChange={(value) => updateService('deliveryKmRate', value)} />
+            <ServiceRow label="Стандартная доставка по городу" value={catalog.services.deliveryBase} onChange={(value) => updateService('deliveryBase', value)} />
+            <ServiceRow label="Доплата за городом, ₽/км" value={catalog.services.deliveryKmRate} onChange={(value) => updateService('deliveryKmRate', value)} />
             <ServiceRow
               label="Высота +%, после"
               value={catalog.services.heightSurchargeAfter}
@@ -3003,7 +3106,6 @@ function MirrorServicePriceRow({ item, canDelete, onChange, onDelete }: MirrorSe
           onChange={(event) => onChange({ category: event.target.value as MirrorService['category'] })}
         >
           <option value="work">Работы</option>
-          <option value="delivery">Доставка</option>
         </select>
       </label>
       <label className="mirror-service-visible">
