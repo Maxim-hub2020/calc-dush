@@ -375,6 +375,16 @@
   height: calc(100% - 12px);
 }
 
+.reference-shower-thumbnail {
+  display: block;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 1;
+  background-color: #4d7ebc;
+  background-repeat: no-repeat;
+  background-size: 523.81% 442.86%;
+}
+
 .construction-card.is-selected {
   border-color: var(--accent);
   background: var(--accent-soft);
