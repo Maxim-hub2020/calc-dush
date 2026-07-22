@@ -15,6 +15,12 @@ export type QuoteDelivery = {
   km: number
 }
 
+export type QuoteCustomer = {
+  clientName: string
+  clientPhone: string
+  note: string
+}
+
 export type CalculatorForm = {
   constructionId: string
   dimensions: Record<string, number>
@@ -102,6 +108,7 @@ type QuoteMetadata = {
   status: 'new' | 'sent' | 'accepted' | 'archived'
   items?: QuoteItem[]
   orderDelivery?: QuoteDelivery
+  customer?: QuoteCustomer
   manualTotal?: number
 }
 
@@ -172,6 +179,12 @@ export const normalizeQuoteDelivery = (delivery?: Partial<QuoteDelivery> | null)
   enabled: Boolean(delivery?.enabled),
   zone: delivery?.zone === 'outside' ? 'outside' : 'inside',
   km: Math.max(0, Number(delivery?.km) || 0),
+})
+
+export const normalizeQuoteCustomer = (customer?: Partial<QuoteCustomer> | null): QuoteCustomer => ({
+  clientName: String(customer?.clientName ?? ''),
+  clientPhone: String(customer?.clientPhone ?? ''),
+  note: String(customer?.note ?? ''),
 })
 
 export const calculateQuoteDelivery = (catalog: PricingCatalog, delivery: QuoteDelivery) => {
@@ -502,6 +515,10 @@ export const getQuoteDelivery = (quote: Quote): QuoteDelivery => {
   return normalizeQuoteDelivery({ enabled: quote.result.delivery > 0 })
 }
 
+export const getQuoteCustomer = (quote: Quote): QuoteCustomer => (
+  normalizeQuoteCustomer(quote.customer ?? quote.form)
+)
+
 export const getNextQuoteNumber = (quotes: Array<Pick<Quote, 'number'>>) => {
   const usedNumbers = quotes
     .map((quote) => quote.number.trim())
@@ -521,9 +538,11 @@ export const createQuote = (
   mirrorCatalog: MirrorPricingCatalog,
   drafts: QuoteDraftItem[],
   orderDelivery: QuoteDelivery,
+  customer: QuoteCustomer,
   number: string,
 ): Quote => {
   if (drafts.length === 0) throw new Error('КП должно содержать хотя бы одну позицию')
+  const normalizedCustomer = normalizeQuoteCustomer(customer)
   const items = drafts.map((draft) => draft.kind === 'mirror'
     ? createMirrorQuoteItem(mirrorCatalog, draft)
     : createShowerQuoteItem(catalog, draft))
@@ -544,12 +563,14 @@ export const createQuote = (
     result: applyQuoteDelivery(itemResult, calculateQuoteDelivery(catalog, normalizedDelivery)),
     items,
     orderDelivery: normalizedDelivery,
+    customer: normalizedCustomer,
   }
 }
 
 export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quote => {
   const itemsById = new Map(getQuoteItems(quote).map((item) => [item.id, item]))
   const discountPercent = Math.min(100, Math.max(0, Number(patch.discountPercent) || 0))
+  const customer = normalizeQuoteCustomer(patch)
   const updatedItems = patch.items.flatMap((itemPatch): QuoteItem[] => {
     const item = itemsById.get(itemPatch.id)
     if (!item) return []
@@ -561,9 +582,9 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
       : subtotal
     const discount = subtotal - total
     const sharedForm = {
-      clientName: patch.clientName,
-      clientPhone: patch.clientPhone,
-      note: patch.note,
+      clientName: '',
+      clientPhone: '',
+      note: '',
       discountEnabled: patch.discountEnabled,
       discountPercent,
     }
@@ -613,6 +634,7 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
     result,
     items: updatedItems,
     orderDelivery,
+    customer,
     manualTotal,
   }
 }

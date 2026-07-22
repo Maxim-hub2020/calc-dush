@@ -2,6 +2,7 @@ import type { Content, TableCell, TDocumentDefinitions } from 'pdfmake/interface
 import {
   getConstruction,
   getPublicProductPrice,
+  getQuoteCustomer,
   getQuoteItemDetails,
   getQuoteItemQuantity,
   getQuoteItemTitle,
@@ -183,6 +184,7 @@ const benefitBlock = (kind: 'time' | 'warranty' | 'delivery', title: string, val
 
 export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
   const items = getQuoteItems(quote)
+  const customer = getQuoteCustomer(quote)
   const hasDiscount = quote.result.discount > 0
   const storedDiscountPercent = Number(quote.form.discountPercent)
   const discountPercent = Number.isFinite(storedDiscountPercent) && storedDiscountPercent > 0
@@ -193,8 +195,8 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
   const discountPercentLabel = discountPercent.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
   const quoteTotal = getQuoteTotal(quote)
   const customerParts = [
-    quote.form.clientName ? `Клиент: ${quote.form.clientName}` : '',
-    quote.form.clientPhone ? `Телефон: ${quote.form.clientPhone}` : '',
+    customer.clientName ? `Клиент: ${customer.clientName}` : '',
+    customer.clientPhone ? `Телефон: ${customer.clientPhone}` : '',
   ].filter(Boolean)
   const summaryRows: TableCell[][] = [
     [
@@ -271,7 +273,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
         margin: [0, 3, 0, 0],
       },
       ...(customerParts.length ? [{ text: customerParts.join(' · '), color: pdfColors.text, margin: [0, 5, 0, 0] } as Content] : []),
-      ...(quote.form.note ? [{ text: quote.form.note, color: pdfColors.muted, margin: [0, 3, 0, 0] } as Content] : []),
+      ...(customer.note ? [{ text: customer.note, color: pdfColors.muted, margin: [0, 3, 0, 0] } as Content] : []),
       {
         text: 'Состав и стоимость заказа',
         style: 'sectionTitle',

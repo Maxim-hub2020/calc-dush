@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   Trash2,
   Truck,
+  UserRound,
   X,
 } from 'lucide-react'
 import showerThumbnailSprite from './assets/shower-thumbnail-sprite.png'
@@ -43,6 +44,7 @@ import {
   getConstruction,
   getOption,
   getPublicProductPrice,
+  getQuoteCustomer,
   getQuoteDelivery,
   getNextQuoteNumber,
   getQuoteItemQuantity,
@@ -54,6 +56,7 @@ import {
   money,
   multiplyCalculationResult,
   normalizeQuoteDelivery,
+  normalizeQuoteCustomer,
   normalizeQuoteQuantity,
   resetDimensionsForConstruction,
   shortMoney,
@@ -62,6 +65,7 @@ import {
   type CalculationResult,
   type ManualQuotePatch,
   type Quote,
+  type QuoteCustomer,
   type QuoteDelivery,
   type QuoteDraftItem,
 } from './calculator'
@@ -177,12 +181,9 @@ type PositionSummary = {
   hasErrors: boolean
 }
 
-type SharedFormPatch = Pick<CalculatorForm, 'clientName' | 'clientPhone' | 'note' | 'discountEnabled' | 'discountPercent' | 'designerEnabled'>
+type SharedFormPatch = Pick<CalculatorForm, 'discountEnabled' | 'discountPercent' | 'designerEnabled'>
 
 const sharedFormFields: Array<keyof SharedFormPatch> = [
-  'clientName',
-  'clientPhone',
-  'note',
   'discountEnabled',
   'discountPercent',
   'designerEnabled',
@@ -191,9 +192,6 @@ const sharedFormFields: Array<keyof SharedFormPatch> = [
 const createDraftPosition = (catalog: PricingCatalog, customer?: Partial<SharedFormPatch>): ShowerDraftPosition => {
   const form = createInitialForm(catalog)
   if (customer) {
-    form.clientName = customer.clientName ?? form.clientName
-    form.clientPhone = customer.clientPhone ?? form.clientPhone
-    form.note = customer.note ?? form.note
     form.discountEnabled = customer.discountEnabled ?? form.discountEnabled
     form.discountPercent = customer.discountPercent ?? form.discountPercent
     form.designerEnabled = customer.designerEnabled ?? form.designerEnabled
@@ -217,6 +215,7 @@ function App() {
   const [quotes, setQuotes] = useState<Quote[]>(() => loadQuotes())
   const [positions, setPositions] = useState<DraftPosition[]>(() => [createDraftPosition(loadCatalog())])
   const [orderDelivery, setOrderDelivery] = useState<QuoteDelivery>(() => normalizeQuoteDelivery(null))
+  const [orderCustomer, setOrderCustomer] = useState<QuoteCustomer>(() => normalizeQuoteCustomer(null))
   const [activePositionId, setActivePositionId] = useState(() => positions[0].id)
   const [activeTab, setActiveTab] = useState<TabId>('showers')
   const [notice, setNotice] = useState('')
@@ -493,7 +492,7 @@ function App() {
       : { kind: 'shower', quantity: position.quantity, form: cloneForm(position.form), result: position.unitResult })
     const editingQuote = quotes.find((item) => item.id === editingQuoteId)
     const quoteNumber = editingQuote?.number ?? getNextQuoteNumber(quotes)
-    const quote = createQuote(catalog, mirrorCatalog, drafts, orderDelivery, quoteNumber)
+    const quote = createQuote(catalog, mirrorCatalog, drafts, orderDelivery, orderCustomer, quoteNumber)
     if (!editingQuote) return quote
     return {
       ...quote,
@@ -547,10 +546,10 @@ function App() {
   }
 
   const addPosition = (kind: ProductKind) => {
-    const customer = activePosition.form
+    const sharedSettings = pickSharedPatch(activePosition.form)
     const next = kind === 'mirror'
-      ? createMirrorDraftPosition(mirrorCatalog, customer)
-      : createDraftPosition(catalog, customer)
+      ? createMirrorDraftPosition(mirrorCatalog, sharedSettings)
+      : createDraftPosition(catalog, sharedSettings)
     setPositions((current) => [...current, next])
     setActivePositionId(next.id)
     setActiveTab(kind === 'mirror' ? 'mirrors' : 'showers')
@@ -591,18 +590,25 @@ function App() {
       if (isMirrorQuoteItem(item)) {
         const form = cloneMirrorForm(item.form)
         form.options = form.options.filter((option) => getMirrorService(mirrorCatalog, option.serviceId).category !== 'delivery')
+        form.clientName = ''
+        form.clientPhone = ''
+        form.note = ''
         return { id: crypto.randomUUID(), kind: 'mirror', quantity: getQuoteItemQuantity(item), form }
       }
       const form = cloneForm(item.form)
       form.delivery = false
       form.deliveryZone = 'inside'
       form.deliveryKm = 0
+      form.clientName = ''
+      form.clientPhone = ''
+      form.note = ''
       return { id: crypto.randomUUID(), kind: 'shower', quantity: getQuoteItemQuantity(item), form }
     })
     const selectedIndex = itemId ? Math.max(0, items.findIndex((item) => item.id === itemId)) : 0
     const selected = nextPositions[selectedIndex]
     setPositions(nextPositions)
     setOrderDelivery(getQuoteDelivery(quote))
+    setOrderCustomer(getQuoteCustomer(quote))
     setEditingQuoteId(quote.id)
     setActivePositionId(selected.id)
     setActiveTab(selected.kind === 'mirror' ? 'mirrors' : 'showers')
@@ -624,6 +630,10 @@ function App() {
 
   const updateOrderDelivery = (patch: Partial<QuoteDelivery>) => {
     setOrderDelivery((current) => normalizeQuoteDelivery({ ...current, ...patch }))
+  }
+
+  const updateOrderCustomer = (patch: Partial<QuoteCustomer>) => {
+    setOrderCustomer((current) => normalizeQuoteCustomer({ ...current, ...patch }))
   }
 
   const openProductTab = (kind: ProductKind) => {
@@ -765,6 +775,7 @@ function App() {
         {activeTab === 'showers' && activePosition.kind === 'shower' ? (
           <CalculatorScreen
             catalog={catalog}
+            customer={orderCustomer}
             delivery={orderDelivery}
             deliveryKmRate={catalog.services.deliveryKmRate}
             deliveryPrice={orderDeliveryPrice}
@@ -779,6 +790,7 @@ function App() {
             onDeletePosition={deletePosition}
             onDimension={updateDimension}
             onDuplicatePosition={duplicatePosition}
+            onCustomer={updateOrderCustomer}
             onDelivery={updateOrderDelivery}
             onForm={updateForm}
             onPdf={downloadCurrentQuotePdf}
@@ -796,6 +808,7 @@ function App() {
           <MirrorCalculatorScreen
             activePositionId={activePositionId}
             catalog={mirrorCatalog}
+            customer={orderCustomer}
             delivery={orderDelivery}
             deliveryKmRate={catalog.services.deliveryKmRate}
             deliveryPrice={orderDeliveryPrice}
@@ -808,6 +821,7 @@ function App() {
             onAddPosition={() => addPosition('mirror')}
             onDeletePosition={deletePosition}
             onDuplicatePosition={duplicatePosition}
+            onCustomer={updateOrderCustomer}
             onDelivery={updateOrderDelivery}
             onForm={updateMirrorForm}
             onPdf={downloadCurrentQuotePdf}
@@ -901,6 +915,7 @@ function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
 
 type CalculatorScreenProps = {
   catalog: PricingCatalog
+  customer: QuoteCustomer
   delivery: QuoteDelivery
   deliveryKmRate: number
   deliveryPrice: number
@@ -916,6 +931,7 @@ type CalculatorScreenProps = {
   onDeletePosition: (id: string) => void
   onDimension: (key: string, value: number) => void
   onDuplicatePosition: () => void
+  onCustomer: (patch: Partial<QuoteCustomer>) => void
   onDelivery: (patch: Partial<QuoteDelivery>) => void
   onForm: (patch: Partial<CalculatorForm>) => void
   onPdf: () => void
@@ -927,18 +943,18 @@ type CalculatorScreenProps = {
   onSelectPosition: (id: string) => void
 }
 
-type ConfigSectionId = 'construction' | 'dimensions' | 'appearance' | 'services' | 'client'
+type ConfigSectionId = 'construction' | 'dimensions' | 'appearance' | 'services'
 
 const configSections: Array<{ id: ConfigSectionId; label: string }> = [
   { id: 'construction', label: 'Тип' },
   { id: 'dimensions', label: 'Размеры' },
   { id: 'appearance', label: 'Вид' },
   { id: 'services', label: 'Услуги' },
-  { id: 'client', label: 'Клиент' },
 ]
 
 function CalculatorScreen({
   catalog,
+  customer,
   delivery,
   deliveryKmRate,
   deliveryPrice,
@@ -954,6 +970,7 @@ function CalculatorScreen({
   onDeletePosition,
   onDimension,
   onDuplicatePosition,
+  onCustomer,
   onDelivery,
   onForm,
   onPdf,
@@ -975,11 +992,13 @@ function CalculatorScreen({
       <PositionSwitcher
         activeId={activePositionId}
         activeQuantity={quantity}
+        customer={customer}
         delivery={delivery}
         deliveryKmRate={deliveryKmRate}
         deliveryPrice={deliveryPrice}
         positions={positionSummaries}
         onAdd={onAddPosition}
+        onCustomer={onCustomer}
         onDelete={onDeletePosition}
         onDelivery={onDelivery}
         onDuplicate={onDuplicatePosition}
@@ -1135,28 +1154,6 @@ function CalculatorScreen({
       </section>
       ) : null}
 
-      {activeSection === 'client' ? (
-      <section className="section-block">
-        <div className="section-title">
-          <h2>Клиент</h2>
-          <span>КП</span>
-        </div>
-        <div className="client-grid">
-          <label className="text-field">
-            <span>Имя</span>
-            <input value={form.clientName} onChange={(event) => onForm({ clientName: event.target.value })} />
-          </label>
-          <label className="text-field">
-            <span>Телефон</span>
-            <input value={form.clientPhone} onChange={(event) => onForm({ clientPhone: event.target.value })} />
-          </label>
-          <label className="text-field is-wide">
-            <span>Комментарий</span>
-            <input value={form.note} onChange={(event) => onForm({ note: event.target.value })} />
-          </label>
-        </div>
-      </section>
-      ) : null}
         </div>
       </section>
 
@@ -1191,6 +1188,7 @@ function CalculatorScreen({
 
 type MirrorCalculatorScreenProps = {
   catalog: MirrorPricingCatalog
+  customer: QuoteCustomer
   delivery: QuoteDelivery
   deliveryKmRate: number
   deliveryPrice: number
@@ -1204,6 +1202,7 @@ type MirrorCalculatorScreenProps = {
   onAddPosition: () => void
   onDeletePosition: (id: string) => void
   onDuplicatePosition: () => void
+  onCustomer: (patch: Partial<QuoteCustomer>) => void
   onDelivery: (patch: Partial<QuoteDelivery>) => void
   onForm: (patch: Partial<MirrorForm>) => void
   onPdf: () => void
@@ -1212,18 +1211,18 @@ type MirrorCalculatorScreenProps = {
   onSelectPosition: (id: string) => void
 }
 
-type MirrorSectionId = 'dimensions' | 'material' | 'options' | 'pricing' | 'client'
+type MirrorSectionId = 'dimensions' | 'material' | 'options' | 'pricing'
 
 const mirrorSections: Array<{ id: MirrorSectionId; label: string }> = [
   { id: 'dimensions', label: 'Размеры' },
   { id: 'material', label: 'Материал' },
   { id: 'options', label: 'Работы' },
   { id: 'pricing', label: 'Цена' },
-  { id: 'client', label: 'Клиент' },
 ]
 
 function MirrorCalculatorScreen({
   catalog,
+  customer,
   delivery,
   deliveryKmRate,
   deliveryPrice,
@@ -1237,6 +1236,7 @@ function MirrorCalculatorScreen({
   onAddPosition,
   onDeletePosition,
   onDuplicatePosition,
+  onCustomer,
   onDelivery,
   onForm,
   onPdf,
@@ -1271,11 +1271,13 @@ function MirrorCalculatorScreen({
       <PositionSwitcher
         activeId={activePositionId}
         activeQuantity={quantity}
+        customer={customer}
         delivery={delivery}
         deliveryKmRate={deliveryKmRate}
         deliveryPrice={deliveryPrice}
         positions={positionSummaries}
         onAdd={onAddPosition}
+        onCustomer={onCustomer}
         onDelete={onDeletePosition}
         onDelivery={onDelivery}
         onDuplicate={onDuplicatePosition}
@@ -1460,25 +1462,6 @@ function MirrorCalculatorScreen({
             </section>
           ) : null}
 
-          {activeSection === 'client' ? (
-            <section className="section-block">
-              <div className="section-title"><h2>Клиент</h2><span>КП</span></div>
-              <div className="client-grid">
-                <label className="text-field">
-                  <span>Имя</span>
-                  <input value={form.clientName} onChange={(event) => onForm({ clientName: event.target.value })} />
-                </label>
-                <label className="text-field">
-                  <span>Телефон</span>
-                  <input value={form.clientPhone} onChange={(event) => onForm({ clientPhone: event.target.value })} />
-                </label>
-                <label className="text-field is-wide">
-                  <span>Комментарий</span>
-                  <input value={form.note} onChange={(event) => onForm({ note: event.target.value })} />
-                </label>
-              </div>
-            </section>
-          ) : null}
         </div>
       </section>
 
@@ -1605,11 +1588,13 @@ function RecentCalculations({ catalog, quotes, onOpenArchive, onOpenQuote }: Rec
 type PositionSwitcherProps = {
   activeId: string
   activeQuantity: number
+  customer: QuoteCustomer
   delivery: QuoteDelivery
   deliveryKmRate: number
   deliveryPrice: number
   positions: PositionSummary[]
   onAdd: () => void
+  onCustomer: (patch: Partial<QuoteCustomer>) => void
   onDelete: (id: string) => void
   onDelivery: (patch: Partial<QuoteDelivery>) => void
   onDuplicate: () => void
@@ -1620,11 +1605,13 @@ type PositionSwitcherProps = {
 function PositionSwitcher({
   activeId,
   activeQuantity,
+  customer,
   delivery,
   deliveryKmRate,
   deliveryPrice,
   positions,
   onAdd,
+  onCustomer,
   onDelete,
   onDelivery,
   onDuplicate,
@@ -1716,7 +1703,48 @@ function PositionSwitcher({
         price={deliveryPrice}
         onChange={onDelivery}
       />
+      <CustomerControl customer={customer} onChange={onCustomer} />
     </section>
+  )
+}
+
+type CustomerControlProps = {
+  customer: QuoteCustomer
+  onChange: (patch: Partial<QuoteCustomer>) => void
+}
+
+function CustomerControl({ customer, onChange }: CustomerControlProps) {
+  return (
+    <div className="order-customer-control">
+      <div className="order-customer-title">
+        <UserRound size={18} aria-hidden="true" />
+        <span>Клиент по КП</span>
+        <small>Общий для всех позиций</small>
+      </div>
+      <div className="order-customer-fields">
+        <label className="text-field">
+          <span>Имя</span>
+          <input
+            autoComplete="name"
+            value={customer.clientName}
+            onChange={(event) => onChange({ clientName: event.target.value })}
+          />
+        </label>
+        <label className="text-field">
+          <span>Телефон</span>
+          <input
+            autoComplete="tel"
+            inputMode="tel"
+            value={customer.clientPhone}
+            onChange={(event) => onChange({ clientPhone: event.target.value })}
+          />
+        </label>
+        <label className="text-field is-wide">
+          <span>Комментарий</span>
+          <input value={customer.note} onChange={(event) => onChange({ note: event.target.value })} />
+        </label>
+      </div>
+    </div>
   )
 }
 
@@ -1917,10 +1945,11 @@ function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManual
   const normalized = query.trim().toLowerCase()
   const filtered = quotes.filter((quote) => {
     const items = getQuoteItems(quote)
+    const customer = getQuoteCustomer(quote)
     const haystack = [
       quote.number,
-      quote.form.clientName,
-      quote.form.clientPhone,
+      customer.clientName,
+      customer.clientPhone,
       statuses[quote.status],
       String(getQuoteTotal(quote)),
       ...items.flatMap((item) => isMirrorQuoteItem(item)
@@ -1963,6 +1992,7 @@ function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManual
         {filtered.map((quote) => {
           const items = getQuoteItems(quote)
           const firstItem = items[0]
+          const customer = getQuoteCustomer(quote)
           return (
           <article className="quote-card" key={quote.id}>
             <div className="quote-head">
@@ -1985,7 +2015,7 @@ function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManual
               <span>
                 <b>{items.length > 1 ? `${items.length} позиции` : getQuoteItemTitle(firstItem)}</b>
                 <small>
-                  {quote.form.clientName || 'Без имени'} · {money(getQuoteTotal(quote))}
+                  {customer.clientName || 'Без имени'} · {money(getQuoteTotal(quote))}
                 </small>
               </span>
               <ChevronRight size={19} />
@@ -2056,10 +2086,9 @@ type QuoteEditorDialogProps = {
 
 function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialogProps) {
   const initialDelivery = getQuoteDelivery(quote)
+  const initialCustomer = getQuoteCustomer(quote)
   const [draft, setDraft] = useState<ManualQuotePatch>(() => ({
-    clientName: quote.form.clientName,
-    clientPhone: quote.form.clientPhone,
-    note: quote.form.note,
+    ...initialCustomer,
     discountEnabled: quote.form.discountEnabled,
     discountPercent: quote.form.discountPercent,
     manualTotalEnabled: Number.isFinite(quote.manualTotal),
