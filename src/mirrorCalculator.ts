@@ -1,4 +1,5 @@
 import type { CalculationResult } from './calculator'
+import { roundMoneyUp } from './money'
 import {
   mirrorUnitLabels,
   type MirrorMaterial,
@@ -123,12 +124,13 @@ export const calculateMirrorQuote = (catalog: MirrorPricingCatalog, form: Mirror
   const manager = form.managerEnabled ? baseSubtotal * Math.max(0, catalog.settings.managerPercent) / 100 : 0
   const designer = form.designerEnabled ? baseSubtotal * Math.max(0, catalog.settings.designerPercent) / 100 : 0
   const commissionFactor = baseSubtotal > 0 ? (baseSubtotal + manager + designer) / baseSubtotal : 1
-  const product = roundToTen(baseProduct * commissionFactor)
+  const productBeforeRounding = roundToTen(baseProduct * commissionFactor)
   const installation = roundToTen(baseInstallation * commissionFactor)
+  const subtotal = roundMoneyUp(productBeforeRounding + installation)
+  const product = subtotal - installation
   const delivery = 0
-  const subtotal = product + installation
   const discountPercent = Math.min(100, Math.max(0, Number(form.discountPercent) || 0))
-  const total = form.discountEnabled ? roundToTen(subtotal * (1 - discountPercent / 100)) : subtotal
+  const total = form.discountEnabled ? roundMoneyUp(subtotal * (1 - discountPercent / 100)) : subtotal
   const discount = subtotal - total
   const lines = [
     { label: 'Стоимость изделия', value: product + installation },

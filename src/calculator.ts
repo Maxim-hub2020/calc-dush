@@ -6,6 +6,9 @@ import {
   type MirrorForm,
 } from './mirrorCalculator'
 import type { MirrorPricingCatalog, MirrorUnit } from './mirrorPricing'
+import { roundMoneyUp } from './money'
+
+export { roundMoneyUp } from './money'
 
 export type DeliveryZone = 'inside' | 'outside'
 
@@ -193,7 +196,7 @@ export const calculateQuoteDelivery = (catalog: PricingCatalog, delivery: QuoteD
   const distancePrice = normalized.zone === 'outside'
     ? normalized.km * Math.max(0, Number(catalog.services.deliveryKmRate) || 0)
     : 0
-  return roundToTen(Math.max(0, Number(catalog.services.deliveryBase) || 0) + distancePrice)
+  return roundMoneyUp(Math.max(0, Number(catalog.services.deliveryBase) || 0) + distancePrice)
 }
 
 export const buildCalculationLines = (
@@ -289,14 +292,15 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
   const baseInstallation = form.installation ? construction.installationPrice : 0
   const designerPercent = Math.max(0, Number(catalog.services.designerPercent) || 0)
   const designerFactor = form.designerEnabled ? 1 + designerPercent / 100 : 1
-  const product = roundToTen(baseProductWithSurcharge * designerFactor)
+  const productBeforeRounding = roundToTen(baseProductWithSurcharge * designerFactor)
   const installation = roundToTen(baseInstallation * designerFactor)
+  const subtotal = roundMoneyUp(productBeforeRounding + installation)
+  const product = subtotal - installation
   const delivery = 0
-  const subtotal = product + installation
   const designer = subtotal - baseProductWithSurcharge - baseInstallation
   const discountPercent = Math.min(100, Math.max(0, Number(form.discountPercent) || 0))
   const total = form.discountEnabled
-    ? roundToTen(subtotal - (subtotal / 100) * discountPercent)
+    ? roundMoneyUp(subtotal - (subtotal / 100) * discountPercent)
     : subtotal
   const discount = subtotal - total
   const lines = buildCalculationLines(product, installation, delivery, discount, discountPercent)
@@ -352,7 +356,7 @@ export const applyQuoteDelivery = (
   result: CalculationResult,
   deliveryPriceValue: unknown,
 ): CalculationResult => {
-  const delivery = roundToTen(Math.max(0, Number(deliveryPriceValue) || 0))
+  const delivery = roundMoneyUp(deliveryPriceValue)
   const discountLabel = result.lines.find((line) => line.label.startsWith('Скидка'))?.label
   const discountPercent = Number(discountLabel?.match(/[\d,.]+/)?.[0]?.replace(',', '.') ?? 0)
   return {
@@ -574,11 +578,11 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
   const updatedItems = patch.items.flatMap((itemPatch): QuoteItem[] => {
     const item = itemsById.get(itemPatch.id)
     if (!item) return []
-    const product = Math.max(0, Number(itemPatch.product) || 0)
+    const product = roundMoneyUp(itemPatch.product)
     const quantity = normalizeQuoteQuantity(itemPatch.quantity)
     const subtotal = product
     const total = patch.discountEnabled
-      ? roundToTen(subtotal * (1 - discountPercent / 100))
+      ? roundMoneyUp(subtotal * (1 - discountPercent / 100))
       : subtotal
     const discount = subtotal - total
     const sharedForm = {
@@ -622,7 +626,7 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
   const orderDelivery = normalizeQuoteDelivery(patch.orderDelivery)
   const result = applyQuoteDelivery(itemResult, orderDelivery.enabled ? patch.deliveryPrice : 0)
   const manualTotal = patch.manualTotalEnabled
-    ? Math.max(0, Number(patch.manualTotal) || 0)
+    ? roundMoneyUp(patch.manualTotal)
     : undefined
 
   return {

@@ -59,6 +59,7 @@ import {
   normalizeQuoteCustomer,
   normalizeQuoteQuantity,
   resetDimensionsForConstruction,
+  roundMoneyUp,
   shortMoney,
   updateQuoteManually,
   type CalculatorForm,
@@ -2190,20 +2191,20 @@ function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialo
   }
 
   const productSubtotal = draft.items.reduce((sum, item) => (
-    sum + Math.max(0, Number(item.product) || 0) * normalizeQuoteQuantity(item.quantity)
+    sum + roundMoneyUp(item.product) * normalizeQuoteQuantity(item.quantity)
   ), 0)
   const subtotal = productSubtotal + draft.deliveryPrice
   const discountPercent = Math.min(100, Math.max(0, Number(draft.discountPercent) || 0))
   const calculatedProductTotal = draft.discountEnabled
     ? draft.items.reduce((sum, item) => {
-        const itemSubtotal = Math.max(0, Number(item.product) || 0)
-        return sum + Math.round(itemSubtotal * (1 - discountPercent / 100) / 10) * 10
+        const itemSubtotal = roundMoneyUp(item.product)
+        return sum + roundMoneyUp(itemSubtotal * (1 - discountPercent / 100))
           * normalizeQuoteQuantity(item.quantity)
       }, 0)
     : productSubtotal
   const calculatedTotal = calculatedProductTotal + draft.deliveryPrice
   const total = draft.manualTotalEnabled
-    ? Math.max(0, Number(draft.manualTotal) || 0)
+    ? roundMoneyUp(draft.manualTotal)
     : calculatedTotal
   const hasDiscount = draft.discountEnabled && discountPercent > 0 && calculatedTotal < subtotal
 
