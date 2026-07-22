@@ -636,16 +636,29 @@
   gap: 6px;
 }
 
-.select-field select {
+.select-control {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.select-control select {
   appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
-    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position:
-    calc(100% - 16px) 19px,
-    calc(100% - 11px) 19px;
-  background-repeat: no-repeat;
-  background-size: 5px 5px;
-  padding-right: 28px;
+  padding-right: 40px;
+  cursor: pointer;
+}
+
+.select-control > svg {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  color: var(--accent);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.select-control:hover select {
+  border-color: var(--accent);
 }
 
 .service-list {

@@ -1814,13 +1814,16 @@ function OptionSelect({ label, value, items, onChange }: OptionSelectProps) {
   return (
     <label className="select-field">
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {items.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.label}
-          </option>
-        ))}
-      </select>
+      <span className="select-control">
+        <select value={value} onChange={(event) => onChange(event.target.value)}>
+          {items.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={19} aria-hidden="true" />
+      </span>
     </label>
   )
 }
