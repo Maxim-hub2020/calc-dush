@@ -1072,7 +1072,6 @@ function CalculatorScreen({
         <OptionGrid
           activeId={form.glassId}
           items={catalog.glass}
-          priceSuffix="₽/м²"
           onSelect={(glassId) => onForm({ glassId })}
         />
         <div className="inline-selects">
@@ -1080,14 +1079,12 @@ function CalculatorScreen({
             label="Фурнитура"
             value={form.hardwareId}
             items={catalog.hardware}
-            suffix="%"
             onChange={(hardwareId) => onForm({ hardwareId })}
           />
           <OptionSelect
             label="Класс"
             value={form.hardwareClassId}
             items={catalog.hardwareClass}
-            suffix="₽"
             onChange={(hardwareClassId) => onForm({ hardwareClassId })}
           />
         </div>
@@ -1781,13 +1778,13 @@ function DeliveryControl({ delivery, kmRate, price, onChange }: DeliveryControlP
 type OptionGridProps = {
   activeId: string
   items: PriceOption[]
-  priceSuffix: string
+  priceSuffix?: string
   onSelect: (id: string) => void
 }
 
 function OptionGrid({ activeId, items, priceSuffix, onSelect }: OptionGridProps) {
   return (
-    <div className="option-grid">
+    <div className={priceSuffix ? 'option-grid' : 'option-grid option-grid-label-only'}>
       {items.map((item) => (
         <button
           className={item.id === activeId ? 'option-chip is-active' : 'option-chip'}
@@ -1797,9 +1794,9 @@ function OptionGrid({ activeId, items, priceSuffix, onSelect }: OptionGridProps)
         >
           <i className={`glass-swatch swatch-${item.id}`} aria-hidden="true" />
           <span>{item.label}</span>
-          <small>
+          {priceSuffix ? <small>
             {shortMoney(item.price)} {priceSuffix}
-          </small>
+          </small> : null}
         </button>
       ))}
     </div>
@@ -1810,18 +1807,17 @@ type OptionSelectProps = {
   label: string
   value: string
   items: PriceOption[]
-  suffix: string
   onChange: (value: string) => void
 }
 
-function OptionSelect({ label, value, items, suffix, onChange }: OptionSelectProps) {
+function OptionSelect({ label, value, items, onChange }: OptionSelectProps) {
   return (
     <label className="select-field">
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         {items.map((item) => (
           <option key={item.id} value={item.id}>
-            {item.label} · {shortMoney(item.price)} {suffix}
+            {item.label}
           </option>
         ))}
       </select>

@@ -557,6 +557,30 @@
   grid-column: 2;
 }
 
+.option-grid-label-only .option-chip {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 32px auto;
+  align-items: center;
+  justify-items: center;
+  min-height: 78px;
+  padding: 7px 4px;
+  row-gap: 5px;
+  text-align: center;
+}
+
+.option-grid-label-only .option-chip span {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.option-grid-label-only .glass-swatch {
+  grid-row: auto;
+  width: 32px;
+  height: 32px;
+}
+
 .option-chip span {
   color: var(--heading);
   font-size: var(--type-label);
