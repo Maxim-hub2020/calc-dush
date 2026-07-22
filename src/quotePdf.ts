@@ -1,5 +1,4 @@
 import type { Content, TableCell, TDocumentDefinitions } from 'pdfmake/interfaces'
-import { Capacitor } from '@capacitor/core'
 import {
   getConstruction,
   getPublicProductPrice,
@@ -411,50 +410,16 @@ export const createQuotePdfBlob = (quote: Quote) =>
 
 const pdfFileName = (quote: Quote) => `${quote.number.trim()}.pdf`
 
-const blobToBase64 = (blob: Blob) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error('Не удалось прочитать PDF'))
-    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
-    reader.readAsDataURL(blob)
-  })
-
-const shareNativePdf = async (blob: Blob, fileName: string, title: string) => {
-  const [{ Directory, Filesystem }, { Share }] = await Promise.all([
-    import('@capacitor/filesystem'),
-    import('@capacitor/share'),
-  ])
-  const path = `quotes/${fileName}`
-  const file = await Filesystem.writeFile({
-    path,
-    data: await blobToBase64(blob),
-    directory: Directory.Cache,
-    recursive: true,
-  })
-
-  try {
-    await Share.share({ title, files: [file.uri] })
-  } finally {
-    await Filesystem.deleteFile({ path, directory: Directory.Cache }).catch(() => undefined)
-  }
-}
-
 export type QuotePdfPreview = {
   fileName: string
   title: string
   url: string
 }
 
-export const shareQuotePdf = async (quote: Quote): Promise<QuotePdfPreview | null> => {
+export const shareQuotePdf = async (quote: Quote): Promise<QuotePdfPreview> => {
   const fileName = pdfFileName(quote)
   const title = `${quote.number} - коммерческое предложение`
-  const isNative = Capacitor.isNativePlatform()
   const blob = await createQuotePdfBlob(quote)
-
-  if (isNative) {
-    await shareNativePdf(blob, fileName, title)
-    return null
-  }
 
   return { fileName, title, url: URL.createObjectURL(blob) }
 }

@@ -526,7 +526,7 @@ function App() {
     setPdfQuoteId(quote.id)
     try {
       const preview = await shareQuotePdf(quote)
-      if (preview) setPdfPreview(preview)
+      setPdfPreview(preview)
       setNotice(`${quote.number}: PDF готов`)
     } catch {
       setNotice('Не удалось сформировать PDF')
