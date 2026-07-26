@@ -1,6 +1,5 @@
 import type { Content, TableCell, TDocumentDefinitions } from 'pdfmake/interfaces'
 import {
-  getConstruction,
   getPublicProductPrice,
   getQuoteCustomer,
   getQuoteItemDetails,
@@ -8,13 +7,11 @@ import {
   getQuoteItemTitle,
   getQuoteItems,
   getQuoteTotal,
-  isMirrorQuoteItem,
   money,
   shortMoney,
   type Quote,
   type QuoteItem,
 } from './calculator'
-import { defaultCatalog, type Construction } from './pricing'
 
 const pdfColors = {
   accent: '#2384a6',
@@ -32,53 +29,6 @@ const formatPdfDate = (date: string) =>
   new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit', month: '2-digit', year: 'numeric',
   }).format(new Date(date))
-
-const buildSketchSvg = (sketch: Construction['sketch']) => {
-  const panelCount: Record<Construction['sketch'], number> = {
-    single: 1,
-    'panel-door': 2,
-    panel: 1,
-    niche: 1,
-    corner: 2,
-    'corner-plus': 3,
-    'double-corner': 4,
-    slider: 2,
-    'slider-corner': 3,
-    'slider-double': 4,
-    trapezoid: 3,
-  }
-  const count = panelCount[sketch]
-  const panelWidth = count > 3 ? 38 : 48
-  const gap = 8
-  const totalWidth = count * panelWidth + (count - 1) * gap
-  const startX = (240 - totalWidth) / 2
-  const panels = Array.from({ length: count }, (_, index) => {
-    const isShort = sketch === 'trapezoid' && index !== 1
-    const height = isShort ? 82 : 106
-    const y = isShort ? 34 : 10
-    return `<rect x="${startX + index * (panelWidth + gap)}" y="${y}" width="${panelWidth}" height="${height}" rx="5" fill="#c9edf7" fill-opacity="0.82" stroke="#4b9fc0" stroke-width="2"/>`
-  }).join('')
-  const cornerLine = sketch.includes('corner') || sketch === 'trapezoid'
-    ? '<path d="M145 18 L188 118" fill="none" stroke="#526574" stroke-width="3" stroke-linecap="round"/>'
-    : ''
-  const sliderLine = sketch.includes('slider')
-    ? '<path d="M62 94 H174 M86 82 H198" fill="none" stroke="#526574" stroke-width="3" stroke-linecap="round"/>'
-    : ''
-  const doorLine = sketch.includes('door') || sketch === 'niche'
-    ? '<path d="M116 30 L158 74" fill="none" stroke="#526574" stroke-width="3" stroke-linecap="round"/>'
-    : ''
-
-  return `<svg width="240" height="140" viewBox="0 0 240 140" xmlns="http://www.w3.org/2000/svg"><rect width="240" height="140" rx="12" fill="#f4f8fb"/><rect x="28" y="118" width="184" height="10" rx="5" fill="#d7e4ec"/>${panels}${cornerLine}${sliderLine}${doorLine}</svg>`
-}
-
-const buildMirrorSvg = () => (
-  '<svg width="240" height="140" viewBox="0 0 240 140" xmlns="http://www.w3.org/2000/svg">'
-  + '<rect width="240" height="140" rx="12" fill="#f4f8fb"/>'
-  + '<rect x="48" y="15" width="144" height="110" rx="8" fill="#dff3f8" stroke="#4b9fc0" stroke-width="3"/>'
-  + '<path d="M64 34 L96 22 M63 54 L128 23" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.82"/>'
-  + '<rect x="58" y="126" width="124" height="5" rx="2.5" fill="#d7e4ec"/>'
-  + '</svg>'
-)
 
 const brandLogoSvg = (
   '<svg width="64" height="58" viewBox="0 0 64 58" xmlns="http://www.w3.org/2000/svg">'
@@ -121,10 +71,6 @@ const contactRow = (kind: 'phone' | 'web' | 'location', title: string, subtitle?
   }
 }
 
-const productPreviewSvg = (item: QuoteItem) => isMirrorQuoteItem(item)
-  ? buildMirrorSvg()
-  : buildSketchSvg(getConstruction(defaultCatalog, item.form.constructionId).sketch)
-
 const itemParameterStack = (item: QuoteItem): Content[] => {
   const lines = getQuoteItemDetails(item).filter((line) => line.label.trim() || line.value.trim())
   if (lines.length === 0) return [{ text: '—', color: pdfColors.muted }]
@@ -151,20 +97,19 @@ const buildQuoteTableRow = (item: QuoteItem, index: number): TableCell[] => {
   const price = getPublicProductPrice(item.result)
   const quantity = getQuoteItemQuantity(item)
   return [
-    { text: String(index + 1), alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
+    { text: String(index + 1), alignment: 'center', color: pdfColors.heading, margin: [0, 6, 0, 0] },
     {
-      columns: [
-        { width: 48, svg: productPreviewSvg(item), fit: [44, 56], alignment: 'center' },
-        { width: '*', text: getQuoteItemTitle(item), alignment: 'center', bold: true, color: pdfColors.heading, margin: [0, 15, 0, 0] },
-      ],
-      columnGap: 4,
-      margin: [0, 4, 0, 4],
+      text: getQuoteItemTitle(item),
+      alignment: 'left',
+      bold: true,
+      color: pdfColors.heading,
+      margin: [2, 6, 2, 6],
     },
     { stack: itemParameterStack(item), margin: [0, 4, 0, 3] },
-    { text: String(quantity), alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
-    { text: 'шт.', alignment: 'center', color: pdfColors.heading, margin: [0, 21, 0, 0] },
-    { text: shortMoney(price), alignment: 'right', bold: true, color: pdfColors.heading, noWrap: true, margin: [0, 21, 0, 0] },
-    { text: shortMoney(price * quantity), alignment: 'right', bold: true, color: pdfColors.heading, noWrap: true, margin: [0, 21, 0, 0] },
+    { text: String(quantity), alignment: 'center', color: pdfColors.heading, margin: [0, 6, 0, 0] },
+    { text: 'шт.', alignment: 'center', color: pdfColors.heading, margin: [0, 6, 0, 0] },
+    { text: shortMoney(price), alignment: 'right', bold: true, color: pdfColors.heading, noWrap: true, margin: [0, 6, 0, 0] },
+    { text: shortMoney(price * quantity), alignment: 'right', bold: true, color: pdfColors.heading, noWrap: true, margin: [0, 6, 0, 0] },
   ]
 }
 
@@ -340,7 +285,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
       {
         columns: [
           { width: '*', stack: [benefitBlock('time', 'Срок изготовления:', '7-10 рабочих дней')] },
-          { width: '*', stack: [benefitBlock('warranty', 'Гарантия на изделия:', 'до 2 лет')] },
+          { width: '*', stack: [benefitBlock('warranty', 'Гарантия на изделие:', '1 год')] },
           { width: '*', stack: [benefitBlock('delivery', 'Доставка и монтаж', 'по Ростову-на-Дону и области')] },
         ],
         columnGap: 14,

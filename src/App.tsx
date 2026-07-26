@@ -1913,7 +1913,7 @@ function SummaryDock({ result, orderResult, positionCount, positionIndex, hasErr
       </div>
       <div className="summary-guarantee">
         <ShieldCheck size={18} aria-hidden="true" />
-        <span>Гарантия на изделие 24 месяца</span>
+        <span>Гарантия на изделие 1 год</span>
       </div>
       <div className="summary-actions">
         <button className="primary-action" disabled={hasErrors} type="button" onClick={onSave}>
