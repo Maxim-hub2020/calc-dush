@@ -41,12 +41,17 @@ const brandLogoSvg = (
   + '</svg>'
 )
 
-const contactIconSvg = (kind: 'phone' | 'web' | 'location') => {
+type ContactKind = 'phone' | 'web' | 'instagram' | 'location'
+
+const contactIconSvg = (kind: ContactKind) => {
   if (kind === 'phone') {
     return '<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M6.5 3.5 L9 8 L7.5 10 C8.7 12.7 10.8 14.8 13.5 16 L15.5 14.5 L20 17 C20 19.2 18.2 21 16 21 C9.4 20.2 3.8 14.6 3 8 C3 5.8 4.8 4 6.5 3.5 Z" fill="none" stroke="#23313b" stroke-width="1.8" stroke-linejoin="round"/></svg>'
   }
   if (kind === 'web') {
     return '<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#23313b" stroke-width="1.7"/><path d="M3.5 12 H20.5 M12 3.5 C15 6.8 15 17.2 12 20.5 M12 3.5 C9 6.8 9 17.2 12 20.5" fill="none" stroke="#23313b" stroke-width="1.4"/></svg>'
+  }
+  if (kind === 'instagram') {
+    return '<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5" fill="none" stroke="#23313b" stroke-width="1.7"/><circle cx="12" cy="12" r="4" fill="none" stroke="#23313b" stroke-width="1.7"/><circle cx="17.5" cy="6.8" r="1.1" fill="#23313b"/></svg>'
   }
   return '<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21 C16 16.4 19 13.4 19 9.5 A7 7 0 1 0 5 9.5 C5 13.4 8 16.4 12 21 Z" fill="none" stroke="#23313b" stroke-width="1.7"/><circle cx="12" cy="9.5" r="2.2" fill="none" stroke="#23313b" stroke-width="1.5"/></svg>'
 }
@@ -61,7 +66,7 @@ const benefitIconSvg = (kind: 'time' | 'warranty' | 'delivery') => {
   return '<svg width="25" height="25" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg"><path d="M3 8 H16 V19 H3 Z M16 12 H21 L24 16 V19 H16 Z" fill="none" stroke="#263640" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="20" r="2" fill="#ffffff" stroke="#263640" stroke-width="1.5"/><circle cx="20" cy="20" r="2" fill="#ffffff" stroke="#263640" stroke-width="1.5"/></svg>'
 }
 
-const contactRow = (kind: 'phone' | 'web' | 'location', title: string, subtitle?: string): Content => {
+const contactRow = (kind: ContactKind, title: string, subtitle?: string): Content => {
   const stack: Content[] = [{ text: title, bold: true, color: pdfColors.heading, fontSize: 8.5 }]
   if (subtitle) stack.push({ text: subtitle, color: pdfColors.muted, fontSize: 7.5, margin: [0, 1, 0, 0] })
   return {
@@ -327,7 +332,8 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
             width: 158,
             stack: [
               contactRow('phone', '8 929 819-16-84', 'WhatsApp / Telegram / Max'),
-              contactRow('web', 'amalgama-rostov.ru'),
+              contactRow('web', 'amalgama.cehcrm.ru'),
+              contactRow('instagram', '@amalgama_rostov'),
               contactRow('location', 'Ростов-на-Дону и область'),
             ],
           },
