@@ -9,6 +9,7 @@ import {
   getQuoteTotal,
   getQuoteVariants,
   getQuoteVariantTotals,
+  isMirrorQuoteItem,
   money,
   shortMoney,
   type Quote,
@@ -82,13 +83,24 @@ const contactRow = (kind: ContactKind, title: string, subtitle?: string): Conten
 const itemParameterStack = (item: QuoteItem): Content[] => {
   const lines = getQuoteItemDetails(item).filter((line) => line.label.trim() || line.value.trim())
   if (lines.length === 0) return [{ text: '—', color: pdfColors.muted }]
-  return lines.map((line) => ({
-    text: [
-      { text: line.label.trim() ? `${line.label}: ` : '', color: pdfColors.text },
-      { text: line.value || '—', bold: true, color: pdfColors.heading },
-    ],
-    margin: [0, 0, 0, 2],
-  }))
+  return lines.map((line) => {
+    const isMirrorWork = isMirrorQuoteItem(item) && line.id.startsWith(`${item.id}:service:`)
+    if (isMirrorWork) {
+      return {
+        text: line.label.trim() || line.value.trim() || '—',
+        bold: true,
+        color: pdfColors.heading,
+        margin: [0, 0, 0, 2],
+      }
+    }
+    return {
+      text: [
+        { text: line.label.trim() ? `${line.label}: ` : '', color: pdfColors.text },
+        { text: line.value || '—', bold: true, color: pdfColors.heading },
+      ],
+      margin: [0, 0, 0, 2],
+    }
+  })
 }
 
 const tableHeaderCell = (text: string): TableCell => ({
