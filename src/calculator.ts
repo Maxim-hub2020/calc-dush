@@ -24,6 +24,15 @@ export type QuoteCustomer = {
   note: string
 }
 
+export type QuoteVariant = {
+  id: string
+  title: string
+  itemIds: string[]
+  orderDelivery: QuoteDelivery
+  deliveryPrice: number
+  manualTotal?: number
+}
+
 export type CalculatorForm = {
   constructionId: string
   dimensions: Record<string, number>
@@ -110,6 +119,7 @@ type QuoteMetadata = {
   createdAt: string
   status: 'new' | 'sent' | 'accepted' | 'archived'
   items?: QuoteItem[]
+  variants?: QuoteVariant[]
   orderDelivery?: QuoteDelivery
   customer?: QuoteCustomer
   manualTotal?: number
@@ -141,6 +151,16 @@ export type ManualQuoteItemPatch = {
   details: QuoteDetailLine[]
 }
 
+export type ManualQuoteVariantPatch = {
+  id: string
+  title: string
+  itemIds: string[]
+  orderDelivery: QuoteDelivery
+  deliveryPrice: number
+  manualTotalEnabled: boolean
+  manualTotal: number
+}
+
 export type ManualQuotePatch = {
   clientName: string
   clientPhone: string
@@ -152,6 +172,8 @@ export type ManualQuotePatch = {
   orderDelivery: QuoteDelivery
   deliveryPrice: number
   items: ManualQuoteItemPatch[]
+  splitIntoVariants: boolean
+  variants: ManualQuoteVariantPatch[]
 }
 
 const roundToTen = (value: number) => Math.round(value / 10) * 10
@@ -473,9 +495,15 @@ export const getQuoteItemDetails = (item: QuoteItem): QuoteDetailLine[] => {
   return details
 }
 
-export const getQuoteTotal = (quote: Quote) => Number.isFinite(quote.manualTotal)
-  ? Math.max(0, Number(quote.manualTotal))
-  : quote.result.total
+export const getQuoteTotal = (quote: Quote) => {
+  const variants = getQuoteVariants(quote)
+  if (variants.length > 0) {
+    return Math.min(...variants.map((variant) => getQuoteVariantTotals(quote, variant).total))
+  }
+  return Number.isFinite(quote.manualTotal)
+    ? Math.max(0, Number(quote.manualTotal))
+    : quote.result.total
+}
 
 export const getQuoteItems = (quote: Quote): QuoteItem[] => {
   if (quote.items?.length) {
@@ -506,7 +534,53 @@ export const getQuoteItems = (quote: Quote): QuoteItem[] => {
   }]
 }
 
+export const getQuoteVariants = (quote: Quote): QuoteVariant[] => {
+  if (!Array.isArray(quote.variants) || quote.variants.length < 2) return []
+  const itemIds = new Set(getQuoteItems(quote).map((item) => item.id))
+  return quote.variants.map((variant, index) => ({
+    id: variant.id || `variant-${index + 1}`,
+    title: String(variant.title || `Вариант ${index + 1}`),
+    itemIds: Array.from(new Set(
+      Array.isArray(variant.itemIds) ? variant.itemIds.filter((itemId) => itemIds.has(itemId)) : [],
+    )),
+    orderDelivery: normalizeQuoteDelivery(variant.orderDelivery),
+    deliveryPrice: roundMoneyUp(variant.deliveryPrice),
+    manualTotal: Number.isFinite(variant.manualTotal)
+      ? roundMoneyUp(variant.manualTotal)
+      : undefined,
+  }))
+}
+
+export type QuoteVariantTotals = {
+  product: number
+  delivery: number
+  subtotal: number
+  discount: number
+  total: number
+}
+
+export const getQuoteVariantTotals = (quote: Quote, variant: QuoteVariant): QuoteVariantTotals => {
+  const variantItemIds = new Set(variant.itemIds)
+  const items = getQuoteItems(quote).filter((item) => variantItemIds.has(item.id))
+  const itemResult = combineCalculationResults(items.map((item) => (
+    multiplyCalculationResult(item.result, getQuoteItemQuantity(item))
+  )))
+  const delivery = variant.orderDelivery.enabled ? roundMoneyUp(variant.deliveryPrice) : 0
+  const calculatedTotal = itemResult.total + delivery
+
+  return {
+    product: itemResult.product + itemResult.installation,
+    delivery,
+    subtotal: itemResult.subtotal + delivery,
+    discount: itemResult.discount,
+    total: Number.isFinite(variant.manualTotal)
+      ? roundMoneyUp(variant.manualTotal)
+      : calculatedTotal,
+  }
+}
+
 export const getQuoteDelivery = (quote: Quote): QuoteDelivery => {
+  if (getQuoteVariants(quote).length > 0) return normalizeQuoteDelivery(null)
   if (quote.orderDelivery) return normalizeQuoteDelivery(quote.orderDelivery)
   const legacyShower = getQuoteItems(quote).find(isShowerQuoteItem)
   if (legacyShower?.form.delivery) {
@@ -623,9 +697,40 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
   const itemResult = combineCalculationResults(updatedItems.map((item) => (
     multiplyCalculationResult(item.result, getQuoteItemQuantity(item))
   )))
-  const orderDelivery = normalizeQuoteDelivery(patch.orderDelivery)
-  const result = applyQuoteDelivery(itemResult, orderDelivery.enabled ? patch.deliveryPrice : 0)
-  const manualTotal = patch.manualTotalEnabled
+  const updatedItemIds = new Set(updatedItems.map((item) => item.id))
+  const assignedItemIds = new Set<string>()
+  const variantDrafts = patch.splitIntoVariants
+    ? patch.variants.map((variant, index): QuoteVariant => {
+        const itemIds = variant.itemIds.filter((itemId) => {
+          if (!updatedItemIds.has(itemId) || assignedItemIds.has(itemId)) return false
+          assignedItemIds.add(itemId)
+          return true
+        })
+        return {
+          id: variant.id || crypto.randomUUID(),
+          title: variant.title.trim() || `Вариант ${index + 1}`,
+          itemIds,
+          orderDelivery: normalizeQuoteDelivery(variant.orderDelivery),
+          deliveryPrice: variant.orderDelivery.enabled ? roundMoneyUp(variant.deliveryPrice) : 0,
+          manualTotal: variant.manualTotalEnabled ? roundMoneyUp(variant.manualTotal) : undefined,
+        }
+      })
+    : []
+  const variants = variantDrafts.length >= 2 ? variantDrafts : undefined
+  if (variants) {
+    const unassignedItemIds = updatedItems
+      .map((item) => item.id)
+      .filter((itemId) => !assignedItemIds.has(itemId))
+    variants[0].itemIds.push(...unassignedItemIds)
+  }
+  const orderDelivery = variants
+    ? normalizeQuoteDelivery(null)
+    : normalizeQuoteDelivery(patch.orderDelivery)
+  const result = applyQuoteDelivery(
+    itemResult,
+    variants ? 0 : orderDelivery.enabled ? patch.deliveryPrice : 0,
+  )
+  const manualTotal = !variants && patch.manualTotalEnabled
     ? roundMoneyUp(patch.manualTotal)
     : undefined
 
@@ -637,6 +742,7 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
     status: quote.status,
     result,
     items: updatedItems,
+    variants,
     orderDelivery,
     customer,
     manualTotal,

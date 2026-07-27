@@ -7,10 +7,13 @@ import {
   getQuoteItemTitle,
   getQuoteItems,
   getQuoteTotal,
+  getQuoteVariants,
+  getQuoteVariantTotals,
   money,
   shortMoney,
   type Quote,
   type QuoteItem,
+  type QuoteVariantTotals,
 } from './calculator'
 
 const pdfColors = {
@@ -113,6 +116,89 @@ const buildQuoteTableRow = (item: QuoteItem, index: number): TableCell[] => {
   ]
 }
 
+const buildItemsTable = (items: QuoteItem[]): Content => ({
+  table: {
+    headerRows: 1,
+    dontBreakRows: true,
+    widths: [20, 120, 142, 34, 38, 56, 58],
+    body: [
+      [
+        tableHeaderCell('№'),
+        tableHeaderCell('Наименование'),
+        tableHeaderCell('Параметры'),
+        tableHeaderCell('Кол-во'),
+        tableHeaderCell('Ед. изм.'),
+        tableHeaderCell('Цена, ₽'),
+        tableHeaderCell('Сумма, ₽'),
+      ],
+      ...items.map((item, index) => buildQuoteTableRow(item, index)),
+    ],
+  },
+  layout: {
+    hLineWidth: () => 0.7,
+    vLineWidth: () => 0.7,
+    hLineColor: () => '#cfd8de',
+    vLineColor: () => '#cfd8de',
+    paddingLeft: () => 4,
+    paddingRight: () => 4,
+    paddingTop: () => 2,
+    paddingBottom: () => 2,
+  },
+})
+
+const buildSummaryBlock = (
+  totals: QuoteVariantTotals,
+  discountPercentLabel: string,
+  totalLabel: string,
+): Content => {
+  const summaryRows: TableCell[][] = [
+    [
+      { text: 'Стоимость изделий', color: pdfColors.text, margin: [0, 3, 0, 3] },
+      { text: money(totals.product), alignment: 'right', color: pdfColors.heading, margin: [0, 3, 0, 3] },
+    ],
+    [
+      { text: 'Доставка', color: pdfColors.text, margin: [0, 3, 0, 3] },
+      { text: money(totals.delivery), alignment: 'right', color: pdfColors.heading, margin: [0, 3, 0, 3] },
+    ],
+  ]
+  if (totals.discount > 0) {
+    summaryRows.push([
+      { text: `Стоимость до скидки (${discountPercentLabel}%)`, color: pdfColors.muted, margin: [0, 3, 0, 3] },
+      { text: money(totals.subtotal), alignment: 'right', color: pdfColors.muted, decoration: 'lineThrough', margin: [0, 3, 0, 3] },
+    ])
+  }
+
+  return {
+    columns: [
+      { width: '34%', text: '' },
+      {
+        width: '*',
+        stack: [
+          {
+            table: {
+              widths: ['*', 88],
+              body: summaryRows,
+            },
+            layout: 'noBorders',
+          },
+          {
+            table: {
+              widths: ['*', 88],
+              body: [[
+                { text: totalLabel, bold: true, fontSize: 10, color: pdfColors.heading, fillColor: '#e7f0f4', margin: [8, 6, 0, 6] },
+                { text: money(totals.total), alignment: 'right', bold: true, fontSize: 12, color: pdfColors.heading, fillColor: '#cfe3ec', margin: [0, 5, 8, 5] },
+              ]],
+            },
+            layout: 'noBorders',
+            margin: [0, 2, 0, 0],
+          },
+        ],
+      },
+    ],
+    margin: [0, 7, 0, 0],
+  }
+}
+
 const benefitBlock = (kind: 'time' | 'warranty' | 'delivery', title: string, value: string): Content => ({
   columns: [
     { width: 28, svg: benefitIconSvg(kind), fit: [22, 22], margin: [0, 1, 0, 0] },
@@ -129,8 +215,8 @@ const benefitBlock = (kind: 'time' | 'warranty' | 'delivery', title: string, val
 
 export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
   const items = getQuoteItems(quote)
+  const variants = getQuoteVariants(quote)
   const customer = getQuoteCustomer(quote)
-  const hasDiscount = quote.result.discount > 0
   const storedDiscountPercent = Number(quote.form.discountPercent)
   const discountPercent = Number.isFinite(storedDiscountPercent) && storedDiscountPercent > 0
     ? storedDiscountPercent
@@ -138,27 +224,69 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
       ? Math.round((quote.result.discount / quote.result.subtotal) * 10_000) / 100
       : 0
   const discountPercentLabel = discountPercent.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
-  const quoteTotal = getQuoteTotal(quote)
   const customerParts = [
     customer.clientName ? `Клиент: ${customer.clientName}` : '',
     customer.clientPhone ? `Телефон: ${customer.clientPhone}` : '',
   ].filter(Boolean)
-  const summaryRows: TableCell[][] = [
-    [
-      { text: 'Стоимость изделий', color: pdfColors.text, margin: [0, 3, 0, 3] },
-      { text: money(quote.result.product + quote.result.installation), alignment: 'right', color: pdfColors.heading, margin: [0, 3, 0, 3] },
-    ],
-    [
-      { text: 'Доставка', color: pdfColors.text, margin: [0, 3, 0, 3] },
-      { text: money(quote.result.delivery), alignment: 'right', color: pdfColors.heading, margin: [0, 3, 0, 3] },
-    ],
-  ]
-  if (hasDiscount) {
-    summaryRows.push([
-      { text: `Стоимость до скидки (${discountPercentLabel}%)`, color: pdfColors.muted, margin: [0, 3, 0, 3] },
-      { text: money(quote.result.subtotal), alignment: 'right', color: pdfColors.muted, decoration: 'lineThrough', margin: [0, 3, 0, 3] },
-    ])
+  const singleQuoteTotals: QuoteVariantTotals = {
+    product: quote.result.product + quote.result.installation,
+    delivery: quote.result.delivery,
+    subtotal: quote.result.subtotal,
+    discount: quote.result.discount,
+    total: getQuoteTotal(quote),
   }
+  const itemById = new Map(items.map((item) => [item.id, item]))
+  const orderContent: Content[] = variants.length > 0
+    ? [
+        {
+          text: 'Варианты расчета',
+          style: 'sectionTitle',
+          margin: [0, 21, 0, 6],
+        },
+        ...variants.flatMap((variant, variantIndex): Content[] => {
+          const variantItems = variant.itemIds.flatMap((itemId) => {
+            const item = itemById.get(itemId)
+            return item ? [item] : []
+          })
+          if (variantItems.length === 0) return []
+          return [
+            {
+              columns: [
+                {
+                  width: '*',
+                  text: variant.title || `Вариант ${variantIndex + 1}`,
+                  bold: true,
+                  fontSize: 10,
+                  color: pdfColors.heading,
+                },
+                {
+                  width: 'auto',
+                  text: `Вариант ${variantIndex + 1}`,
+                  color: pdfColors.accent,
+                  fontSize: 8,
+                  bold: true,
+                },
+              ],
+              margin: [0, variantIndex === 0 ? 0 : 13, 0, 5],
+            },
+            buildItemsTable(variantItems),
+            buildSummaryBlock(
+              getQuoteVariantTotals(quote, variant),
+              discountPercentLabel,
+              'Итого по варианту',
+            ),
+          ]
+        }),
+      ]
+    : [
+        {
+          text: 'Состав и стоимость заказа',
+          style: 'sectionTitle',
+          margin: [0, 21, 0, 5],
+        },
+        buildItemsTable(items),
+        buildSummaryBlock(singleQuoteTotals, discountPercentLabel, 'Итого к оплате'),
+      ]
 
   return {
     pageSize: 'A4',
@@ -219,69 +347,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
       },
       ...(customerParts.length ? [{ text: customerParts.join(' · '), color: pdfColors.text, margin: [0, 5, 0, 0] } as Content] : []),
       ...(customer.note ? [{ text: customer.note, color: pdfColors.muted, margin: [0, 3, 0, 0] } as Content] : []),
-      {
-        text: 'Состав и стоимость заказа',
-        style: 'sectionTitle',
-        margin: [0, 21, 0, 5],
-      },
-      {
-        table: {
-          headerRows: 1,
-          dontBreakRows: true,
-          widths: [20, 120, 142, 34, 38, 56, 58],
-          body: [
-            [
-              tableHeaderCell('№'),
-              tableHeaderCell('Наименование'),
-              tableHeaderCell('Параметры'),
-              tableHeaderCell('Кол-во'),
-              tableHeaderCell('Ед. изм.'),
-              tableHeaderCell('Цена, ₽'),
-              tableHeaderCell('Сумма, ₽'),
-            ],
-            ...items.map((item, index) => buildQuoteTableRow(item, index)),
-          ],
-        },
-        layout: {
-          hLineWidth: () => 0.7,
-          vLineWidth: () => 0.7,
-          hLineColor: () => '#cfd8de',
-          vLineColor: () => '#cfd8de',
-          paddingLeft: () => 4,
-          paddingRight: () => 4,
-          paddingTop: () => 2,
-          paddingBottom: () => 2,
-        },
-      },
-      {
-        columns: [
-          { width: '34%', text: '' },
-          {
-            width: '*',
-            stack: [
-              {
-                table: {
-                  widths: ['*', 88],
-                  body: summaryRows,
-                },
-                layout: 'noBorders',
-              },
-              {
-                table: {
-                  widths: ['*', 88],
-                  body: [[
-                    { text: 'Итого к оплате', bold: true, fontSize: 10, color: pdfColors.heading, fillColor: '#e7f0f4', margin: [8, 6, 0, 6] },
-                    { text: money(quoteTotal), alignment: 'right', bold: true, fontSize: 12, color: pdfColors.heading, fillColor: '#cfe3ec', margin: [0, 5, 8, 5] },
-                  ]],
-                },
-                layout: 'noBorders',
-                margin: [0, 2, 0, 0],
-              },
-            ],
-          },
-        ],
-        margin: [0, 7, 0, 0],
-      },
+      ...orderContent,
       {
         columns: [
           { width: '*', stack: [benefitBlock('time', 'Срок изготовления:', '7-10 рабочих дней')] },

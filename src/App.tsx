@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import {
   Archive,
   Box,
@@ -10,6 +10,7 @@ import {
   CloudOff,
   Copy,
   FileDown,
+  GripVertical,
   Image,
   Layers3,
   ListPlus,
@@ -52,6 +53,8 @@ import {
   getQuoteItemTitle,
   getQuoteItems,
   getQuoteTotal,
+  getQuoteVariants,
+  getQuoteVariantTotals,
   isMirrorQuoteItem,
   money,
   multiplyCalculationResult,
@@ -69,6 +72,7 @@ import {
   type QuoteCustomer,
   type QuoteDelivery,
   type QuoteDraftItem,
+  type QuoteVariant,
 } from './calculator'
 import {
   calculateMirrorQuote,
@@ -136,13 +140,6 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof Calculator }> = [
   { id: 'prices', label: 'Цены', icon: Settings2 },
 ]
 
-const statuses: Record<Quote['status'], string> = {
-  new: 'Новое',
-  sent: 'Отправлено',
-  accepted: 'Принято',
-  archived: 'Архив',
-}
-
 const formatDate = (date: string) =>
   new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit',
@@ -150,6 +147,19 @@ const formatDate = (date: string) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(date))
+
+const formatVariantCount = (count: number) => {
+  const mod100 = count % 100
+  const mod10 = count % 10
+  const label = mod100 >= 11 && mod100 <= 14
+    ? 'вариантов'
+    : mod10 === 1
+      ? 'вариант'
+      : mod10 >= 2 && mod10 <= 4
+        ? 'варианта'
+        : 'вариантов'
+  return `${count} ${label}`
+}
 
 const cloneForm = (form: CalculatorForm): CalculatorForm => ({
   ...form,
@@ -209,6 +219,32 @@ const createMirrorDraftPosition = (
   quantity: 1,
   form: createInitialMirrorForm(catalog, customer),
 })
+
+const remapQuoteVariants = (sourceQuote: Quote, nextItems: ReturnType<typeof getQuoteItems>) => {
+  const sourceVariants = getQuoteVariants(sourceQuote)
+  if (sourceVariants.length === 0) return undefined
+  const sourceItems = getQuoteItems(sourceQuote)
+  const nextItemIdBySourceId = new Map(
+    sourceItems.flatMap((item, index) => nextItems[index] ? [[item.id, nextItems[index].id]] : []),
+  )
+  const mappedItemIds = new Set<string>()
+  const variants: QuoteVariant[] = sourceVariants.map((variant) => {
+    const itemIds = variant.itemIds.flatMap((itemId) => {
+      const nextItemId = nextItemIdBySourceId.get(itemId)
+      if (!nextItemId) return []
+      mappedItemIds.add(nextItemId)
+      return [nextItemId]
+    })
+    return { ...variant, itemIds }
+  })
+  const newItemIds = nextItems
+    .map((item) => item.id)
+    .filter((itemId) => !mappedItemIds.has(itemId))
+  variants[0].itemIds.push(...newItemIds)
+  return variants.filter((variant) => variant.itemIds.length > 0).length >= 2
+    ? variants
+    : undefined
+}
 
 function App() {
   const [catalog, setCatalog] = useState<PricingCatalog>(() => loadCatalog())
@@ -495,11 +531,13 @@ function App() {
     const quoteNumber = editingQuote?.number ?? getNextQuoteNumber(quotes)
     const quote = createQuote(catalog, mirrorCatalog, drafts, orderDelivery, orderCustomer, quoteNumber)
     if (!editingQuote) return quote
+    const variants = remapQuoteVariants(editingQuote, getQuoteItems(quote))
     return {
       ...quote,
       id: editingQuote.id,
       createdAt: editingQuote.createdAt,
       status: editingQuote.status,
+      variants,
     }
   }
 
@@ -645,10 +683,6 @@ function App() {
       return
     }
     addPosition(kind)
-  }
-
-  const updateQuoteStatus = (id: string, status: Quote['status']) => {
-    setQuotes((current) => current.map((quote) => (quote.id === id ? { ...quote, status } : quote)))
   }
 
   const deleteQuote = (id: string) => {
@@ -841,7 +875,6 @@ function App() {
             onLoad={loadQuoteToCalculator}
             onManualSave={saveManualQuote}
             onPdf={(quote) => void downloadQuotePdf(quote)}
-            onStatus={updateQuoteStatus}
           />
         ) : null}
 
@@ -1752,16 +1785,17 @@ function CustomerControl({ customer, onChange }: CustomerControlProps) {
 type DeliveryControlProps = {
   delivery: QuoteDelivery
   kmRate: number
+  label?: string
   price: number
   onChange: (patch: Partial<QuoteDelivery>) => void
 }
 
-function DeliveryControl({ delivery, kmRate, price, onChange }: DeliveryControlProps) {
+function DeliveryControl({ delivery, kmRate, label = 'Доставка по КП', price, onChange }: DeliveryControlProps) {
   return (
     <div className="order-delivery-control">
       <div className="order-delivery-title">
         <Truck size={18} aria-hidden="true" />
-        <span>Доставка по КП</span>
+        <span>{label}</span>
         <strong>{money(price)}</strong>
       </div>
       <div className="segmented order-delivery-modes" role="group" aria-label="Тип доставки">
@@ -1859,19 +1893,25 @@ function OptionSelect({ label, value, items, onChange }: OptionSelectProps) {
 
 type ToggleRowProps = {
   checked: boolean
+  disabled?: boolean
   label: string
   value: string
   onChange: (checked: boolean) => void
 }
 
-function ToggleRow({ checked, label, value, onChange }: ToggleRowProps) {
+function ToggleRow({ checked, disabled = false, label, value, onChange }: ToggleRowProps) {
   return (
-    <label className="toggle-row">
+    <label className={disabled ? 'toggle-row is-disabled' : 'toggle-row'}>
       <span>
         {label}
         <small>{value}</small>
       </span>
-      <input checked={checked} type="checkbox" onChange={(event) => onChange(event.target.checked)} />
+      <input
+        checked={checked}
+        disabled={disabled}
+        type="checkbox"
+        onChange={(event) => onChange(event.target.checked)}
+      />
     </label>
   )
 }
@@ -1937,22 +1977,25 @@ type ArchiveScreenProps = {
   onLoad: (quote: Quote, itemId?: string) => void
   onManualSave: (id: string, patch: ManualQuotePatch) => void
   onPdf: (quote: Quote) => void
-  onStatus: (id: string, status: Quote['status']) => void
 }
 
-function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onPdf, onStatus }: ArchiveScreenProps) {
+function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onPdf }: ArchiveScreenProps) {
   const [query, setQuery] = useState('')
   const [manualQuote, setManualQuote] = useState<Quote | null>(null)
   const normalized = query.trim().toLowerCase()
   const filtered = quotes.filter((quote) => {
     const items = getQuoteItems(quote)
     const customer = getQuoteCustomer(quote)
+    const variants = getQuoteVariants(quote)
     const haystack = [
       quote.number,
       customer.clientName,
       customer.clientPhone,
-      statuses[quote.status],
       String(getQuoteTotal(quote)),
+      ...variants.flatMap((variant) => [
+        variant.title,
+        String(getQuoteVariantTotals(quote, variant).total),
+      ]),
       ...items.flatMap((item) => isMirrorQuoteItem(item)
         ? [
             item.mirrorTitle,
@@ -1994,6 +2037,18 @@ function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManual
           const items = getQuoteItems(quote)
           const firstItem = items[0]
           const customer = getQuoteCustomer(quote)
+          const variants = getQuoteVariants(quote)
+          const variantTotals = variants.map((variant) => getQuoteVariantTotals(quote, variant).total)
+          const minVariantTotal = variantTotals.length > 0 ? Math.min(...variantTotals) : 0
+          const maxVariantTotal = variantTotals.length > 0 ? Math.max(...variantTotals) : 0
+          const variantByItemId = new Map(
+            variants.flatMap((variant) => variant.itemIds.map((itemId) => [itemId, variant.title] as const)),
+          )
+          const totalLabel = variants.length > 0
+            ? minVariantTotal === maxVariantTotal
+              ? money(minVariantTotal)
+              : `${money(minVariantTotal)} – ${money(maxVariantTotal)}`
+            : money(getQuoteTotal(quote))
           return (
           <article className="quote-card" key={quote.id}>
             <div className="quote-head">
@@ -2001,13 +2056,7 @@ function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManual
                 <strong>{quote.number}</strong>
                 <span>{formatDate(quote.createdAt)}</span>
               </div>
-              <select value={quote.status} onChange={(event) => onStatus(quote.id, event.target.value as Quote['status'])}>
-                {Object.entries(statuses).map(([id, label]) => (
-                  <option key={id} value={id}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              {variants.length > 0 ? <span className="quote-variant-badge">{formatVariantCount(variants.length)}</span> : null}
             </div>
             <button className="quote-main" type="button" onClick={() => onLoad(quote)}>
               {isMirrorQuoteItem(firstItem)
@@ -2016,7 +2065,7 @@ function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManual
               <span>
                 <b>{items.length > 1 ? `${items.length} позиции` : getQuoteItemTitle(firstItem)}</b>
                 <small>
-                  {customer.clientName || 'Без имени'} · {money(getQuoteTotal(quote))}
+                  {customer.clientName || 'Без имени'} · {totalLabel}
                 </small>
               </span>
               <ChevronRight size={19} />
@@ -2029,7 +2078,12 @@ function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManual
                   </span>
                   <span>
                     <strong>{index + 1}. {getQuoteItemTitle(item)}</strong>
-                    <small>{isMirrorQuoteItem(item) ? item.materialLabel : item.glassLabel}</small>
+                    <small>
+                      {variantByItemId.get(item.id)
+                        ? `${variantByItemId.get(item.id)} · `
+                        : ''}
+                      {isMirrorQuoteItem(item) ? item.materialLabel : item.glassLabel}
+                    </small>
                   </span>
                   <Pencil size={16} />
                 </button>
@@ -2088,6 +2142,7 @@ type QuoteEditorDialogProps = {
 function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialogProps) {
   const initialDelivery = getQuoteDelivery(quote)
   const initialCustomer = getQuoteCustomer(quote)
+  const initialVariants = getQuoteVariants(quote)
   const [draft, setDraft] = useState<ManualQuotePatch>(() => ({
     ...initialCustomer,
     discountEnabled: quote.form.discountEnabled,
@@ -2103,8 +2158,15 @@ function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialo
       product: getPublicProductPrice(item.result),
       details: getQuoteItemDetails(item),
     })),
+    splitIntoVariants: initialVariants.length > 0,
+    variants: initialVariants.map((variant) => ({
+      ...variant,
+      manualTotalEnabled: Number.isFinite(variant.manualTotal),
+      manualTotal: getQuoteVariantTotals(quote, variant).total,
+    })),
   }))
   const [expandedItemIds, setExpandedItemIds] = useState<Set<string>>(() => new Set())
+  const [draggedItemId, setDraggedItemId] = useState('')
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -2160,9 +2222,19 @@ function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialo
   }
 
   const deleteItem = (itemId: string) => {
-    setDraft((current) => current.items.length <= 1
-      ? current
-      : { ...current, items: current.items.filter((item) => item.id !== itemId) })
+    setDraft((current) => {
+      if (current.items.length <= 1) return current
+      const items = current.items.filter((item) => item.id !== itemId)
+      return {
+        ...current,
+        items,
+        splitIntoVariants: items.length >= 2 && current.splitIntoVariants,
+        variants: current.variants.map((variant) => ({
+          ...variant,
+          itemIds: variant.itemIds.filter((id) => id !== itemId),
+        })),
+      }
+    })
     setExpandedItemIds((current) => {
       const next = new Set(current)
       next.delete(itemId)
@@ -2190,6 +2262,114 @@ function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialo
     })
   }
 
+  const createDefaultVariants = (items: ManualQuotePatch['items']) => {
+    const variants: ManualQuotePatch['variants'] = [0, 1].map((index) => ({
+      id: crypto.randomUUID(),
+      title: `Вариант ${index + 1}`,
+      itemIds: items.filter((_, itemIndex) => itemIndex % 2 === index).map((item) => item.id),
+      orderDelivery: normalizeQuoteDelivery(null),
+      deliveryPrice: 0,
+      manualTotalEnabled: false,
+      manualTotal: 0,
+    }))
+    return variants
+  }
+
+  const toggleVariants = (splitIntoVariants: boolean) => {
+    setDraft((current) => ({
+      ...current,
+      splitIntoVariants,
+      variants: splitIntoVariants && current.variants.length < 2
+        ? createDefaultVariants(current.items)
+        : current.variants,
+    }))
+  }
+
+  const addVariant = () => {
+    setDraft((current) => ({
+      ...current,
+      variants: [
+        ...current.variants,
+        {
+          id: crypto.randomUUID(),
+          title: `Вариант ${current.variants.length + 1}`,
+          itemIds: [],
+          orderDelivery: normalizeQuoteDelivery(null),
+          deliveryPrice: 0,
+          manualTotalEnabled: false,
+          manualTotal: 0,
+        },
+      ],
+    }))
+  }
+
+  const updateVariant = (
+    variantId: string,
+    patch: Partial<ManualQuotePatch['variants'][number]>,
+  ) => {
+    setDraft((current) => ({
+      ...current,
+      variants: current.variants.map((variant) => variant.id === variantId
+        ? { ...variant, ...patch }
+        : variant),
+    }))
+  }
+
+  const updateVariantDelivery = (variantId: string, patch: Partial<QuoteDelivery>) => {
+    setDraft((current) => ({
+      ...current,
+      variants: current.variants.map((variant) => {
+        if (variant.id !== variantId) return variant
+        const orderDelivery = normalizeQuoteDelivery({ ...variant.orderDelivery, ...patch })
+        return {
+          ...variant,
+          orderDelivery,
+          deliveryPrice: calculateQuoteDelivery(catalog, orderDelivery),
+        }
+      }),
+    }))
+  }
+
+  const moveItemToVariant = (itemId: string, variantId: string) => {
+    setDraft((current) => ({
+      ...current,
+      variants: current.variants.map((variant) => ({
+        ...variant,
+        itemIds: variant.id === variantId
+          ? [...variant.itemIds.filter((id) => id !== itemId), itemId]
+          : variant.itemIds.filter((id) => id !== itemId),
+      })),
+    }))
+  }
+
+  const deleteVariant = (variantId: string) => {
+    setDraft((current) => {
+      if (current.variants.length <= 2) return current
+      const deletedVariant = current.variants.find((variant) => variant.id === variantId)
+      const variants = current.variants.filter((variant) => variant.id !== variantId)
+      if (deletedVariant?.itemIds.length) {
+        variants[0] = {
+          ...variants[0],
+          itemIds: [...variants[0].itemIds, ...deletedVariant.itemIds],
+        }
+      }
+      return { ...current, variants }
+    })
+  }
+
+  const handleVariantDragStart = (event: DragEvent<HTMLDivElement>, itemId: string) => {
+    setDraggedItemId(itemId)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', itemId)
+  }
+
+  const handleVariantDrop = (event: DragEvent<HTMLElement>, variantId: string) => {
+    event.preventDefault()
+    const itemId = event.dataTransfer.getData('text/plain') || draggedItemId
+    if (itemId) moveItemToVariant(itemId, variantId)
+    setDraggedItemId('')
+  }
+
   const productSubtotal = draft.items.reduce((sum, item) => (
     sum + roundMoneyUp(item.product) * normalizeQuoteQuantity(item.quantity)
   ), 0)
@@ -2207,6 +2387,37 @@ function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialo
     ? roundMoneyUp(draft.manualTotal)
     : calculatedTotal
   const hasDiscount = draft.discountEnabled && discountPercent > 0 && calculatedTotal < subtotal
+  const variantSummaries = draft.variants.map((variant) => {
+    const itemIds = new Set(variant.itemIds)
+    const variantItems = draft.items.filter((item) => itemIds.has(item.id))
+    const variantProductSubtotal = variantItems.reduce((sum, item) => (
+      sum + roundMoneyUp(item.product) * normalizeQuoteQuantity(item.quantity)
+    ), 0)
+    const variantProductTotal = draft.discountEnabled
+      ? variantItems.reduce((sum, item) => (
+          sum + roundMoneyUp(roundMoneyUp(item.product) * (1 - discountPercent / 100))
+            * normalizeQuoteQuantity(item.quantity)
+        ), 0)
+      : variantProductSubtotal
+    const delivery = variant.orderDelivery.enabled ? roundMoneyUp(variant.deliveryPrice) : 0
+    const calculatedVariantTotal = variantProductTotal + delivery
+    return {
+      id: variant.id,
+      itemCount: variantItems.length,
+      subtotal: variantProductSubtotal + delivery,
+      delivery,
+      calculatedTotal: calculatedVariantTotal,
+      total: variant.manualTotalEnabled ? roundMoneyUp(variant.manualTotal) : calculatedVariantTotal,
+    }
+  })
+  const assignedVariantItemIds = draft.variants.flatMap((variant) => variant.itemIds)
+  const variantAssignmentsValid = !draft.splitIntoVariants || (
+    draft.variants.length >= 2
+    && draft.variants.every((variant) => variant.itemIds.length > 0)
+    && assignedVariantItemIds.length === draft.items.length
+    && new Set(assignedVariantItemIds).size === draft.items.length
+    && assignedVariantItemIds.every((itemId) => draft.items.some((item) => item.id === itemId))
+  )
 
   return (
     <div className="quote-editor-backdrop">
@@ -2354,16 +2565,178 @@ function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialo
             </div>
           </section>
 
-          <section className="quote-editor-section quote-editor-delivery">
-            <DeliveryControl
-              delivery={draft.orderDelivery}
-              kmRate={catalog.services.deliveryKmRate}
-              price={draft.deliveryPrice}
-              onChange={updateDelivery}
-            />
+          <section className="quote-editor-section quote-variant-editor">
+            <div className="quote-variant-switch">
+              <ToggleRow
+                checked={draft.splitIntoVariants}
+                disabled={draft.items.length < 2}
+                label="Разделить по вариантам"
+                value={draft.items.length < 2
+                  ? 'Нужно минимум 2 позиции'
+                  : draft.splitIntoVariants
+                    ? formatVariantCount(draft.variants.length)
+                    : 'Один общий расчет'}
+                onChange={toggleVariants}
+              />
+              {draft.splitIntoVariants ? (
+                <button className="variant-add-button" type="button" onClick={addVariant}>
+                  <Plus size={16} />
+                  Добавить вариант
+                </button>
+              ) : null}
+            </div>
+
+            {draft.splitIntoVariants ? (
+              <>
+                <div className="quote-variant-grid">
+                  {draft.variants.map((variant, variantIndex) => {
+                    const summary = variantSummaries.find((item) => item.id === variant.id)
+                    return (
+                      <article
+                        className="quote-variant-card"
+                        key={variant.id}
+                        onDragOver={(event) => {
+                          event.preventDefault()
+                          event.dataTransfer.dropEffect = 'move'
+                        }}
+                        onDrop={(event) => handleVariantDrop(event, variant.id)}
+                      >
+                        <header>
+                          <span>{variantIndex + 1}</span>
+                          <input
+                            aria-label={`Название варианта ${variantIndex + 1}`}
+                            value={variant.title}
+                            onChange={(event) => updateVariant(variant.id, { title: event.target.value })}
+                          />
+                          <button
+                            aria-label={`Удалить вариант ${variantIndex + 1}`}
+                            disabled={draft.variants.length <= 2}
+                            title="Удалить вариант"
+                            type="button"
+                            onClick={() => deleteVariant(variant.id)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </header>
+
+                        <div className={variant.itemIds.length > 0 ? 'variant-item-stack' : 'variant-item-stack is-empty'}>
+                          {variant.itemIds.map((itemId) => {
+                            const item = draft.items.find((candidate) => candidate.id === itemId)
+                            if (!item) return null
+                            return (
+                              <div
+                                className={draggedItemId === item.id ? 'variant-position is-dragging' : 'variant-position'}
+                                draggable
+                                key={item.id}
+                                onDragEnd={() => setDraggedItemId('')}
+                                onDragStart={(event) => handleVariantDragStart(event, item.id)}
+                              >
+                                <GripVertical aria-hidden="true" size={17} />
+                                <span>
+                                  <strong>{item.title || 'Без названия'}</strong>
+                                  <small>
+                                    {item.quantity} шт. · {money(roundMoneyUp(item.product) * normalizeQuoteQuantity(item.quantity))}
+                                  </small>
+                                </span>
+                                <select
+                                  aria-label={`Вариант позиции ${item.title || 'Без названия'}`}
+                                  value={variant.id}
+                                  onChange={(event) => moveItemToVariant(item.id, event.target.value)}
+                                >
+                                  {draft.variants.map((targetVariant, targetIndex) => (
+                                    <option key={targetVariant.id} value={targetVariant.id}>
+                                      {targetVariant.title || `Вариант ${targetIndex + 1}`}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )
+                          })}
+                          {variant.itemIds.length === 0 ? <span className="variant-empty-state">Нет позиций</span> : null}
+                        </div>
+
+                        <div className="variant-delivery">
+                          <DeliveryControl
+                            delivery={variant.orderDelivery}
+                            kmRate={catalog.services.deliveryKmRate}
+                            label="Доставка варианта"
+                            price={variant.deliveryPrice}
+                            onChange={(patch) => updateVariantDelivery(variant.id, patch)}
+                          />
+                        </div>
+
+                        <div className="variant-manual-total">
+                          <ToggleRow
+                            checked={variant.manualTotalEnabled}
+                            label="Ручная цена"
+                            value={variant.manualTotalEnabled ? 'Вручную' : 'По расчету'}
+                            onChange={(manualTotalEnabled) => updateVariant(variant.id, {
+                              manualTotalEnabled,
+                              manualTotal: manualTotalEnabled
+                                ? summary?.calculatedTotal ?? 0
+                                : variant.manualTotal,
+                            })}
+                          />
+                          {variant.manualTotalEnabled ? (
+                            <label className="manual-money-field">
+                              <span>Итог</span>
+                              <span className="manual-money-input">
+                                <input
+                                  inputMode="numeric"
+                                  min={0}
+                                  type="number"
+                                  value={variant.manualTotal}
+                                  onChange={(event) => updateVariant(variant.id, {
+                                    manualTotal: Number(event.target.value),
+                                  })}
+                                />
+                                <small>₽</small>
+                              </span>
+                            </label>
+                          ) : null}
+                        </div>
+
+                        <footer>
+                          <span>
+                            <small>Изделия</small>
+                            <b>{money((summary?.subtotal ?? 0) - (summary?.delivery ?? 0))}</b>
+                          </span>
+                          <span>
+                            <small>Доставка</small>
+                            <b>{money(summary?.delivery ?? 0)}</b>
+                          </span>
+                          <span className="variant-total-value">
+                            <small>Итого</small>
+                            <strong>{money(summary?.total ?? 0)}</strong>
+                          </span>
+                        </footer>
+                      </article>
+                    )
+                  })}
+                </div>
+                {!variantAssignmentsValid ? (
+                  <div className="variant-validation" role="alert">
+                    В каждом варианте должна быть хотя бы одна позиция.
+                  </div>
+                ) : null}
+              </>
+            ) : null}
           </section>
 
-          <section className="quote-editor-section quote-editor-pricing">
+          {!draft.splitIntoVariants ? (
+            <section className="quote-editor-section quote-editor-delivery">
+              <DeliveryControl
+                delivery={draft.orderDelivery}
+                kmRate={catalog.services.deliveryKmRate}
+                price={draft.deliveryPrice}
+                onChange={updateDelivery}
+              />
+            </section>
+          ) : null}
+
+          <section className={draft.splitIntoVariants
+            ? 'quote-editor-section quote-editor-pricing is-variants'
+            : 'quote-editor-section quote-editor-pricing'}>
             <div className="quote-price-control">
               <ToggleRow
                 checked={draft.discountEnabled}
@@ -2388,7 +2761,7 @@ function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialo
                 </label>
               ) : null}
             </div>
-            <div className="quote-price-control">
+            {!draft.splitIntoVariants ? <div className="quote-price-control">
               <ToggleRow
                 checked={draft.manualTotalEnabled}
                 label="Ручная цена"
@@ -2414,20 +2787,30 @@ function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialo
                   </span>
                 </label>
               ) : null}
-            </div>
-            <div className={hasDiscount ? 'manual-total has-discount' : 'manual-total'}>
+            </div> : null}
+            {!draft.splitIntoVariants ? <div className={hasDiscount ? 'manual-total has-discount' : 'manual-total'}>
               <span>Итого по КП</span>
               <div>
                 {hasDiscount ? <del>{money(subtotal)}</del> : null}
                 <strong>{money(total)}</strong>
               </div>
-            </div>
+            </div> : (
+              <div className="manual-total variant-summary-total">
+                <span>Вариантов</span>
+                <strong>{draft.variants.length}</strong>
+              </div>
+            )}
           </section>
         </div>
 
         <footer>
           <button type="button" onClick={onClose}>Отмена</button>
-          <button className="primary-action" type="button" onClick={() => onSave(draft)}>
+          <button
+            className="primary-action"
+            disabled={!variantAssignmentsValid}
+            type="button"
+            onClick={() => onSave(draft)}
+          >
             <Save size={18} />
             Сохранить изменения
           </button>

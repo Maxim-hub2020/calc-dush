@@ -3129,7 +3129,7 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
-  width: min(940px, 100%);
+  width: min(1080px, 100%);
   max-height: min(900px, calc(100dvh - 16px));
   border: 1px solid var(--line-strong);
   border-radius: 12px;
@@ -3499,6 +3499,304 @@
   color: #fff;
 }
 
+.quote-editor-dialog > footer .primary-action:disabled {
+  border-color: var(--line-strong);
+  background: var(--line-strong);
+  color: #fff;
+  cursor: not-allowed;
+}
+
+.toggle-row.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quote-variant-badge {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid #b8dce8;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.quote-variant-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.quote-variant-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quote-variant-switch .toggle-row {
+  width: min(360px, 100%);
+  min-height: 48px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.variant-add-button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.quote-variant-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quote-variant-card {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.quote-variant-card > header {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 7px;
+}
+
+.quote-variant-card > header > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.quote-variant-card > header input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--heading);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.quote-variant-card > header button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #ebcaca;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--danger);
+}
+
+.quote-variant-card > header button:disabled {
+  border-color: var(--line);
+  color: var(--line-strong);
+}
+
+.variant-item-stack {
+  display: grid;
+  min-height: 54px;
+  align-content: start;
+  gap: 6px;
+  padding: 6px;
+  border: 1px dashed #bdd0dc;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.variant-item-stack.is-empty {
+  place-items: center;
+}
+
+.variant-position {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 126px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  cursor: grab;
+}
+
+.variant-position:active {
+  cursor: grabbing;
+}
+
+.variant-position.is-dragging {
+  border-color: var(--accent);
+  opacity: 0.55;
+}
+
+.variant-position > svg {
+  color: var(--muted);
+}
+
+.variant-position > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.variant-position strong,
+.variant-position small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.variant-position strong {
+  color: var(--heading);
+  font-size: 12px;
+}
+
+.variant-position small,
+.variant-empty-state {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.variant-position select {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--heading);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.variant-delivery .order-delivery-control {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  margin: 0;
+  padding: 9px 0 0;
+}
+
+.variant-delivery .order-delivery-title {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+}
+
+.variant-delivery .order-delivery-title strong {
+  grid-column: 3;
+}
+
+.variant-delivery .order-delivery-distance {
+  grid-template-columns: minmax(0, 1fr) 76px;
+}
+
+.variant-manual-total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  align-items: end;
+  gap: 8px;
+}
+
+.variant-manual-total .toggle-row {
+  min-height: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.quote-variant-card > footer {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.quote-variant-card > footer > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.quote-variant-card > footer small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.quote-variant-card > footer b,
+.quote-variant-card > footer strong {
+  color: var(--heading);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.quote-variant-card > footer .variant-total-value {
+  justify-items: end;
+}
+
+.quote-variant-card > footer .variant-total-value strong {
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.variant-validation {
+  padding: 8px 10px;
+  border: 1px solid #efc5c5;
+  border-radius: 7px;
+  background: #fff7f7;
+  color: #a13737;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.quote-editor-pricing.is-variants {
+  grid-template-columns: minmax(0, 1fr) 190px;
+}
+
+.variant-summary-total strong {
+  color: var(--accent);
+  font-size: 20px;
+}
+
 @media (max-width: 720px) {
   .quote-editor-backdrop {
     padding-inline: 8px;
@@ -3557,6 +3855,21 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .quote-editor-pricing.is-variants,
+  .quote-variant-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quote-variant-switch {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .quote-variant-switch .toggle-row,
+  .variant-add-button {
+    width: 100%;
+  }
+
   .manual-total {
     grid-column: 1;
   }
@@ -3603,6 +3916,27 @@
   .manual-detail-row button {
     grid-column: 2;
     grid-row: 1 / 3;
+  }
+
+  .variant-position {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .variant-position select {
+    grid-column: 2;
+  }
+
+  .variant-manual-total {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quote-variant-card > footer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quote-variant-card > footer .variant-total-value {
+    grid-column: 1 / -1;
+    justify-items: stretch;
   }
 
   .quote-editor-dialog > footer {
