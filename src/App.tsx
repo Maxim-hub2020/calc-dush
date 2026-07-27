@@ -192,6 +192,17 @@ type PositionSummary = {
   hasErrors: boolean
 }
 
+type EditingPriceSnapshot = {
+  quoteNumber: string
+  pricesByPositionId: Record<string, number>
+}
+
+type PriceComparison = {
+  quoteNumber: string
+  previousPrice: number
+  currentPrice: number
+}
+
 type SharedFormPatch = Pick<CalculatorForm, 'discountEnabled' | 'discountPercent' | 'designerEnabled'>
 
 const sharedFormFields: Array<keyof SharedFormPatch> = [
@@ -257,6 +268,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabId>('showers')
   const [notice, setNotice] = useState('')
   const [editingQuoteId, setEditingQuoteId] = useState('')
+  const [editingPriceSnapshot, setEditingPriceSnapshot] = useState<EditingPriceSnapshot | null>(null)
   const [pdfQuoteId, setPdfQuoteId] = useState('')
   const [pdfPreview, setPdfPreview] = useState<QuotePdfPreview | null>(null)
   const [serverSession, setServerSession] = useState<ServerSession | null>(() => loadServerSession())
@@ -284,10 +296,21 @@ function App() {
     }),
     [catalog, mirrorCatalog, positions],
   )
-  const activeResult = positionResults.find((position) => position.id === activePosition.id)?.result
-    ?? multiplyCalculationResult(activePosition.kind === 'mirror'
+  const activePositionResult = positionResults.find((position) => position.id === activePosition.id)
+  const activeUnitResult = activePositionResult?.unitResult
+    ?? (activePosition.kind === 'mirror'
       ? calculateMirrorQuote(mirrorCatalog, activePosition.form)
-      : calculateQuote(catalog, activePosition.form), activePosition.quantity)
+      : calculateQuote(catalog, activePosition.form))
+  const activeResult = activePositionResult?.result
+    ?? multiplyCalculationResult(activeUnitResult, activePosition.quantity)
+  const previousActivePrice = editingPriceSnapshot?.pricesByPositionId[activePosition.id]
+  const activePriceComparison: PriceComparison | null = editingPriceSnapshot && previousActivePrice !== undefined
+    ? {
+        quoteNumber: editingPriceSnapshot.quoteNumber,
+        previousPrice: previousActivePrice,
+        currentPrice: getPublicProductPrice(activeUnitResult),
+      }
+    : null
   const orderResult = useMemo(
     () => applyQuoteDelivery(
       combineCalculationResults(positionResults.map((position) => position.result)),
@@ -558,6 +581,7 @@ function App() {
       : [quote, ...current])
     setNotice(`${quote.number} ${editingQuoteId ? 'обновлено' : 'сохранено'}`)
     setEditingQuoteId('')
+    setEditingPriceSnapshot(null)
     setActiveTab('archive')
   }
 
@@ -581,6 +605,7 @@ function App() {
       ? current.map((item) => item.id === editingQuoteId ? quote : item)
       : [quote, ...current])
     setEditingQuoteId('')
+    setEditingPriceSnapshot(null)
     void downloadQuotePdf(quote)
   }
 
@@ -625,14 +650,17 @@ function App() {
 
   const loadQuoteToCalculator = (quote: Quote, itemId?: string) => {
     const items = getQuoteItems(quote)
+    const pricesByPositionId: Record<string, number> = {}
     const nextPositions: DraftPosition[] = items.map((item) => {
+      const positionId = crypto.randomUUID()
+      pricesByPositionId[positionId] = getPublicProductPrice(item.result)
       if (isMirrorQuoteItem(item)) {
         const form = cloneMirrorForm(item.form)
         form.options = form.options.filter((option) => getMirrorService(mirrorCatalog, option.serviceId).category !== 'delivery')
         form.clientName = ''
         form.clientPhone = ''
         form.note = ''
-        return { id: crypto.randomUUID(), kind: 'mirror', quantity: getQuoteItemQuantity(item), form }
+        return { id: positionId, kind: 'mirror', quantity: getQuoteItemQuantity(item), form }
       }
       const form = cloneForm(item.form)
       form.delivery = false
@@ -641,7 +669,7 @@ function App() {
       form.clientName = ''
       form.clientPhone = ''
       form.note = ''
-      return { id: crypto.randomUUID(), kind: 'shower', quantity: getQuoteItemQuantity(item), form }
+      return { id: positionId, kind: 'shower', quantity: getQuoteItemQuantity(item), form }
     })
     const selectedIndex = itemId ? Math.max(0, items.findIndex((item) => item.id === itemId)) : 0
     const selected = nextPositions[selectedIndex]
@@ -649,6 +677,7 @@ function App() {
     setOrderDelivery(getQuoteDelivery(quote))
     setOrderCustomer(getQuoteCustomer(quote))
     setEditingQuoteId(quote.id)
+    setEditingPriceSnapshot({ quoteNumber: quote.number, pricesByPositionId })
     setActivePositionId(selected.id)
     setActiveTab(selected.kind === 'mirror' ? 'mirrors' : 'showers')
     setNotice(`${quote.number} открыт`)
@@ -818,6 +847,7 @@ function App() {
             quantity={activePosition.quantity}
             result={activeResult}
             orderResult={orderResult}
+            priceComparison={activePriceComparison}
             positionSummaries={positionSummaries}
             activePositionId={activePositionId}
             isPdfBusy={pdfQuoteId !== ''}
@@ -850,6 +880,7 @@ function App() {
             form={activePosition.form}
             isPdfBusy={pdfQuoteId !== ''}
             orderResult={orderResult}
+            priceComparison={activePriceComparison}
             positionSummaries={positionSummaries}
             quantity={activePosition.quantity}
             result={activeResult}
@@ -957,6 +988,7 @@ type CalculatorScreenProps = {
   quantity: number
   result: CalculationResult
   orderResult: CalculationResult
+  priceComparison: PriceComparison | null
   positionSummaries: PositionSummary[]
   recentQuotes: Quote[]
   activePositionId: string
@@ -996,6 +1028,7 @@ function CalculatorScreen({
   quantity,
   result,
   orderResult,
+  priceComparison,
   positionSummaries,
   recentQuotes,
   activePositionId,
@@ -1202,6 +1235,7 @@ function CalculatorScreen({
         <SummaryDock
           result={result}
           orderResult={orderResult}
+          priceComparison={priceComparison}
           positionCount={positionSummaries.length}
           positionIndex={positionSummaries.findIndex((position) => position.id === activePositionId)}
           hasErrors={positionSummaries.some((position) => position.hasErrors)}
@@ -1230,6 +1264,7 @@ type MirrorCalculatorScreenProps = {
   quantity: number
   result: CalculationResult
   orderResult: CalculationResult
+  priceComparison: PriceComparison | null
   positionSummaries: PositionSummary[]
   activePositionId: string
   isPdfBusy: boolean
@@ -1264,6 +1299,7 @@ function MirrorCalculatorScreen({
   quantity,
   result,
   orderResult,
+  priceComparison,
   positionSummaries,
   activePositionId,
   isPdfBusy,
@@ -1521,6 +1557,7 @@ function MirrorCalculatorScreen({
         <SummaryDock
           result={result}
           orderResult={orderResult}
+          priceComparison={priceComparison}
           positionCount={positionSummaries.length}
           positionIndex={positionSummaries.findIndex((position) => position.id === activePositionId)}
           hasErrors={positionSummaries.some((position) => position.hasErrors)}
@@ -1919,6 +1956,7 @@ function ToggleRow({ checked, disabled = false, label, value, onChange }: Toggle
 type SummaryDockProps = {
   result: CalculationResult
   orderResult: CalculationResult
+  priceComparison: PriceComparison | null
   positionCount: number
   positionIndex: number
   hasErrors: boolean
@@ -1927,7 +1965,66 @@ type SummaryDockProps = {
   onSave: () => void
 }
 
-function SummaryDock({ result, orderResult, positionCount, positionIndex, hasErrors, isPdfBusy, onPdf, onSave }: SummaryDockProps) {
+type PriceComparisonPanelProps = {
+  comparison: PriceComparison
+}
+
+function PriceComparisonPanel({ comparison }: PriceComparisonPanelProps) {
+  const difference = comparison.currentPrice - comparison.previousPrice
+  const direction = difference > 0 ? 'increase' : difference < 0 ? 'decrease' : 'same'
+  const percent = comparison.previousPrice > 0
+    ? Math.abs(difference / comparison.previousPrice * 100)
+    : null
+  const percentLabel = percent === null || difference === 0
+    ? ''
+    : `${difference > 0 ? '+' : difference < 0 ? '−' : ''}${percent.toLocaleString('ru-RU', {
+        maximumFractionDigits: 1,
+      })}%`
+  const differenceLabel = difference === 0
+    ? 'Без изменений'
+    : `${difference > 0 ? '+' : '−'}${money(Math.abs(difference))}`
+
+  return (
+    <section
+      aria-label={`Служебное сравнение цены с КП ${comparison.quoteNumber}`}
+      className={`price-comparison is-${direction}`}
+    >
+      <header>
+        <span><RefreshCw size={15} aria-hidden="true" /> Пересчет КП {comparison.quoteNumber}</span>
+        <strong>Цена изделия за 1 шт.</strong>
+      </header>
+      <div className="price-comparison-values">
+        <div>
+          <span>Было</span>
+          <strong>{money(comparison.previousPrice)}</strong>
+        </div>
+        <div>
+          <span>Стало</span>
+          <strong>{money(comparison.currentPrice)}</strong>
+        </div>
+      </div>
+      <footer>
+        <span>Изменение</span>
+        <strong>
+          {differenceLabel}
+          {percentLabel ? <small>{percentLabel}</small> : null}
+        </strong>
+      </footer>
+    </section>
+  )
+}
+
+function SummaryDock({
+  result,
+  orderResult,
+  priceComparison,
+  positionCount,
+  positionIndex,
+  hasErrors,
+  isPdfBusy,
+  onPdf,
+  onSave,
+}: SummaryDockProps) {
   return (
     <aside className="summary-dock">
       <div className="summary-headline">
@@ -1939,6 +2036,7 @@ function SummaryDock({ result, orderResult, positionCount, positionIndex, hasErr
           {positionCount > 1 ? ` · Всего ${positionCount}` : ''}
         </small>
       </div>
+      {priceComparison ? <PriceComparisonPanel comparison={priceComparison} /> : null}
       <div className="summary-lines">
         {orderResult.lines.map((line) => (
           <div key={line.label}>
