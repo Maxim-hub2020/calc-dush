@@ -215,10 +215,10 @@ export const normalizeQuoteCustomer = (customer?: Partial<QuoteCustomer> | null)
 export const calculateQuoteDelivery = (catalog: PricingCatalog, delivery: QuoteDelivery) => {
   const normalized = normalizeQuoteDelivery(delivery)
   if (!normalized.enabled) return 0
-  const distancePrice = normalized.zone === 'outside'
-    ? normalized.km * Math.max(0, Number(catalog.services.deliveryKmRate) || 0)
-    : 0
-  return roundMoneyUp(Math.max(0, Number(catalog.services.deliveryBase) || 0) + distancePrice)
+  if (normalized.zone === 'outside') {
+    return roundMoneyUp(normalized.km * Math.max(0, Number(catalog.services.deliveryKmRate) || 0))
+  }
+  return roundMoneyUp(Math.max(0, Number(catalog.services.deliveryBase) || 0))
 }
 
 export const buildCalculationLines = (
