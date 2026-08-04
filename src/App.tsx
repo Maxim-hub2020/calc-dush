@@ -3259,7 +3259,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         {openSection === 'services' ? (
           <div className="price-list price-accordion-body" id="price-services">
             <ServiceRow label="Стандартная доставка по городу" value={catalog.services.deliveryBase} onChange={(value) => updateService('deliveryBase', value)} />
-            <ServiceRow label="Доставка за городом, ₽/км" value={catalog.services.deliveryKmRate} onChange={(value) => updateService('deliveryKmRate', value)} />
+            <ServiceRow label="Доплата за городом, ₽/км" value={catalog.services.deliveryKmRate} onChange={(value) => updateService('deliveryKmRate', value)} />
             <ServiceRow
               label="Высота +%, после"
               value={catalog.services.heightSurchargeAfter}

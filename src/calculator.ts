@@ -216,7 +216,9 @@ export const calculateQuoteDelivery = (catalog: PricingCatalog, delivery: QuoteD
   const normalized = normalizeQuoteDelivery(delivery)
   if (!normalized.enabled) return 0
   if (normalized.zone === 'outside') {
-    return roundMoneyUp(normalized.km * Math.max(0, Number(catalog.services.deliveryKmRate) || 0))
+    const basePrice = Math.max(0, Number(catalog.services.deliveryBase) || 0)
+    const distancePrice = normalized.km * Math.max(0, Number(catalog.services.deliveryKmRate) || 0)
+    return roundMoneyUp(basePrice + distancePrice)
   }
   return roundMoneyUp(Math.max(0, Number(catalog.services.deliveryBase) || 0))
 }
