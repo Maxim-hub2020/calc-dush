@@ -117,11 +117,13 @@ import {
 } from './storage'
 import {
   clearServerSession,
+  deleteServerQuote,
   loadServerCatalogs,
   loadServerSession,
   loginToServer,
   saveServerCatalogs,
   ServerSyncError,
+  syncServerQuotes,
   type ServerSession,
 } from './serverSync'
 import { shareQuotePdf, type QuotePdfPreview } from './quotePdf'
@@ -130,6 +132,7 @@ import mirrorVisualization from './assets/mirror-visualization.png'
 type ProductKind = 'shower' | 'mirror'
 type TabId = 'showers' | 'mirrors' | 'archive' | 'prices'
 type PriceSyncStatus = 'signed-out' | 'loading' | 'saving' | 'synced' | 'error'
+type QuoteSyncStatus = 'local' | 'loading' | 'synced' | 'error'
 
 type PriceSyncState = {
   status: PriceSyncStatus
@@ -237,6 +240,18 @@ const createMirrorDraftPosition = (
   form: createInitialMirrorForm(catalog, customer),
 })
 
+const mergeQuoteArchives = (
+  serverQuotes: Quote[],
+  localQuotes: Quote[],
+  excludedIds: ReadonlySet<string> = new Set(),
+) => {
+  const byId = new Map(serverQuotes.map((quote) => [quote.id, quote]))
+  localQuotes.forEach((quote) => byId.set(quote.id, quote))
+  return [...byId.values()]
+    .filter((quote) => !excludedIds.has(quote.id))
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+}
+
 const remapQuoteVariants = (sourceQuote: Quote, nextItems: ReturnType<typeof getQuoteItems>) => {
   const sourceVariants = getQuoteVariants(sourceQuote)
   if (sourceVariants.length === 0) return undefined
@@ -283,10 +298,15 @@ function App() {
   const [syncUpdatedAt, setSyncUpdatedAt] = useState('')
   const [serverSyncReady, setServerSyncReady] = useState(false)
   const [syncAttempt, setSyncAttempt] = useState(0)
+  const [quoteSyncStatus, setQuoteSyncStatus] = useState<QuoteSyncStatus>(serverSession ? 'loading' : 'local')
+  const [quoteSyncMessage, setQuoteSyncMessage] = useState('')
   const catalogRef = useRef(catalog)
   const mirrorCatalogRef = useRef(mirrorCatalog)
+  const quotesRef = useRef(quotes)
+  const deletedQuoteIdsRef = useRef(new Set<string>())
   catalogRef.current = catalog
   mirrorCatalogRef.current = mirrorCatalog
+  quotesRef.current = quotes
   const isAdmin = Boolean(serverSession) || import.meta.env.DEV
 
   const activePosition = positions.find((position) => position.id === activePositionId) ?? positions[0]
@@ -375,6 +395,34 @@ function App() {
   useEffect(() => saveCatalog(catalog), [catalog])
   useEffect(() => saveMirrorCatalog(mirrorCatalog), [mirrorCatalog])
   useEffect(() => saveQuotes(quotes), [quotes])
+  useEffect(() => {
+    let cancelled = false
+    if (!serverSession) {
+      setQuoteSyncStatus('local')
+      setQuoteSyncMessage('')
+      return undefined
+    }
+
+    const hydrateQuoteArchive = async () => {
+      setQuoteSyncStatus('loading')
+      setQuoteSyncMessage('')
+      try {
+        const remote = await syncServerQuotes(quotesRef.current)
+        if (cancelled) return
+        setQuotes(mergeQuoteArchives(remote.quotes, quotesRef.current, deletedQuoteIdsRef.current))
+        setQuoteSyncStatus('synced')
+      } catch (error) {
+        if (cancelled) return
+        setQuoteSyncStatus('error')
+        setQuoteSyncMessage(error instanceof Error ? error.message : 'Не удалось синхронизировать архив КП')
+      }
+    }
+
+    void hydrateQuoteArchive()
+    return () => {
+      cancelled = true
+    }
+  }, [serverSession])
   useEffect(() => {
     let cancelled = false
     if (!serverSession) {
@@ -585,6 +633,25 @@ function App() {
       : position))
   }
 
+  const syncQuoteChanges = (changedQuotes: Quote[]) => {
+    if (!serverSession) {
+      setQuoteSyncStatus('local')
+      return
+    }
+    setQuoteSyncStatus('loading')
+    setQuoteSyncMessage('')
+    void syncServerQuotes(changedQuotes)
+      .then(() => setQuoteSyncStatus('synced'))
+      .catch((error) => {
+        if (error instanceof ServerSyncError && error.code === 'auth') {
+          clearServerSession()
+          setServerSession(null)
+        }
+        setQuoteSyncStatus('error')
+        setQuoteSyncMessage(error instanceof Error ? error.message : 'Не удалось сохранить КП на сервере')
+      })
+  }
+
   const createQuoteFromPositions = () => {
     const drafts: QuoteDraftItem[] = positionResults.map((position) => position.kind === 'mirror'
       ? { kind: 'mirror', quantity: position.quantity, form: cloneMirrorForm(position.form), result: position.unitResult }
@@ -632,6 +699,7 @@ function App() {
     setQuotes((current) => editingQuoteId
       ? current.map((item) => item.id === editingQuoteId ? quote : item)
       : [quote, ...current])
+    syncQuoteChanges([quote])
     setNotice(`${quote.number} ${editingQuoteId ? 'обновлено' : 'сохранено'}`)
     resetCalculatorDraft(nextKind)
   }
@@ -656,6 +724,7 @@ function App() {
     setQuotes((current) => editingQuoteId
       ? current.map((item) => item.id === editingQuoteId ? quote : item)
       : [quote, ...current])
+    syncQuoteChanges([quote])
     resetCalculatorDraft(nextKind)
     void downloadQuotePdf(quote)
   }
@@ -766,13 +835,26 @@ function App() {
   }
 
   const deleteQuote = (id: string) => {
+    deletedQuoteIdsRef.current.add(id)
     setQuotes((current) => current.filter((quote) => quote.id !== id))
+    if (!serverSession) return
+    setQuoteSyncStatus('loading')
+    setQuoteSyncMessage('')
+    void deleteServerQuote(id)
+      .then(() => setQuoteSyncStatus('synced'))
+      .catch((error) => {
+        setQuoteSyncStatus('error')
+        setQuoteSyncMessage(error instanceof Error ? error.message : 'Не удалось удалить КП с сервера')
+      })
   }
 
   const saveManualQuote = (id: string, patch: ManualQuotePatch) => {
-    setQuotes((current) => current.map((quote) => quote.id === id ? updateQuoteManually(quote, patch) : quote))
     const quote = quotes.find((item) => item.id === id)
-    setNotice(`${quote?.number ?? 'КП'} обновлено вручную`)
+    if (!quote) return
+    const updatedQuote = updateQuoteManually(quote, patch)
+    setQuotes((current) => current.map((item) => item.id === id ? updatedQuote : item))
+    syncQuoteChanges([updatedQuote])
+    setNotice(`${quote.number} обновлено вручную`)
   }
 
   const resetPrices = () => {
@@ -955,6 +1037,8 @@ function App() {
             catalog={catalog}
             quotes={quotes}
             pdfQuoteId={pdfQuoteId}
+            syncMessage={quoteSyncMessage}
+            syncStatus={quoteSyncStatus}
             onDelete={deleteQuote}
             onLoad={loadQuoteToCalculator}
             onManualSave={saveManualQuote}
@@ -2173,13 +2257,25 @@ type ArchiveScreenProps = {
   catalog: PricingCatalog
   quotes: Quote[]
   pdfQuoteId: string
+  syncMessage: string
+  syncStatus: QuoteSyncStatus
   onDelete: (id: string) => void
   onLoad: (quote: Quote, itemId?: string) => void
   onManualSave: (id: string, patch: ManualQuotePatch) => void
   onPdf: (quote: Quote) => void
 }
 
-function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManualSave, onPdf }: ArchiveScreenProps) {
+function ArchiveScreen({
+  catalog,
+  quotes,
+  pdfQuoteId,
+  syncMessage,
+  syncStatus,
+  onDelete,
+  onLoad,
+  onManualSave,
+  onPdf,
+}: ArchiveScreenProps) {
   const [query, setQuery] = useState('')
   const [manualQuote, setManualQuote] = useState<Quote | null>(null)
   const normalized = query.trim().toLowerCase()
@@ -2229,6 +2325,21 @@ function ArchiveScreen({ catalog, quotes, pdfQuoteId, onDelete, onLoad, onManual
         <div className="archive-count">
           <span>{filtered.length} найдено</span>
           <strong>{quotes.length} всего</strong>
+        </div>
+        <div
+          className={`archive-sync-status is-${syncStatus}`}
+          title={syncMessage || undefined}
+        >
+          {syncStatus === 'loading' ? <LoaderCircle size={15} aria-hidden="true" /> : null}
+          {syncStatus === 'synced' ? <Cloud size={15} aria-hidden="true" /> : null}
+          {syncStatus === 'local' || syncStatus === 'error' ? <CloudOff size={15} aria-hidden="true" /> : null}
+          <span>
+            {syncStatus === 'loading' ? 'Синхронизация архива' : null}
+            {syncStatus === 'synced' ? 'Архив на сервере' : null}
+            {syncStatus === 'local' ? 'Только на этом устройстве' : null}
+            {syncStatus === 'error' ? 'Ошибка синхронизации' : null}
+          </span>
+          {syncStatus === 'error' && syncMessage ? <small>{syncMessage}</small> : null}
         </div>
       </section>
 

@@ -1,3 +1,4 @@
+import type { Quote } from './calculator'
 import type { MirrorPricingCatalog } from './mirrorPricing'
 import type { PricingCatalog } from './pricing'
 
@@ -13,6 +14,10 @@ export type ServerCatalogs = {
   shower_catalog: PricingCatalog | Record<string, never>
   mirror_catalog: MirrorPricingCatalog | Record<string, never>
   updated_at: string | null
+}
+
+export type ServerQuoteArchive = {
+  quotes: Quote[]
 }
 
 export class ServerSyncError extends Error {
@@ -165,4 +170,18 @@ export const saveServerCatalogs = async (
     body: JSON.stringify({ shower_catalog: showerCatalog, mirror_catalog: mirrorCatalog }),
   })
   return response.json() as Promise<ServerCatalogs>
+}
+
+export const syncServerQuotes = async (quotes: Quote[]): Promise<ServerQuoteArchive> => {
+  const response = await authenticatedRequest('/calculator-quotes/', {
+    method: 'POST',
+    body: JSON.stringify({ quotes }),
+  })
+  return response.json() as Promise<ServerQuoteArchive>
+}
+
+export const deleteServerQuote = async (quoteId: string) => {
+  await authenticatedRequest(`/calculator-quotes/${encodeURIComponent(quoteId)}/`, {
+    method: 'DELETE',
+  })
 }
