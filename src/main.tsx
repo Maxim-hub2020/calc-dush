@@ -2,10 +2,14 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import PublicCalculator from './PublicCalculator.tsx'
+
+const isPublicCalculator = window.location.hostname === 'amalgama.cehcrm.ru'
+  || window.location.pathname.startsWith('/public-calculator')
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {isPublicCalculator ? <PublicCalculator /> : <App />}
   </StrictMode>,
 )
 

@@ -12,6 +12,7 @@ import {
   FileDown,
   GripVertical,
   Image,
+  MoreHorizontal,
   Layers3,
   ListPlus,
   LoaderCircle,
@@ -157,6 +158,23 @@ const formatDate = (date: string) =>
     minute: '2-digit',
   }).format(new Date(date))
 
+const countChangedValues = (current: unknown, saved: unknown): number => {
+  if (Object.is(current, saved)) return 0
+  if (Array.isArray(current) && Array.isArray(saved)) {
+    const length = Math.max(current.length, saved.length)
+    return Array.from({ length }, (_, index) => countChangedValues(current[index], saved[index]))
+      .reduce((total, count) => total + count, 0)
+  }
+  if (current && saved && typeof current === 'object' && typeof saved === 'object') {
+    const keys = new Set([...Object.keys(current), ...Object.keys(saved)])
+    return [...keys].reduce((total, key) => total + countChangedValues(
+      (current as Record<string, unknown>)[key],
+      (saved as Record<string, unknown>)[key],
+    ), 0)
+  }
+  return 1
+}
+
 const formatVariantCount = (count: number) => {
   const mod100 = count % 100
   const mod10 = count % 10
@@ -300,6 +318,7 @@ function App() {
   const [syncAttempt, setSyncAttempt] = useState(0)
   const [quoteSyncStatus, setQuoteSyncStatus] = useState<QuoteSyncStatus>(serverSession ? 'loading' : 'local')
   const [quoteSyncMessage, setQuoteSyncMessage] = useState('')
+  const [pricesDirty, setPricesDirty] = useState(false)
   const catalogRef = useRef(catalog)
   const mirrorCatalogRef = useRef(mirrorCatalog)
   const quotesRef = useRef(quotes)
@@ -834,6 +853,13 @@ function App() {
     addPosition(kind)
   }
 
+  const navigateToTab = (tab: TabId) => {
+    if (activeTab === 'prices' && pricesDirty && !window.confirm('В ценах есть несохранённые изменения. Уйти без сохранения?')) return
+    if (tab === 'showers') openProductTab('shower')
+    else if (tab === 'mirrors') openProductTab('mirror')
+    else setActiveTab(tab)
+  }
+
   const deleteQuote = (id: string) => {
     deletedQuoteIdsRef.current.add(id)
     setQuotes((current) => current.filter((quote) => quote.id !== id))
@@ -941,23 +967,25 @@ function App() {
         <nav className="app-tabs" aria-label="Главная навигация">
           {tabs.map((tab) => {
             const Icon = tab.icon
-            const openTab = () => {
-              if (tab.id === 'showers') openProductTab('shower')
-              else if (tab.id === 'mirrors') openProductTab('mirror')
-              else setActiveTab(tab.id)
-            }
             return (
               <button
                 className={activeTab === tab.id ? 'tab-button is-active' : 'tab-button'}
                 key={tab.id}
                 type="button"
-                onClick={openTab}
+                onClick={() => navigateToTab(tab.id)}
               >
                 <Icon size={18} />
                 <span>{tab.label}</span>
               </button>
             )
           })}
+          <details className="mobile-more">
+            <summary aria-label="Другие разделы" title="Другие разделы"><MoreHorizontal size={21} /></summary>
+            <div>
+              <button type="button" onClick={() => navigateToTab('archive')}><Archive size={17} /> Архив</button>
+              <button type="button" onClick={() => navigateToTab('prices')}><Settings2 size={17} /> Цены</button>
+            </div>
+          </details>
         </nav>
       </header>
 
@@ -967,6 +995,28 @@ function App() {
             <Check size={16} />
             {notice}
           </button>
+        ) : null}
+
+        {activeTab === 'showers' || activeTab === 'mirrors' ? (
+          <PositionSwitcher
+            activeId={activePositionId}
+            activeQuantity={activePosition.quantity}
+            customer={orderCustomer}
+            delivery={orderDelivery}
+            deliveryKmRate={catalog.services.deliveryKmRate}
+            deliveryPrice={orderDeliveryPrice}
+            positions={positionSummaries}
+            quoteNumber={quotes.find((quote) => quote.id === editingQuoteId)?.number}
+            onAdd={() => addPosition(activePosition.kind)}
+            onAddProduct={addPosition}
+            onCustomer={updateOrderCustomer}
+            onDelete={deletePosition}
+            onDelivery={updateOrderDelivery}
+            onDuplicate={duplicatePosition}
+            onNew={() => resetCalculatorDraft(activePosition.kind)}
+            onQuantity={updatePositionQuantity}
+            onSelect={selectPosition}
+          />
         ) : null}
 
         {activeTab === 'showers' && activePosition.kind === 'shower' ? (
@@ -1033,7 +1083,7 @@ function App() {
         ) : null}
 
         {activeTab === 'archive' ? (
-          <ArchiveScreen
+          <ArchiveWorkspace
             catalog={catalog}
             quotes={quotes}
             pdfQuoteId={pdfQuoteId}
@@ -1042,6 +1092,7 @@ function App() {
             onDelete={deleteQuote}
             onLoad={loadQuoteToCalculator}
             onManualSave={saveManualQuote}
+            onNew={() => resetCalculatorDraft('shower')}
             onPdf={(quote) => void downloadQuotePdf(quote)}
           />
         ) : null}
@@ -1054,6 +1105,7 @@ function App() {
             onLogin={loginForServerSync}
             onLogout={logoutFromServerSync}
             onMirrorCatalog={setMirrorCatalog}
+            onDirtyChange={setPricesDirty}
             onReset={resetPrices}
             onRetry={() => void retryServerSync()}
             syncState={{
@@ -1156,15 +1208,32 @@ const configSections: Array<{ id: ConfigSectionId; label: string }> = [
   { id: 'services', label: 'Услуги' },
 ]
 
+type StepNavigationProps = {
+  activeIndex: number
+  count: number
+  onChange: (index: number) => void
+}
+
+function StepNavigation({ activeIndex, count, onChange }: StepNavigationProps) {
+  return (
+    <footer className="step-navigation">
+      <button disabled={activeIndex === 0} type="button" onClick={() => onChange(activeIndex - 1)}>
+        <ChevronRight className="step-back-icon" size={18} />
+        Назад
+      </button>
+      <span>Шаг {activeIndex + 1} из {count}</span>
+      <button className="is-primary" disabled={activeIndex === count - 1} type="button" onClick={() => onChange(activeIndex + 1)}>
+        Далее
+        <ChevronRight size={18} />
+      </button>
+    </footer>
+  )
+}
+
 function CalculatorScreen({
   adminBreakdown,
   catalog,
-  customer,
-  delivery,
-  deliveryKmRate,
-  deliveryPrice,
   form,
-  quantity,
   result,
   orderResult,
   priceComparison,
@@ -1172,20 +1241,13 @@ function CalculatorScreen({
   recentQuotes,
   activePositionId,
   isPdfBusy,
-  onAddPosition,
-  onDeletePosition,
   onDimension,
-  onDuplicatePosition,
-  onCustomer,
-  onDelivery,
   onForm,
   onPdf,
-  onQuantity,
   onSave,
   onOpenArchive,
   onOpenQuote,
   onSelectConstruction,
-  onSelectPosition,
 }: CalculatorScreenProps) {
   const construction = getConstruction(catalog, form.constructionId)
   const glass = getOption(catalog.glass, form.glassId)
@@ -1195,23 +1257,6 @@ function CalculatorScreen({
 
   return (
     <div className="screen-stack calculator-screen">
-      <PositionSwitcher
-        activeId={activePositionId}
-        activeQuantity={quantity}
-        customer={customer}
-        delivery={delivery}
-        deliveryKmRate={deliveryKmRate}
-        deliveryPrice={deliveryPrice}
-        positions={positionSummaries}
-        onAdd={onAddPosition}
-        onCustomer={onCustomer}
-        onDelete={onDeletePosition}
-        onDelivery={onDelivery}
-        onDuplicate={onDuplicatePosition}
-        onQuantity={onQuantity}
-        onSelect={onSelectPosition}
-      />
-
       <section className="parameter-panel workspace-panel">
         <div className="panel-heading">
           <div>
@@ -1355,6 +1400,12 @@ function CalculatorScreen({
       </section>
       ) : null}
 
+          <StepNavigation
+            activeIndex={configSections.findIndex((section) => section.id === activeSection)}
+            count={configSections.length}
+            onChange={(index) => setActiveSection(configSections[index].id)}
+          />
+
         </div>
       </section>
 
@@ -1373,6 +1424,7 @@ function CalculatorScreen({
           priceComparison={priceComparison}
           positionCount={positionSummaries.length}
           positionIndex={positionSummaries.findIndex((position) => position.id === activePositionId)}
+          positions={positionSummaries}
           hasErrors={positionSummaries.some((position) => position.hasErrors)}
           isPdfBusy={isPdfBusy}
           onPdf={onPdf}
@@ -1428,28 +1480,16 @@ const mirrorSections: Array<{ id: MirrorSectionId; label: string }> = [
 function MirrorCalculatorScreen({
   adminBreakdown,
   catalog,
-  customer,
-  delivery,
-  deliveryKmRate,
-  deliveryPrice,
   form,
-  quantity,
   result,
   orderResult,
   priceComparison,
   positionSummaries,
   activePositionId,
   isPdfBusy,
-  onAddPosition,
-  onDeletePosition,
-  onDuplicatePosition,
-  onCustomer,
-  onDelivery,
   onForm,
   onPdf,
-  onQuantity,
   onSave,
-  onSelectPosition,
 }: MirrorCalculatorScreenProps) {
   const [activeSection, setActiveSection] = useState<MirrorSectionId>('dimensions')
   const material = getMirrorMaterial(catalog, form.materialId)
@@ -1475,23 +1515,6 @@ function MirrorCalculatorScreen({
 
   return (
     <div className="screen-stack calculator-screen mirror-calculator-screen">
-      <PositionSwitcher
-        activeId={activePositionId}
-        activeQuantity={quantity}
-        customer={customer}
-        delivery={delivery}
-        deliveryKmRate={deliveryKmRate}
-        deliveryPrice={deliveryPrice}
-        positions={positionSummaries}
-        onAdd={onAddPosition}
-        onCustomer={onCustomer}
-        onDelete={onDeletePosition}
-        onDelivery={onDelivery}
-        onDuplicate={onDuplicatePosition}
-        onQuantity={onQuantity}
-        onSelect={onSelectPosition}
-      />
-
       <section className="parameter-panel workspace-panel">
         <div className="panel-heading">
           <div>
@@ -1669,6 +1692,12 @@ function MirrorCalculatorScreen({
             </section>
           ) : null}
 
+          <StepNavigation
+            activeIndex={mirrorSections.findIndex((section) => section.id === activeSection)}
+            count={mirrorSections.length}
+            onChange={(index) => setActiveSection(mirrorSections[index].id)}
+          />
+
         </div>
       </section>
 
@@ -1698,6 +1727,7 @@ function MirrorCalculatorScreen({
           priceComparison={priceComparison}
           positionCount={positionSummaries.length}
           positionIndex={positionSummaries.findIndex((position) => position.id === activePositionId)}
+          positions={positionSummaries}
           hasErrors={positionSummaries.some((position) => position.hasErrors)}
           isPdfBusy={isPdfBusy}
           onPdf={onPdf}
@@ -1802,11 +1832,14 @@ type PositionSwitcherProps = {
   deliveryKmRate: number
   deliveryPrice: number
   positions: PositionSummary[]
+  quoteNumber?: string
   onAdd: () => void
+  onAddProduct?: (kind: ProductKind) => void
   onCustomer: (patch: Partial<QuoteCustomer>) => void
   onDelete: (id: string) => void
   onDelivery: (patch: Partial<QuoteDelivery>) => void
   onDuplicate: () => void
+  onNew?: () => void
   onQuantity: (quantity: number) => void
   onSelect: (id: string) => void
 }
@@ -1819,19 +1852,32 @@ function PositionSwitcher({
   deliveryKmRate,
   deliveryPrice,
   positions,
+  quoteNumber,
   onAdd,
+  onAddProduct,
   onCustomer,
   onDelete,
   onDelivery,
   onDuplicate,
+  onNew,
   onQuantity,
   onSelect,
 }: PositionSwitcherProps) {
+  const [addOpen, setAddOpen] = useState(false)
   return (
     <section className="section-block position-section">
       <div className="section-title position-title">
-        <h2>Позиции</h2>
+        <div className="quote-workspace-title">
+          <span>{quoteNumber ? `Редактирование ${quoteNumber}` : 'Текущее предложение'}</span>
+          <h2>{quoteNumber || 'Новое КП'}</h2>
+        </div>
         <div className="position-tools">
+          {onNew ? (
+            <button className="new-quote-button" title="Начать новое КП" type="button" onClick={onNew}>
+              <RotateCcw size={16} />
+              <span>Новое КП</span>
+            </button>
+          ) : null}
           <div className="position-quantity" role="group" aria-label="Количество активной позиции">
             <span>Количество</span>
             <div>
@@ -1868,10 +1914,17 @@ function PositionSwitcher({
             <Copy size={17} />
             <span className="sr-only">Дублировать позицию</span>
           </button>
-          <button className="add-position" type="button" onClick={onAdd}>
-            <Plus size={17} />
-            Добавить
-          </button>
+          <div className="add-position-menu">
+            <button className="add-position" type="button" onClick={() => onAddProduct ? setAddOpen((current) => !current) : onAdd()}>
+              <Plus size={17} /> Добавить
+            </button>
+            {addOpen && onAddProduct ? (
+              <div className="add-position-popover">
+                <button type="button" onClick={() => { onAddProduct('shower'); setAddOpen(false) }}><Calculator size={17} /> Душевая</button>
+                <button type="button" onClick={() => { onAddProduct('mirror'); setAddOpen(false) }}><ScanLine size={17} /> Зеркало</button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="position-strip" aria-label="Позиции коммерческого предложения">
@@ -1924,12 +1977,13 @@ type CustomerControlProps = {
 
 function CustomerControl({ customer, onChange }: CustomerControlProps) {
   return (
-    <div className="order-customer-control">
-      <div className="order-customer-title">
+    <details className="order-customer-control">
+      <summary className="order-customer-title">
         <UserRound size={18} aria-hidden="true" />
-        <span>Клиент по КП</span>
-        <small>Общий для всех позиций</small>
-      </div>
+        <span>{customer.clientName || 'Добавить клиента'}</span>
+        <small>{customer.clientPhone || 'Общий для всех позиций'}</small>
+        <ChevronDown size={17} aria-hidden="true" />
+      </summary>
       <div className="order-customer-fields">
         <label className="text-field">
           <span>Имя</span>
@@ -1953,7 +2007,7 @@ function CustomerControl({ customer, onChange }: CustomerControlProps) {
           <input value={customer.note} onChange={(event) => onChange({ note: event.target.value })} />
         </label>
       </div>
-    </div>
+    </details>
   )
 }
 
@@ -1966,50 +2020,36 @@ type DeliveryControlProps = {
 }
 
 function DeliveryControl({ delivery, kmRate, label = 'Доставка по КП', price, onChange }: DeliveryControlProps) {
+  const [expanded, setExpanded] = useState(() => window.matchMedia('(min-width: 768px)').matches)
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)')
+    const update = () => setExpanded(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
   return (
-    <div className="order-delivery-control">
-      <div className="order-delivery-title">
+    <details className="order-delivery-control" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+      <summary className="order-delivery-title">
         <Truck size={18} aria-hidden="true" />
         <span>{label}</span>
         <strong>{money(price)}</strong>
+        <ChevronDown size={17} aria-hidden="true" />
+      </summary>
+      <div className="order-delivery-body">
+        <div className="segmented order-delivery-modes" role="group" aria-label="Тип доставки">
+          <button className={!delivery.enabled ? 'is-active' : ''} type="button" onClick={() => onChange({ enabled: false })}>Без доставки</button>
+          <button className={delivery.enabled && delivery.zone === 'inside' ? 'is-active' : ''} type="button" onClick={() => onChange({ enabled: true, zone: 'inside', km: 0 })}>По городу</button>
+          <button className={delivery.enabled && delivery.zone === 'outside' ? 'is-active' : ''} type="button" onClick={() => onChange({ enabled: true, zone: 'outside' })}>За городом</button>
+        </div>
+        {delivery.enabled && delivery.zone === 'outside' ? (
+          <label className="order-delivery-distance">
+            <span>Км за городом</span>
+            <input inputMode="numeric" min={0} type="number" value={delivery.km} onChange={(event) => onChange({ km: Number(event.target.value) })} />
+            <small>{shortMoney(kmRate)} ₽/км</small>
+          </label>
+        ) : null}
       </div>
-      <div className="segmented order-delivery-modes" role="group" aria-label="Тип доставки">
-        <button
-          className={!delivery.enabled ? 'is-active' : ''}
-          type="button"
-          onClick={() => onChange({ enabled: false })}
-        >
-          Без доставки
-        </button>
-        <button
-          className={delivery.enabled && delivery.zone === 'inside' ? 'is-active' : ''}
-          type="button"
-          onClick={() => onChange({ enabled: true, zone: 'inside', km: 0 })}
-        >
-          По городу
-        </button>
-        <button
-          className={delivery.enabled && delivery.zone === 'outside' ? 'is-active' : ''}
-          type="button"
-          onClick={() => onChange({ enabled: true, zone: 'outside' })}
-        >
-          За городом
-        </button>
-      </div>
-      {delivery.enabled && delivery.zone === 'outside' ? (
-        <label className="order-delivery-distance">
-          <span>Км за городом</span>
-          <input
-            inputMode="numeric"
-            min={0}
-            type="number"
-            value={delivery.km}
-            onChange={(event) => onChange({ km: Number(event.target.value) })}
-          />
-          <small>{shortMoney(kmRate)} ₽/км</small>
-        </label>
-      ) : null}
-    </div>
+    </details>
   )
 }
 
@@ -2098,6 +2138,7 @@ type SummaryDockProps = {
   priceComparison: PriceComparison | null
   positionCount: number
   positionIndex: number
+  positions: PositionSummary[]
   hasErrors: boolean
   isPdfBusy: boolean
   onPdf: () => void
@@ -2200,6 +2241,7 @@ function SummaryDock({
   priceComparison,
   positionCount,
   positionIndex,
+  positions,
   hasErrors,
   isPdfBusy,
   onPdf,
@@ -2223,6 +2265,15 @@ function SummaryDock({
       </div>
       {priceComparison ? <PriceComparisonPanel comparison={priceComparison} /> : null}
       {adminBreakdown ? <AdminCalculationDetails breakdown={adminBreakdown} /> : null}
+      <div className="summary-composition">
+        <span>Состав КП</span>
+        {positions.map((position) => (
+          <div className={position.index === positionIndex ? 'is-active' : ''} key={position.id}>
+            <span>{position.index + 1}. {position.title}<small>{position.quantity} шт.</small></span>
+            <strong>{money(position.total)}</strong>
+          </div>
+        ))}
+      </div>
       <div className="summary-lines">
         {orderResult.lines.map((line) => (
           <div key={line.label}>
@@ -2265,7 +2316,7 @@ type ArchiveScreenProps = {
   onPdf: (quote: Quote) => void
 }
 
-function ArchiveScreen({
+export function ArchiveScreen({
   catalog,
   quotes,
   pdfQuoteId,
@@ -2437,6 +2488,145 @@ function ArchiveScreen({
             onManualSave(manualQuote.id, patch)
             setManualQuote(null)
           }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+type ArchiveWorkspaceProps = ArchiveScreenProps & { onNew: () => void }
+
+function ArchiveWorkspace({
+  catalog,
+  quotes,
+  pdfQuoteId,
+  syncMessage,
+  syncStatus,
+  onDelete,
+  onLoad,
+  onManualSave,
+  onNew,
+  onPdf,
+}: ArchiveWorkspaceProps) {
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [period, setPeriod] = useState<'all' | 'today' | 'week' | 'month'>('all')
+  const [selectedId, setSelectedId] = useState(() => quotes[0]?.id ?? '')
+  const [manualQuote, setManualQuote] = useState<Quote | null>(null)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim().toLowerCase()), 300)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  const filtered = useMemo(() => {
+    const now = Date.now()
+    const thresholds = {
+      all: Number.POSITIVE_INFINITY,
+      today: 24 * 60 * 60 * 1000,
+      week: 7 * 24 * 60 * 60 * 1000,
+      month: 31 * 24 * 60 * 60 * 1000,
+    }
+    return quotes.filter((quote) => {
+      if (now - new Date(quote.createdAt).getTime() > thresholds[period]) return false
+      if (!debouncedQuery) return true
+      const customer = getQuoteCustomer(quote)
+      const haystack = [
+        quote.number,
+        customer.clientName,
+        customer.clientPhone,
+        ...getQuoteItems(quote).map(getQuoteItemTitle),
+      ].join(' ').toLowerCase()
+      return haystack.includes(debouncedQuery)
+    })
+  }, [debouncedQuery, period, quotes])
+
+  useEffect(() => {
+    if (filtered.some((quote) => quote.id === selectedId)) return
+    setSelectedId(filtered[0]?.id ?? '')
+  }, [filtered, selectedId])
+
+  const selected = filtered.find((quote) => quote.id === selectedId) ?? filtered[0]
+  const selectedItems = selected ? getQuoteItems(selected) : []
+  const selectedCustomer = selected ? getQuoteCustomer(selected) : normalizeQuoteCustomer(null)
+
+  return (
+    <div className="archive-workspace">
+      <header className="archive-page-head">
+        <div><span>Коммерческие предложения</span><h2>Архив КП</h2><p>{quotes.length} сохранённых расчётов</p></div>
+        <button className="primary-action" type="button" onClick={onNew}><Plus size={18} /> Новое КП</button>
+      </header>
+
+      <section className="archive-toolbar">
+        <label className="search-field"><Search size={18} /><input aria-label="Поиск по архиву" placeholder="Номер КП, клиент или телефон" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+        <div className="archive-periods" role="group" aria-label="Период">
+          {([['all', 'Все'], ['today', 'Сегодня'], ['week', 'Неделя'], ['month', 'Месяц']] as const).map(([id, label]) => (
+            <button className={period === id ? 'is-active' : ''} key={id} type="button" onClick={() => setPeriod(id)}>{label}</button>
+          ))}
+        </div>
+        <div className={`archive-sync-status is-${syncStatus}`} title={syncMessage || undefined}>
+          {syncStatus === 'loading' ? <LoaderCircle className="is-spinning" size={15} /> : syncStatus === 'synced' ? <Cloud size={15} /> : <CloudOff size={15} />}
+          <span>{syncStatus === 'synced' ? 'На сервере' : syncStatus === 'loading' ? 'Синхронизация' : 'Локально'}</span>
+        </div>
+      </section>
+
+      {filtered.length > 0 ? (
+        <div className="archive-layout">
+          <section className="archive-table-wrap">
+            <table className="archive-table">
+              <thead><tr><th>КП</th><th>Клиент</th><th>Изделия</th><th>Дата</th><th>Сумма</th><th><span className="sr-only">Действия</span></th></tr></thead>
+              <tbody>
+                {filtered.map((quote) => {
+                  const customer = getQuoteCustomer(quote)
+                  const items = getQuoteItems(quote)
+                  return (
+                    <tr className={quote.id === selected?.id ? 'is-selected' : ''} key={quote.id} onClick={() => setSelectedId(quote.id)}>
+                      <td><strong>{quote.number}</strong></td>
+                      <td><strong>{customer.clientName || 'Без имени'}</strong><small>{customer.clientPhone || 'Телефон не указан'}</small></td>
+                      <td><span>{items.length} поз.</span><small>{items.slice(0, 2).map(getQuoteItemTitle).join(', ')}</small></td>
+                      <td>{formatDate(quote.createdAt)}</td>
+                      <td><strong>{money(getQuoteTotal(quote))}</strong></td>
+                      <td><button aria-label={`Открыть ${quote.number}`} title="Открыть" type="button" onClick={(event) => { event.stopPropagation(); onLoad(quote) }}><ChevronRight size={18} /></button></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </section>
+
+          {selected ? (
+            <aside className="archive-detail">
+              <header><div><span>{selected.number}</span><h3>{selectedCustomer.clientName || 'Клиент не указан'}</h3><small>{selectedCustomer.clientPhone || 'Телефон не указан'}</small></div><strong>{money(getQuoteTotal(selected))}</strong></header>
+              <div className="archive-detail-items">
+                <span>Состав предложения</span>
+                {selectedItems.map((item, index) => (
+                  <button key={item.id} type="button" onClick={() => onLoad(selected, item.id)}>
+                    <i>{isMirrorQuoteItem(item) ? <ScanLine size={17} /> : <Layers3 size={17} />}</i>
+                    <span><strong>{index + 1}. {getQuoteItemTitle(item)}</strong><small>{getQuoteItemQuantity(item)} шт. · {money(item.result.total * getQuoteItemQuantity(item))}</small></span>
+                    <Pencil size={15} />
+                  </button>
+                ))}
+              </div>
+              {selectedCustomer.note ? <p className="archive-detail-note">{selectedCustomer.note}</p> : null}
+              <footer>
+                <button type="button" onClick={() => onLoad(selected)}><Pencil size={16} /> Открыть в калькуляторе</button>
+                <button disabled={pdfQuoteId === selected.id} type="button" onClick={() => onPdf(selected)}><FileDown size={16} /> {pdfQuoteId === selected.id ? 'Формируем...' : 'Создать PDF'}</button>
+                <button type="button" onClick={() => setManualQuote(selected)}><Settings2 size={16} /> Изменить КП</button>
+                <button className="danger" type="button" onClick={() => onDelete(selected.id)}><Trash2 size={16} /> Удалить</button>
+              </footer>
+            </aside>
+          ) : null}
+        </div>
+      ) : (
+        <section className="archive-empty"><Archive size={32} /><h3>КП не найдены</h3><p>Измените поиск или создайте новое коммерческое предложение.</p><button className="primary-action" type="button" onClick={onNew}><Plus size={18} /> Новое КП</button></section>
+      )}
+
+      {manualQuote ? (
+        <QuoteEditorDialog
+          catalog={catalog}
+          quote={manualQuote}
+          onClose={() => setManualQuote(null)}
+          onSave={(patch) => { onManualSave(manualQuote.id, patch); setManualQuote(null) }}
         />
       ) : null}
     </div>
@@ -3143,6 +3333,7 @@ type PricesScreenProps = {
   onLogin: (username: string, password: string) => Promise<void>
   onLogout: () => void
   onMirrorCatalog: (catalog: MirrorPricingCatalog) => void
+  onDirtyChange: (dirty: boolean) => void
   onReset: () => void
   onRetry: () => void
   syncState: PriceSyncState
@@ -3244,8 +3435,53 @@ function PriceServerSyncPanel({ onLogin, onLogout, onRetry, syncState }: PriceSe
   )
 }
 
-function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, onMirrorCatalog, onReset, onRetry, syncState }: PricesScreenProps) {
+function PricesScreen({
+  catalog: savedCatalog,
+  mirrorCatalog: savedMirrorCatalog,
+  onCatalog: saveCatalogChanges,
+  onLogin,
+  onLogout,
+  onMirrorCatalog: saveMirrorCatalogChanges,
+  onDirtyChange,
+  onReset,
+  onRetry,
+  syncState,
+}: PricesScreenProps) {
+  const [catalog, setDraftCatalog] = useState(() => structuredClone(savedCatalog))
+  const [mirrorCatalog, setDraftMirrorCatalog] = useState(() => structuredClone(savedMirrorCatalog))
   const [openSection, setOpenSection] = useState<PriceSectionId | null>(null)
+  const [priceTab, setPriceTab] = useState<'shower' | 'mirror' | 'works' | 'delivery'>('shower')
+  const dirtyCount = useMemo(
+    () => countChangedValues(catalog, savedCatalog) + countChangedValues(mirrorCatalog, savedMirrorCatalog),
+    [catalog, mirrorCatalog, savedCatalog, savedMirrorCatalog],
+  )
+  const isDirty = dirtyCount > 0
+
+  useEffect(() => onDirtyChange(isDirty), [isDirty, onDirtyChange])
+  useEffect(() => {
+    if (isDirty) return
+    setDraftCatalog(structuredClone(savedCatalog))
+    setDraftMirrorCatalog(structuredClone(savedMirrorCatalog))
+  }, [isDirty, savedCatalog, savedMirrorCatalog])
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!isDirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [isDirty])
+
+  const discardChanges = () => {
+    setDraftCatalog(structuredClone(savedCatalog))
+    setDraftMirrorCatalog(structuredClone(savedMirrorCatalog))
+  }
+
+  const saveChanges = () => {
+    saveCatalogChanges(catalog)
+    saveMirrorCatalogChanges(mirrorCatalog)
+  }
   const toggleSection = (section: PriceSectionId) => {
     setOpenSection((current) => (current === section ? null : section))
   }
@@ -3255,14 +3491,14 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
     id: string,
     patch: Partial<Pick<PriceOption, 'label' | 'price'>>,
   ) => {
-    onCatalog({
+    setDraftCatalog({
       ...catalog,
       [group]: catalog[group].map((item) => (item.id === id ? { ...item, ...patch } : item)),
     })
   }
 
   const addOption = (group: 'glass' | 'hardware' | 'hardwareClass') => {
-    onCatalog({
+    setDraftCatalog({
       ...catalog,
       [group]: [
         ...catalog[group],
@@ -3273,14 +3509,14 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
 
   const deleteOption = (group: 'glass' | 'hardware' | 'hardwareClass', id: string) => {
     if (catalog[group].length <= 1) return
-    onCatalog({ ...catalog, [group]: catalog[group].filter((item) => item.id !== id) })
+    setDraftCatalog({ ...catalog, [group]: catalog[group].filter((item) => item.id !== id) })
   }
 
   const updateConstruction = (
     id: string,
     patch: Partial<Pick<Construction, 'basePrice' | 'installationPrice' | 'shortTitle' | 'title'>>,
   ) => {
-    onCatalog({
+    setDraftCatalog({
       ...catalog,
       constructions: catalog.constructions.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     })
@@ -3289,7 +3525,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
   const addConstruction = () => {
     const template = catalog.constructions[0]
     const label = 'Новая конструкция'
-    onCatalog({
+    setDraftCatalog({
       ...catalog,
       constructions: [
         ...catalog.constructions,
@@ -3308,28 +3544,28 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
 
   const deleteConstruction = (id: string) => {
     if (catalog.constructions.length <= 1) return
-    onCatalog({
+    setDraftCatalog({
       ...catalog,
       constructions: catalog.constructions.filter((item) => item.id !== id),
     })
   }
 
   const updateService = (key: keyof PricingCatalog['services'], value: number) => {
-    onCatalog({
+    setDraftCatalog({
       ...catalog,
       services: { ...catalog.services, [key]: value },
     })
   }
 
   const updateMirrorMaterial = (id: string, patch: Partial<Pick<MirrorMaterial, 'label' | 'price'>>) => {
-    onMirrorCatalog({
+    setDraftMirrorCatalog({
       ...mirrorCatalog,
       materials: mirrorCatalog.materials.map((item) => item.id === id ? { ...item, ...patch } : item),
     })
   }
 
   const addMirrorMaterial = () => {
-    onMirrorCatalog({
+    setDraftMirrorCatalog({
       ...mirrorCatalog,
       materials: [
         ...mirrorCatalog.materials,
@@ -3340,21 +3576,21 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
 
   const deleteMirrorMaterial = (id: string) => {
     if (mirrorCatalog.materials.length <= 1) return
-    onMirrorCatalog({
+    setDraftMirrorCatalog({
       ...mirrorCatalog,
       materials: mirrorCatalog.materials.filter((item) => item.id !== id),
     })
   }
 
   const updateMirrorService = (id: string, patch: Partial<MirrorService>) => {
-    onMirrorCatalog({
+    setDraftMirrorCatalog({
       ...mirrorCatalog,
       services: mirrorCatalog.services.map((item) => item.id === id ? { ...item, ...patch } : item),
     })
   }
 
   const addMirrorService = () => {
-    onMirrorCatalog({
+    setDraftMirrorCatalog({
       ...mirrorCatalog,
       services: [
         ...mirrorCatalog.services,
@@ -3372,28 +3608,28 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
 
   const deleteMirrorService = (id: string) => {
     if (mirrorCatalog.services.length <= 1) return
-    onMirrorCatalog({
+    setDraftMirrorCatalog({
       ...mirrorCatalog,
       services: mirrorCatalog.services.filter((item) => item.id !== id),
     })
   }
 
   const updateMirrorSetting = (key: keyof MirrorPricingCatalog['settings'], value: number) => {
-    onMirrorCatalog({
+    setDraftMirrorCatalog({
       ...mirrorCatalog,
       settings: { ...mirrorCatalog.settings, [key]: value },
     })
   }
 
   return (
-    <div className="screen-stack prices-screen">
+    <div className={`screen-stack prices-screen show-${priceTab}`}>
       <PriceServerSyncPanel onLogin={onLogin} onLogout={onLogout} onRetry={onRetry} syncState={syncState} />
       {syncState.username && syncState.ready ? (
         <>
       <section className="section-block admin-head">
         <div>
           <h2>Цены</h2>
-          <span>Сохраняются на сервере и этом устройстве</span>
+          <span>Изменения применяются только после сохранения</span>
         </div>
         <button type="button" onClick={onReset}>
           <RotateCcw size={16} />
@@ -3401,7 +3637,21 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         </button>
       </section>
 
+      <nav className="price-category-tabs" aria-label="Разделы цен">
+        {([
+          ['shower', 'Душевые'],
+          ['mirror', 'Зеркала'],
+          ['works', 'Работы'],
+          ['delivery', 'Доставка'],
+        ] as const).map(([id, label]) => (
+          <button className={priceTab === id ? 'is-active' : ''} key={id} type="button" onClick={() => { setPriceTab(id); setOpenSection(null) }}>
+            {label}
+          </button>
+        ))}
+      </nav>
+
       <PriceGroup
+        category="shower"
         controlsId="price-glass"
         isOpen={openSection === 'glass'}
         items={catalog.glass}
@@ -3414,6 +3664,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         onToggle={() => toggleSection('glass')}
       />
       <PriceGroup
+        category="shower"
         controlsId="price-hardware"
         isOpen={openSection === 'hardware'}
         items={catalog.hardware}
@@ -3426,6 +3677,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         onToggle={() => toggleSection('hardware')}
       />
       <PriceGroup
+        category="shower"
         controlsId="price-hardware-class"
         isOpen={openSection === 'hardwareClass'}
         items={catalog.hardwareClass}
@@ -3438,7 +3690,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         onToggle={() => toggleSection('hardwareClass')}
       />
 
-      <section className={openSection === 'constructions' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+      <section className={openSection === 'constructions' ? 'section-block price-accordion price-category-shower is-open' : 'section-block price-accordion price-category-shower'}>
         <PriceAccordionHeader
           controlsId="price-constructions"
           isOpen={openSection === 'constructions'}
@@ -3466,7 +3718,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         ) : null}
       </section>
 
-      <section className={openSection === 'services' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+      <section className={openSection === 'services' ? 'section-block price-accordion price-category-delivery is-open' : 'section-block price-accordion price-category-delivery'}>
         <PriceAccordionHeader
           controlsId="price-services"
           isOpen={openSection === 'services'}
@@ -3492,7 +3744,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         ) : null}
       </section>
 
-      <section className={openSection === 'showerSettings' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+      <section className={openSection === 'showerSettings' ? 'section-block price-accordion price-category-shower is-open' : 'section-block price-accordion price-category-shower'}>
         <PriceAccordionHeader
           controlsId="price-shower-settings"
           isOpen={openSection === 'showerSettings'}
@@ -3511,6 +3763,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
       </section>
 
       <PriceGroup
+        category="mirror"
         controlsId="price-mirror-materials"
         isOpen={openSection === 'mirrorMaterials'}
         items={mirrorCatalog.materials}
@@ -3523,7 +3776,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         onToggle={() => toggleSection('mirrorMaterials')}
       />
 
-      <section className={openSection === 'mirrorServices' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+      <section className={openSection === 'mirrorServices' ? 'section-block price-accordion price-category-works is-open' : 'section-block price-accordion price-category-works'}>
         <PriceAccordionHeader
           controlsId="price-mirror-services"
           isOpen={openSection === 'mirrorServices'}
@@ -3547,7 +3800,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
         ) : null}
       </section>
 
-      <section className={openSection === 'mirrorSettings' ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+      <section className={openSection === 'mirrorSettings' ? 'section-block price-accordion price-category-mirror is-open' : 'section-block price-accordion price-category-mirror'}>
         <PriceAccordionHeader
           controlsId="price-mirror-settings"
           isOpen={openSection === 'mirrorSettings'}
@@ -3565,6 +3818,13 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
           </div>
         ) : null}
       </section>
+      {isDirty ? (
+        <div className="price-save-bar" role="status">
+          <span>Изменения: {dirtyCount}</span>
+          <button type="button" onClick={discardChanges}>Отменить</button>
+          <button className="is-primary" type="button" onClick={saveChanges}><Save size={17} /> Сохранить цены</button>
+        </div>
+      ) : null}
         </>
       ) : null}
     </div>
@@ -3572,6 +3832,7 @@ function PricesScreen({ catalog, mirrorCatalog, onCatalog, onLogin, onLogout, on
 }
 
 type PriceGroupProps = {
+  category: 'shower' | 'mirror'
   controlsId: string
   isOpen: boolean
   title: string
@@ -3585,6 +3846,7 @@ type PriceGroupProps = {
 }
 
 function PriceGroup({
+  category,
   controlsId,
   isOpen,
   title,
@@ -3597,7 +3859,7 @@ function PriceGroup({
   onToggle,
 }: PriceGroupProps) {
   return (
-    <section className={isOpen ? 'section-block price-accordion is-open' : 'section-block price-accordion'}>
+    <section className={isOpen ? `section-block price-accordion price-category-${category} is-open` : `section-block price-accordion price-category-${category}`}>
       <PriceAccordionHeader
         controlsId={controlsId}
         isOpen={isOpen}
@@ -3702,9 +3964,10 @@ function EditablePriceRow({
         <input
           aria-label={`Цена: ${label || 'позиция'}`}
           inputMode="numeric"
+          min={0}
           type="number"
           value={price}
-          onChange={(event) => onPriceChange(Number(event.target.value))}
+          onChange={(event) => onPriceChange(Math.max(0, Number(event.target.value) || 0))}
         />
         <small>{suffix}</small>
       </label>
@@ -3759,9 +4022,10 @@ function ConstructionPriceRow({
           <input
             aria-label={`Базовая цена: ${label || 'конструкция'}`}
             inputMode="numeric"
+            min={0}
             type="number"
             value={basePrice}
-            onChange={(event) => onBasePriceChange(Number(event.target.value))}
+            onChange={(event) => onBasePriceChange(Math.max(0, Number(event.target.value) || 0))}
           />
           <small>₽</small>
         </div>
@@ -3772,9 +4036,10 @@ function ConstructionPriceRow({
           <input
             aria-label={`Стоимость монтажа: ${label || 'конструкция'}`}
             inputMode="numeric"
+            min={0}
             type="number"
             value={installationPrice}
-            onChange={(event) => onInstallationPriceChange(Number(event.target.value))}
+            onChange={(event) => onInstallationPriceChange(Math.max(0, Number(event.target.value) || 0))}
           />
           <small>₽</small>
         </div>
@@ -3817,9 +4082,10 @@ function MirrorServicePriceRow({ item, canDelete, onChange, onDelete }: MirrorSe
         <span className="sr-only">Цена работы</span>
         <input
           inputMode="numeric"
+          min={0}
           type="number"
           value={item.price}
-          onChange={(event) => onChange({ price: Number(event.target.value) })}
+          onChange={(event) => onChange({ price: Math.max(0, Number(event.target.value) || 0) })}
         />
         <small>₽</small>
       </label>
@@ -3863,7 +4129,7 @@ function ServiceRow({ label, value, onChange }: ServiceRowProps) {
   return (
     <label className="price-row">
       <span>{label}</span>
-      <input inputMode="numeric" type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input inputMode="numeric" min={0} type="number" value={value} onChange={(event) => onChange(Math.max(0, Number(event.target.value) || 0))} />
       <small> </small>
     </label>
   )
