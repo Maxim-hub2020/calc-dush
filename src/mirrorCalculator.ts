@@ -136,7 +136,7 @@ export const calculateMirrorQuote = (catalog: MirrorPricingCatalog, form: Mirror
     { label: 'Стоимость изделия', value: product + installation },
     { label: 'Доставка', value: delivery },
   ]
-  if (discount > 0) lines.push({ label: `Скидка ${discountPercent}%`, value: discount })
+  if (discount > 0) lines.push({ label: 'Скидка', value: discount })
 
   return {
     product,

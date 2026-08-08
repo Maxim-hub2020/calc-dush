@@ -165,7 +165,6 @@ const buildItemsTable = (items: QuoteItem[]): Content => ({
 
 const buildSummaryBlock = (
   totals: QuoteVariantTotals,
-  discountPercentLabel: string,
   totalLabel: string,
 ): Content => {
   const summaryRows: TableCell[][] = [
@@ -180,7 +179,7 @@ const buildSummaryBlock = (
   ]
   if (totals.discount > 0) {
     summaryRows.push([
-      { text: `Стоимость до скидки (${discountPercentLabel}%)`, color: pdfColors.muted, margin: [0, 3, 0, 3] },
+      { text: 'Цена до скидки', color: pdfColors.muted, margin: [0, 3, 0, 3] },
       { text: money(totals.subtotal), alignment: 'right', color: pdfColors.muted, decoration: 'lineThrough', margin: [0, 3, 0, 3] },
     ])
   }
@@ -202,7 +201,7 @@ const buildSummaryBlock = (
             table: {
               widths: ['*', 88],
               body: [[
-                { text: totalLabel, bold: true, fontSize: 10, color: pdfColors.heading, fillColor: '#e7f0f4', margin: [8, 6, 0, 6] },
+                { text: totals.discount > 0 ? 'Цена со скидкой' : totalLabel, bold: true, fontSize: 10, color: pdfColors.heading, fillColor: '#e7f0f4', margin: [8, 6, 0, 6] },
                 { text: money(totals.total), alignment: 'right', bold: true, fontSize: 12, color: pdfColors.heading, fillColor: '#cfe3ec', margin: [0, 5, 8, 5] },
               ]],
             },
@@ -234,13 +233,6 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
   const items = getQuoteItems(quote)
   const variants = getQuoteVariants(quote)
   const customer = getQuoteCustomer(quote)
-  const storedDiscountPercent = Number(quote.form.discountPercent)
-  const discountPercent = Number.isFinite(storedDiscountPercent) && storedDiscountPercent > 0
-    ? storedDiscountPercent
-    : quote.result.subtotal > 0
-      ? Math.round((quote.result.discount / quote.result.subtotal) * 10_000) / 100
-      : 0
-  const discountPercentLabel = discountPercent.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
   const customerParts = [
     customer.clientName ? `Клиент: ${customer.clientName}` : '',
     customer.clientPhone ? `Телефон: ${customer.clientPhone}` : '',
@@ -289,7 +281,6 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
             buildItemsTable(variantItems),
             buildSummaryBlock(
               getQuoteVariantTotals(quote, variant),
-              discountPercentLabel,
               'Итого по варианту',
             ),
           ]
@@ -302,7 +293,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
           margin: [0, 21, 0, 5],
         },
         buildItemsTable(items),
-        buildSummaryBlock(singleQuoteTotals, discountPercentLabel, 'Итого к оплате'),
+        buildSummaryBlock(singleQuoteTotals, 'Итого к оплате'),
       ]
 
   return {

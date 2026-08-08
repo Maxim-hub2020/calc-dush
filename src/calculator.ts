@@ -228,13 +228,12 @@ export const buildCalculationLines = (
   installation: number,
   delivery: number,
   discount: number,
-  discountPercent: number,
 ): CalculationLine[] => {
   const lines: CalculationLine[] = [
     { label: 'Стоимость изделия', value: product + installation },
     { label: 'Доставка', value: delivery },
   ]
-  if (discount > 0) lines.push({ label: `Скидка ${discountPercent}%`, value: discount })
+  if (discount > 0) lines.push({ label: 'Скидка', value: discount })
   return lines
 }
 
@@ -281,10 +280,6 @@ const validateDimensions = (construction: Construction, dimensions: Record<strin
     const value = Number(dimensions[field.key] ?? 0)
     if (!Number.isFinite(value) || value <= 0) {
       errors[field.key] = 'Заполните значение'
-    } else if (value < field.min) {
-      errors[field.key] = `Минимум ${field.min} мм`
-    } else if (value > field.max) {
-      errors[field.key] = `Максимум ${field.max} мм`
     }
     return errors
   }, {})
@@ -327,7 +322,7 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
     ? roundMoneyUp(subtotal - (subtotal / 100) * discountPercent)
     : subtotal
   const discount = subtotal - total
-  const lines = buildCalculationLines(product, installation, delivery, discount, discountPercent)
+  const lines = buildCalculationLines(product, installation, delivery, discount)
 
   return {
     product,
@@ -353,11 +348,7 @@ export const combineCalculationResults = (results: CalculationResult[]): Calcula
   const delivery = sum((result) => result.delivery)
   const subtotal = sum((result) => result.subtotal)
   const discount = sum((result) => result.discount)
-  const discountLabel = results
-    .flatMap((result) => result.lines)
-    .find((line) => line.label.startsWith('Скидка'))?.label
-  const discountPercent = Number(discountLabel?.match(/[\d,.]+/)?.[0]?.replace(',', '.') ?? 0)
-  const lines = buildCalculationLines(product, installation, delivery, discount, discountPercent)
+  const lines = buildCalculationLines(product, installation, delivery, discount)
 
   return {
     product,
@@ -381,20 +372,12 @@ export const applyQuoteDelivery = (
   deliveryPriceValue: unknown,
 ): CalculationResult => {
   const delivery = roundMoneyUp(deliveryPriceValue)
-  const discountLabel = result.lines.find((line) => line.label.startsWith('Скидка'))?.label
-  const discountPercent = Number(discountLabel?.match(/[\d,.]+/)?.[0]?.replace(',', '.') ?? 0)
   return {
     ...result,
     delivery,
     subtotal: result.subtotal + delivery,
     total: result.total + delivery,
-    lines: buildCalculationLines(
-      result.product,
-      result.installation,
-      delivery,
-      result.discount,
-      discountPercent,
-    ),
+    lines: buildCalculationLines(result.product, result.installation, delivery, result.discount),
   }
 }
 
@@ -678,7 +661,7 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
       subtotal,
       discount,
       total,
-      lines: buildCalculationLines(product, 0, 0, discount, discountPercent),
+      lines: buildCalculationLines(product, 0, 0, discount),
     }
 
     if (isMirrorQuoteItem(item)) {

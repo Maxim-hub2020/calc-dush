@@ -1269,14 +1269,9 @@ function CalculatorScreen({
             <label className="field-row" key={field.key}>
               <span>
                 {field.label}
-                <small>
-                  {field.min}-{field.max}
-                </small>
               </span>
               <input
                 inputMode="numeric"
-                min={field.min}
-                max={field.max}
                 type="number"
                 value={form.dimensions[field.key] ?? ''}
                 onChange={(event) => onDimension(field.key, Number(event.target.value))}
@@ -2213,8 +2208,13 @@ function SummaryDock({
   return (
     <aside className="summary-dock">
       <div className="summary-headline">
-        <span>Предварительная стоимость</span>
-        {orderResult.discount > 0 ? <del>{money(orderResult.subtotal)}</del> : null}
+        {orderResult.discount > 0 ? (
+          <>
+            <span>Цена до скидки</span>
+            <del>{money(orderResult.subtotal)}</del>
+            <span>Цена со скидкой</span>
+          </>
+        ) : <span>Предварительная стоимость</span>}
         <strong>{money(orderResult.total)}</strong>
         <small>
           Позиция {positionIndex + 1}: {money(result.total)}
@@ -3100,9 +3100,14 @@ function QuoteEditorDialog({ catalog, quote, onClose, onSave }: QuoteEditorDialo
               ) : null}
             </div> : null}
             {!draft.splitIntoVariants ? <div className={hasDiscount ? 'manual-total has-discount' : 'manual-total'}>
-              <span>Итого по КП</span>
+              <span>{hasDiscount ? 'Цена со скидкой' : 'Итого по КП'}</span>
               <div>
-                {hasDiscount ? <del>{money(subtotal)}</del> : null}
+                {hasDiscount ? (
+                  <span className="manual-total-before-discount">
+                    <small>Цена до скидки</small>
+                    <del>{money(subtotal)}</del>
+                  </span>
+                ) : null}
                 <strong>{money(total)}</strong>
               </div>
             </div> : (

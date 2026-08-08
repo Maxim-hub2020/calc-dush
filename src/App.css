@@ -3722,6 +3722,18 @@
   font-weight: 700;
 }
 
+.manual-total-before-discount {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.manual-total-before-discount small {
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .manual-total strong {
   color: var(--accent);
   font-size: 20px;
