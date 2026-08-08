@@ -2302,6 +2302,136 @@
   color: var(--muted);
 }
 
+.admin-calculation-details {
+  overflow: hidden;
+  border: 1px solid #cbd9ea;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.admin-calculation-details > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 9px 10px;
+  color: var(--heading);
+  cursor: pointer;
+  list-style: none;
+}
+
+.admin-calculation-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-calculation-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  color: var(--accent);
+}
+
+.admin-calculation-title > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  color: var(--heading);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-calculation-title small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-calculation-chevron {
+  color: var(--muted);
+  transition: transform 160ms ease;
+}
+
+.admin-calculation-details[open] .admin-calculation-chevron {
+  transform: rotate(180deg);
+}
+
+.admin-calculation-body {
+  display: grid;
+  gap: 13px;
+  max-height: 480px;
+  padding: 0 10px 11px;
+  overflow-y: auto;
+  border-top: 1px solid #dce6f2;
+}
+
+.admin-calculation-section {
+  min-width: 0;
+  padding-top: 11px;
+}
+
+.admin-calculation-section + .admin-calculation-section {
+  border-top: 1px solid #dce6f2;
+}
+
+.admin-calculation-section h3 {
+  margin: 0 0 6px;
+  color: var(--heading);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.admin-calculation-rows {
+  display: grid;
+  gap: 1px;
+}
+
+.admin-calculation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  min-width: 0;
+  padding: 6px 5px;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.admin-calculation-row > span,
+.admin-calculation-row > strong {
+  min-width: 0;
+  color: var(--heading);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.admin-calculation-row > strong {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.admin-calculation-row code {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: #627187;
+  font-family: var(--font-body);
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.admin-calculation-row.is-emphasis {
+  background: #edf4ff;
+}
+
+.admin-calculation-row.is-emphasis > span,
+.admin-calculation-row.is-emphasis > strong {
+  color: var(--accent);
+}
+
 .summary-lines {
   gap: 8px;
 }

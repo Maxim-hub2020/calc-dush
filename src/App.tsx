@@ -36,6 +36,12 @@ import {
 import showerThumbnailSprite from './assets/shower-thumbnail-sprite.png'
 import './App.css'
 import {
+  buildMirrorCalculationBreakdown,
+  buildOrderCalculationSection,
+  buildShowerCalculationBreakdown,
+  type AdminCalculationBreakdown,
+} from './adminCalculation'
+import {
   applyQuoteDelivery,
   calculateQuoteDelivery,
   calculateQuote,
@@ -281,6 +287,7 @@ function App() {
   const mirrorCatalogRef = useRef(mirrorCatalog)
   catalogRef.current = catalog
   mirrorCatalogRef.current = mirrorCatalog
+  const isAdmin = Boolean(serverSession) || import.meta.env.DEV
 
   const activePosition = positions.find((position) => position.id === activePositionId) ?? positions[0]
   const positionResults = useMemo(
@@ -333,6 +340,38 @@ function App() {
     })),
     [catalog, positionResults],
   )
+  const adminCalculationBreakdown = useMemo<AdminCalculationBreakdown | null>(() => {
+    if (!isAdmin) return null
+    const positionBreakdown = activePosition.kind === 'mirror'
+      ? buildMirrorCalculationBreakdown(mirrorCatalog, activePosition.form, activePosition.quantity, activeUnitResult)
+      : buildShowerCalculationBreakdown(catalog, activePosition.form, activePosition.quantity, activeUnitResult)
+    const orderSection = buildOrderCalculationSection(
+      positionResults.map((position, index) => ({
+        label: `Позиция ${index + 1}: ${position.kind === 'mirror'
+          ? getMirrorTitle(position.form)
+          : getConstruction(catalog, position.form.constructionId).shortTitle}`,
+        total: position.result.total,
+      })),
+      orderDelivery,
+      catalog,
+      orderDeliveryPrice,
+      orderResult.total,
+    )
+    return {
+      ...positionBreakdown,
+      sections: [...positionBreakdown.sections, orderSection],
+    }
+  }, [
+    activePosition,
+    activeUnitResult,
+    catalog,
+    isAdmin,
+    mirrorCatalog,
+    orderDelivery,
+    orderDeliveryPrice,
+    orderResult.total,
+    positionResults,
+  ])
   useEffect(() => saveCatalog(catalog), [catalog])
   useEffect(() => saveMirrorCatalog(mirrorCatalog), [mirrorCatalog])
   useEffect(() => saveQuotes(quotes), [quotes])
@@ -573,16 +612,28 @@ function App() {
     return true
   }
 
+  const resetCalculatorDraft = (kind: ProductKind) => {
+    const nextPosition = kind === 'mirror'
+      ? createMirrorDraftPosition(mirrorCatalog)
+      : createDraftPosition(catalog)
+    setPositions([nextPosition])
+    setActivePositionId(nextPosition.id)
+    setOrderDelivery(normalizeQuoteDelivery(null))
+    setOrderCustomer(normalizeQuoteCustomer(null))
+    setEditingQuoteId('')
+    setEditingPriceSnapshot(null)
+    setActiveTab(kind === 'mirror' ? 'mirrors' : 'showers')
+  }
+
   const saveCurrentQuote = () => {
     if (focusFirstInvalidPosition()) return
     const quote = createQuoteFromPositions()
+    const nextKind = activePosition.kind
     setQuotes((current) => editingQuoteId
       ? current.map((item) => item.id === editingQuoteId ? quote : item)
       : [quote, ...current])
     setNotice(`${quote.number} ${editingQuoteId ? 'обновлено' : 'сохранено'}`)
-    setEditingQuoteId('')
-    setEditingPriceSnapshot(null)
-    setActiveTab('archive')
+    resetCalculatorDraft(nextKind)
   }
 
   const downloadQuotePdf = async (quote: Quote) => {
@@ -601,11 +652,11 @@ function App() {
   const downloadCurrentQuotePdf = () => {
     if (focusFirstInvalidPosition()) return
     const quote = createQuoteFromPositions()
+    const nextKind = activePosition.kind
     setQuotes((current) => editingQuoteId
       ? current.map((item) => item.id === editingQuoteId ? quote : item)
       : [quote, ...current])
-    setEditingQuoteId('')
-    setEditingPriceSnapshot(null)
+    resetCalculatorDraft(nextKind)
     void downloadQuotePdf(quote)
   }
 
@@ -838,6 +889,7 @@ function App() {
 
         {activeTab === 'showers' && activePosition.kind === 'shower' ? (
           <CalculatorScreen
+            adminBreakdown={adminCalculationBreakdown}
             catalog={catalog}
             customer={orderCustomer}
             delivery={orderDelivery}
@@ -872,6 +924,7 @@ function App() {
         {activeTab === 'mirrors' && activePosition.kind === 'mirror' ? (
           <MirrorCalculatorScreen
             activePositionId={activePositionId}
+            adminBreakdown={adminCalculationBreakdown}
             catalog={mirrorCatalog}
             customer={orderCustomer}
             delivery={orderDelivery}
@@ -979,6 +1032,7 @@ function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
 }
 
 type CalculatorScreenProps = {
+  adminBreakdown: AdminCalculationBreakdown | null
   catalog: PricingCatalog
   customer: QuoteCustomer
   delivery: QuoteDelivery
@@ -1019,6 +1073,7 @@ const configSections: Array<{ id: ConfigSectionId; label: string }> = [
 ]
 
 function CalculatorScreen({
+  adminBreakdown,
   catalog,
   customer,
   delivery,
@@ -1233,6 +1288,7 @@ function CalculatorScreen({
 
       <div className="summary-column">
         <SummaryDock
+          adminBreakdown={adminBreakdown}
           result={result}
           orderResult={orderResult}
           priceComparison={priceComparison}
@@ -1255,6 +1311,7 @@ function CalculatorScreen({
 }
 
 type MirrorCalculatorScreenProps = {
+  adminBreakdown: AdminCalculationBreakdown | null
   catalog: MirrorPricingCatalog
   customer: QuoteCustomer
   delivery: QuoteDelivery
@@ -1290,6 +1347,7 @@ const mirrorSections: Array<{ id: MirrorSectionId; label: string }> = [
 ]
 
 function MirrorCalculatorScreen({
+  adminBreakdown,
   catalog,
   customer,
   delivery,
@@ -1555,6 +1613,7 @@ function MirrorCalculatorScreen({
 
       <div className="summary-column">
         <SummaryDock
+          adminBreakdown={adminBreakdown}
           result={result}
           orderResult={orderResult}
           priceComparison={priceComparison}
@@ -1954,6 +2013,7 @@ function ToggleRow({ checked, disabled = false, label, value, onChange }: Toggle
 }
 
 type SummaryDockProps = {
+  adminBreakdown: AdminCalculationBreakdown | null
   result: CalculationResult
   orderResult: CalculationResult
   priceComparison: PriceComparison | null
@@ -2014,7 +2074,48 @@ function PriceComparisonPanel({ comparison }: PriceComparisonPanelProps) {
   )
 }
 
+type AdminCalculationDetailsProps = {
+  breakdown: AdminCalculationBreakdown
+}
+
+function AdminCalculationDetails({ breakdown }: AdminCalculationDetailsProps) {
+  return (
+    <details className="admin-calculation-details">
+      <summary>
+        <span className="admin-calculation-title">
+          <Calculator size={16} aria-hidden="true" />
+          <span>
+            Расшифровка расчёта
+            <small>Только администратор · {breakdown.title}</small>
+          </span>
+        </span>
+        <ChevronDown className="admin-calculation-chevron" size={17} aria-hidden="true" />
+      </summary>
+      <div className="admin-calculation-body">
+        {breakdown.sections.map((section, sectionIndex) => (
+          <section className="admin-calculation-section" key={`${section.title}-${sectionIndex}`}>
+            <h3>{section.title}</h3>
+            <div className="admin-calculation-rows">
+              {section.rows.map((row, rowIndex) => (
+                <div
+                  className={row.emphasis ? 'admin-calculation-row is-emphasis' : 'admin-calculation-row'}
+                  key={`${row.label}-${rowIndex}`}
+                >
+                  <span>{row.label}</span>
+                  <code>{row.formula}</code>
+                  <strong>{row.value}</strong>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 function SummaryDock({
+  adminBreakdown,
   result,
   orderResult,
   priceComparison,
@@ -2037,6 +2138,7 @@ function SummaryDock({
         </small>
       </div>
       {priceComparison ? <PriceComparisonPanel comparison={priceComparison} /> : null}
+      {adminBreakdown ? <AdminCalculationDetails breakdown={adminBreakdown} /> : null}
       <div className="summary-lines">
         {orderResult.lines.map((line) => (
           <div key={line.label}>
