@@ -39,9 +39,11 @@
 .public-product-choice button > svg { position: absolute; top: 16px; right: 16px; width: 22px; color: #2563eb; }
 .public-start-actions { justify-content: flex-end; }
 .public-type-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.public-type-grid button { min-width: 0; min-height: 120px; position: relative; padding: 10px; display: grid; grid-template-columns: 74px minmax(0,1fr); align-items: center; gap: 10px; text-align: left; border: 1px solid #e2e8f0; border-radius: 12px; background: white; color: #1f2937; cursor: pointer; }
+.public-type-grid button { min-width: 0; min-height: 120px; position: relative; padding: 10px; display: grid; grid-template-columns: 88px minmax(0,1fr); align-items: center; gap: 10px; text-align: left; border: 1px solid #e2e8f0; border-radius: 12px; background: white; color: #1f2937; cursor: pointer; }
 .public-type-grid button.is-active, .public-choice-list button.is-active { border-color: #2563eb; background: #eff6ff; }
-.public-type-grid img { width: 74px; height: 88px; object-fit: cover; border-radius: 8px; }
+.public-type-grid img, .public-construction-thumbnail { display: block; width: 88px; aspect-ratio: 1 / 1; justify-self: center; border-radius: 6px; }
+.public-type-grid img { height: auto; max-height: 88px; object-fit: contain; background: #eef5f8; }
+.public-construction-thumbnail { background-color: #4d7ebc; background-repeat: no-repeat; background-size: 523.81% 442.86%; }
 .public-type-grid span { overflow-wrap: anywhere; font-size: 14px; font-weight: 750; }
 .public-type-grid svg { position: absolute; top: 8px; right: 8px; width: 17px; color: #2563eb; }
 .public-dimensions { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
@@ -128,8 +130,9 @@
   .public-product-choice button > small { font-size: 13px; }
   .public-config-card { min-height: calc(100vh - 290px); padding: 18px 14px; border-radius: 14px; }
   .public-type-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .public-type-grid button { min-height: 112px; grid-template-columns: 58px minmax(0,1fr); padding: 8px; }
-  .public-type-grid img { width: 58px; height: 76px; }
+  .public-type-grid button { min-height: 104px; grid-template-columns: 64px minmax(0,1fr); padding: 8px; }
+  .public-type-grid img, .public-construction-thumbnail { width: 64px; }
+  .public-type-grid img { max-height: 64px; }
   .public-type-grid span { font-size: 13px; }
   .public-dimensions, .public-service-list { grid-template-columns: 1fr; }
   .public-stepper > div { min-height: 60px; grid-template-columns: 56px minmax(0,1fr) 56px; }

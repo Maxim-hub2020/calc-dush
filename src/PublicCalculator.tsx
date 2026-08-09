@@ -15,6 +15,7 @@ import { calculateQuote, calculateQuoteDelivery, money, normalizeQuoteDelivery, 
 import { calculateMirrorQuote, createInitialMirrorForm, type MirrorForm } from './mirrorCalculator'
 import { defaultMirrorCatalog } from './mirrorPricing'
 import { defaultCatalog } from './pricing'
+import { getConstructionThumbnailStyle } from './constructionThumbnails'
 import './PublicCalculator.css'
 
 type PublicProduct = 'shower' | 'mirror'
@@ -338,13 +339,20 @@ export default function PublicCalculator() {
 
                 {product === 'shower' && step === 0 ? (
                   <div className="public-type-grid">
-                    {config.shower.constructions.map((item) => (
-                      <button className={item.id === showerForm.constructionId ? 'is-active' : ''} key={item.id} type="button" onClick={() => selectConstruction(item.id)}>
-                        <img alt="" src={defaultCatalog.constructions.find((row) => row.id === item.id)?.imageUrl} />
-                        <span>{item.shortTitle}</span>
-                        {item.id === showerForm.constructionId ? <Check /> : null}
-                      </button>
-                    ))}
+                    {config.shower.constructions.map((item) => {
+                      const thumbnailStyle = getConstructionThumbnailStyle(item.id)
+                      return (
+                        <button className={item.id === showerForm.constructionId ? 'is-active' : ''} key={item.id} type="button" onClick={() => selectConstruction(item.id)}>
+                          {thumbnailStyle ? (
+                            <span aria-hidden="true" className="public-construction-thumbnail" style={thumbnailStyle} />
+                          ) : (
+                            <img alt="" src={defaultCatalog.constructions.find((row) => row.id === item.id)?.imageUrl} />
+                          )}
+                          <span>{item.shortTitle}</span>
+                          {item.id === showerForm.constructionId ? <Check /> : null}
+                        </button>
+                      )
+                    })}
                   </div>
                 ) : null}
 
