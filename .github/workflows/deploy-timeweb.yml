@@ -19,7 +19,9 @@ env:
   DEPLOY_PORT: 22
   DEPLOY_USER: root
   DEPLOY_PATH: /var/www/shower-calculator
+  PUBLIC_DEPLOY_PATH: /var/www/shower-calculator-public
   PUBLIC_URL: https://calc.cehcrm.ru
+  PUBLIC_CALCULATOR_URL: https://amalgama.cehcrm.ru/calculator
 
 jobs:
   verify:
@@ -43,12 +45,19 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Build public calculator
+        run: npm run build -- --mode public --outDir dist-public
+
       - name: Add build metadata
         run: |
           printf '{"commit":"%s","builtAt":"%s"}\n' \
             "$GITHUB_SHA" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
             > dist/version.json
+          printf '{"commit":"%s","builtAt":"%s"}\n' \
+            "$GITHUB_SHA" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            > dist-public/version.json
           sed -i "s/__BUILD_COMMIT__/$GITHUB_SHA/g" dist/sw.js
+          sed -i "s/__BUILD_COMMIT__/$GITHUB_SHA/g" dist-public/sw.js
           grep -F "shower-calc-$GITHUB_SHA" dist/sw.js
 
       - name: Store production build
@@ -56,6 +65,14 @@ jobs:
         with:
           name: shower-calculator-dist
           path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Store public calculator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: shower-calculator-public-dist
+          path: dist-public/
           if-no-files-found: error
           retention-days: 1
 
@@ -73,6 +90,12 @@ jobs:
         with:
           name: shower-calculator-dist
           path: dist
+
+      - name: Download public calculator build
+        uses: actions/download-artifact@v4
+        with:
+          name: shower-calculator-public-dist
+          path: dist-public
 
       - name: Configure SSH
         env:
@@ -95,6 +118,7 @@ jobs:
           [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
           [[ "$DEPLOY_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
           [[ "$DEPLOY_PATH" =~ ^/var/www/[A-Za-z0-9._/-]+$ ]]
+          [[ "$PUBLIC_DEPLOY_PATH" =~ ^/var/www/[A-Za-z0-9._/-]+$ ]]
           [[ "$RELEASE_ID" =~ ^[0-9a-f]{40}$ ]]
 
           remote="$DEPLOY_USER@$DEPLOY_HOST"
@@ -110,10 +134,24 @@ jobs:
             "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' 5" \
             < deploy/activate-release.sh
 
+          public_release_path="$PUBLIC_DEPLOY_PATH/releases/$RELEASE_ID"
+          ssh "${ssh_options[@]}" "$remote" "mkdir -p '$public_release_path'"
+          rsync -az --delete \
+            --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+            -e "ssh -p $DEPLOY_PORT -o BatchMode=yes -o StrictHostKeyChecking=yes" \
+            dist-public/ "$remote:$public_release_path/"
+          ssh "${ssh_options[@]}" "$remote" \
+            "bash -s -- '$PUBLIC_DEPLOY_PATH' '$RELEASE_ID' 5" \
+            < deploy/activate-release.sh
+
       - name: Verify published version
         run: |
           set -Eeuo pipefail
           curl --fail --silent --show-error \
             --retry 5 --retry-delay 2 --retry-all-errors \
             "${PUBLIC_URL%/}/version.json" \
+            | grep -F "\"commit\":\"$GITHUB_SHA\""
+          curl --fail --silent --show-error \
+            --retry 5 --retry-delay 2 --retry-all-errors \
+            "${PUBLIC_CALCULATOR_URL%/}/version.json" \
             | grep -F "\"commit\":\"$GITHUB_SHA\""

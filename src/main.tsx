@@ -6,6 +6,7 @@ import PublicCalculator from './PublicCalculator.tsx'
 
 const isPublicCalculator = window.location.hostname === 'amalgama.cehcrm.ru'
   || window.location.pathname.startsWith('/public-calculator')
+  || window.location.pathname.startsWith('/calculator')
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -37,7 +38,7 @@ const removeLegacyServiceWorker = async () => {
   window.location.reload()
 }
 
-if ('serviceWorker' in navigator && import.meta.env.PROD && window.location.protocol.startsWith('http')) {
+if (!isPublicCalculator && 'serviceWorker' in navigator && import.meta.env.PROD && window.location.protocol.startsWith('http')) {
   window.addEventListener('load', () => {
     void removeLegacyServiceWorker().catch(() => undefined)
   })
