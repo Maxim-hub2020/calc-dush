@@ -2004,13 +2004,12 @@ type CustomerControlProps = {
 
 function CustomerControl({ customer, onChange }: CustomerControlProps) {
   return (
-    <details className="order-customer-control">
-      <summary className="order-customer-title">
+    <div className="order-customer-control">
+      <div className="order-customer-title">
         <UserRound size={18} aria-hidden="true" />
         <span>{customer.clientName || 'Добавить клиента'}</span>
         <small>{customer.clientPhone || 'Общий для всех позиций'}</small>
-        <ChevronDown size={17} aria-hidden="true" />
-      </summary>
+      </div>
       <div className="order-customer-fields">
         <label className="text-field">
           <span>Имя</span>
@@ -2034,7 +2033,7 @@ function CustomerControl({ customer, onChange }: CustomerControlProps) {
           <input value={customer.note} onChange={(event) => onChange({ note: event.target.value })} />
         </label>
       </div>
-    </details>
+    </div>
   )
 }
 
@@ -2047,21 +2046,13 @@ type DeliveryControlProps = {
 }
 
 function DeliveryControl({ delivery, kmRate, label = 'Доставка по КП', price, onChange }: DeliveryControlProps) {
-  const [expanded, setExpanded] = useState(() => window.matchMedia('(min-width: 768px)').matches)
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 768px)')
-    const update = () => setExpanded(media.matches)
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
   return (
-    <details className="order-delivery-control" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-      <summary className="order-delivery-title">
+    <div className="order-delivery-control">
+      <div className="order-delivery-title">
         <Truck size={18} aria-hidden="true" />
         <span>{label}</span>
         <strong>{money(price)}</strong>
-        <ChevronDown size={17} aria-hidden="true" />
-      </summary>
+      </div>
       <div className="order-delivery-body">
         <div className="segmented order-delivery-modes" role="group" aria-label="Тип доставки">
           <button className={!delivery.enabled ? 'is-active' : ''} type="button" onClick={() => onChange({ enabled: false })}>Без доставки</button>
@@ -2076,7 +2067,7 @@ function DeliveryControl({ delivery, kmRate, label = 'Доставка по КП
           </label>
         ) : null}
       </div>
-    </details>
+    </div>
   )
 }
 
