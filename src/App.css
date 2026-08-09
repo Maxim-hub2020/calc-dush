@@ -4313,16 +4313,16 @@ body { padding: 0; background: #f7f7f4; }
 .position-tab-select strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .position-tab-select small { color: #64748b; font-size: 12px; }
 
-.order-delivery-control { grid-column: 2; grid-row: 2; align-self: center; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 11px; background: #f8fafc; }
+.order-delivery-control { min-width: 0; display: block; grid-column: 2; grid-row: 2; align-self: center; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 11px; background: #f8fafc; }
 .order-delivery-title { min-height: 28px; display: grid; grid-template-columns: 20px minmax(0,1fr) auto 18px; align-items: center; gap: 8px; margin: 0; list-style: none; cursor: pointer; }
 .order-delivery-title::-webkit-details-marker { display: none; }
 .order-delivery-title span { font-size: 13px; font-weight: 750; }
 .order-delivery-title strong { color: #1f2937; font-size: 13px; }
 .order-delivery-control[open] .order-delivery-title > svg:last-child { transform: rotate(180deg); }
-.order-delivery-body { padding-top: 8px; }
+.order-delivery-body { min-width: 0; padding-top: 8px; }
 .order-delivery-modes { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .order-delivery-modes button { min-height: 40px; padding-inline: 8px; overflow-wrap: anywhere; font-size: 12px; }
-.order-customer-control { grid-column: 3; grid-row: 2; align-self: center; padding: 0; border: 1px solid #e2e8f0; border-radius: 11px; background: white; }
+.order-customer-control { min-width: 0; display: block; grid-column: 3; grid-row: 2; align-self: center; padding: 0; border: 1px solid #e2e8f0; border-radius: 11px; background: white; }
 .order-customer-title { min-height: 48px; padding: 0 12px; display: grid; grid-template-columns: 20px minmax(0,1fr) auto 18px; align-items: center; gap: 8px; list-style: none; cursor: pointer; }
 .order-customer-title::-webkit-details-marker { display: none; }
 .order-customer-title span { color: #1f2937; font-size: 13px; font-weight: 760; }
