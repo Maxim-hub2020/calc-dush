@@ -172,6 +172,11 @@ export const saveServerCatalogs = async (
   return response.json() as Promise<ServerCatalogs>
 }
 
+export const loadServerQuotes = async (): Promise<ServerQuoteArchive> => {
+  const response = await authenticatedRequest('/calculator-quotes/')
+  return response.json() as Promise<ServerQuoteArchive>
+}
+
 export const syncServerQuotes = async (quotes: Quote[]): Promise<ServerQuoteArchive> => {
   const response = await authenticatedRequest('/calculator-quotes/', {
     method: 'POST',

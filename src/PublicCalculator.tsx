@@ -206,7 +206,7 @@ export default function PublicCalculator() {
       calculation_id: crypto.randomUUID().replaceAll('-', ''),
       amount,
       price_version: 'local',
-      message: 'Точная стоимость подтверждается менеджером после уточнения деталей.',
+      message: 'Это расчётная стоимость, максимально близкая к окончательной. Если параметры указаны верно, после проверки и замера сумма обычно меняется не более чем на ±10%.',
     }
   }
 
@@ -394,9 +394,9 @@ export default function PublicCalculator() {
 
                 {step === 3 ? (
                   <div className="public-delivery">
-                    <button className={!delivery.enabled ? 'is-active' : ''} type="button" onClick={() => setDelivery(normalizeQuoteDelivery({ enabled: false }))}><Truck /><span><strong>Без доставки</strong><small>Самовывоз</small></span></button>
-                    <button className={delivery.enabled && delivery.zone === 'inside' ? 'is-active' : ''} type="button" onClick={() => setDelivery(normalizeQuoteDelivery({ enabled: true, zone: 'inside' }))}><Truck /><span><strong>{config.delivery.insideLabel}</strong><small>Фиксированная стоимость</small></span></button>
-                    <button className={delivery.enabled && delivery.zone === 'outside' ? 'is-active' : ''} type="button" onClick={() => setDelivery(normalizeQuoteDelivery({ enabled: true, zone: 'outside', km: delivery.km }))}><Truck /><span><strong>{config.delivery.outsideLabel}</strong><small>Город + километраж</small></span></button>
+                    <button className={!delivery.enabled ? 'is-active' : ''} type="button" onClick={() => setDelivery(normalizeQuoteDelivery({ enabled: false }))}><Truck /><span><strong>Без доставки</strong></span></button>
+                    <button className={delivery.enabled && delivery.zone === 'inside' ? 'is-active' : ''} type="button" onClick={() => setDelivery(normalizeQuoteDelivery({ enabled: true, zone: 'inside' }))}><Truck /><span><strong>{config.delivery.insideLabel}</strong></span></button>
+                    <button className={delivery.enabled && delivery.zone === 'outside' ? 'is-active' : ''} type="button" onClick={() => setDelivery(normalizeQuoteDelivery({ enabled: true, zone: 'outside', km: delivery.km }))}><Truck /><span><strong>{config.delivery.outsideLabel}</strong></span></button>
                     {delivery.enabled && delivery.zone === 'outside' ? <DimensionStepper label="Расстояние за городом, км" value={delivery.km} step={1} onChange={(km) => setDelivery(normalizeQuoteDelivery({ ...delivery, km }))} /> : null}
                   </div>
                 ) : null}
@@ -411,7 +411,7 @@ export default function PublicCalculator() {
           ) : (
             <section className="public-result-card">
               <div className="public-result-summary">
-                <span>Ориентировочная стоимость</span>
+                <span>Расчётная стоимость</span>
                 <strong>{money(result.amount)}</strong>
                 <p>{result.message}</p>
                 <button type="button" onClick={() => { setResult(null); setStep(0); setStarted(true); setSent(false) }}><ArrowLeft /> Изменить параметры</button>

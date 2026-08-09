@@ -120,6 +120,7 @@ import {
   clearServerSession,
   deleteServerQuote,
   loadServerCatalogs,
+  loadServerQuotes,
   loadServerSession,
   loginToServer,
   saveServerCatalogs,
@@ -442,6 +443,32 @@ function App() {
       cancelled = true
     }
   }, [serverSession])
+  useEffect(() => {
+    let cancelled = false
+    if (activeTab !== 'archive' || !serverSession) return undefined
+
+    setQuoteSyncStatus('loading')
+    setQuoteSyncMessage('')
+    void loadServerQuotes()
+      .then((remote) => {
+        if (cancelled) return
+        setQuotes(mergeQuoteArchives(remote.quotes, quotesRef.current, deletedQuoteIdsRef.current))
+        setQuoteSyncStatus('synced')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        if (error instanceof ServerSyncError && error.code === 'auth') {
+          clearServerSession()
+          setServerSession(null)
+        }
+        setQuoteSyncStatus('error')
+        setQuoteSyncMessage(error instanceof Error ? error.message : 'Не удалось обновить архив КП')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, serverSession])
   useEffect(() => {
     let cancelled = false
     if (!serverSession) {
