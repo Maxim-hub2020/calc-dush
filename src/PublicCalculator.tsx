@@ -62,7 +62,7 @@ const createFallbackConfig = (): PublicConfig => ({
       .filter((item) => item.category !== 'delivery' && item.visibleInQuote)
       .map(({ id, label }) => ({ id, label })),
   },
-  delivery: { insideLabel: 'По городу', outsideLabel: 'За городом' },
+  delivery: { insideLabel: 'По г. Ростов-на-Дону', outsideLabel: 'За городом' },
   legal: { consent_url: '/privacy', privacy_url: '/privacy' },
 })
 
