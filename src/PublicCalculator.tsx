@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,7 +8,6 @@ import {
   Plus,
   ScanLine,
   Send,
-  ShieldCheck,
   ShowerHead,
   Truck,
 } from 'lucide-react'
@@ -16,7 +15,6 @@ import { calculateQuote, calculateQuoteDelivery, money, normalizeQuoteDelivery, 
 import { calculateMirrorQuote, createInitialMirrorForm, type MirrorForm } from './mirrorCalculator'
 import { defaultMirrorCatalog } from './mirrorPricing'
 import { defaultCatalog } from './pricing'
-import mirrorVisualization from './assets/mirror-visualization.png'
 import './PublicCalculator.css'
 
 type PublicProduct = 'shower' | 'mirror'
@@ -100,9 +98,28 @@ const productSteps: Record<PublicProduct, string[]> = {
   mirror: ['Размеры', 'Материал', 'Работы', 'Доставка'],
 }
 
+const formatPublicPhone = (value: string) => {
+  let digits = value.replace(/\D/g, '')
+  if (digits.startsWith('7') || digits.startsWith('8')) digits = digits.slice(1)
+  digits = digits.slice(0, 10)
+
+  let formatted = '+7'
+  if (digits.length > 0) formatted += ` (${digits.slice(0, 3)}`
+  if (digits.length >= 3) formatted += ')'
+  if (digits.length > 3) formatted += ` ${digits.slice(3, 6)}`
+  if (digits.length > 6) formatted += `-${digits.slice(6, 8)}`
+  if (digits.length > 8) formatted += `-${digits.slice(8, 10)}`
+  return formatted
+}
+
 export default function PublicCalculator() {
   const requestedProduct = new URLSearchParams(window.location.search).get('product')
-  const [product, setProduct] = useState<PublicProduct>(requestedProduct === 'mirror' ? 'mirror' : 'shower')
+  const isEmbedded = new URLSearchParams(window.location.search).get('embed') === '1'
+  const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(
+    requestedProduct === 'mirror' ? 'mirror' : requestedProduct === 'shower' ? 'shower' : null,
+  )
+  const product = selectedProduct ?? 'shower'
+  const [started, setStarted] = useState(false)
   const [config, setConfig] = useState<PublicConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [step, setStep] = useState(0)
@@ -113,7 +130,7 @@ export default function PublicCalculator() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
-  const [contact, setContact] = useState({ name: '', phone: '', email: '', company: '' })
+  const [contact, setContact] = useState({ name: '', phone: '+7', company: '' })
 
   useEffect(() => {
     let cancelled = false
@@ -141,17 +158,12 @@ export default function PublicCalculator() {
     return () => { cancelled = true }
   }, [])
 
-  const construction = useMemo(
-    () => defaultCatalog.constructions.find((item) => item.id === showerForm.constructionId) ?? defaultCatalog.constructions[0],
-    [showerForm.constructionId],
-  )
   const publicConstruction = config?.shower.constructions.find((item) => item.id === showerForm.constructionId)
     ?? config?.shower.constructions[0]
   const steps = productSteps[product]
-  const activeImage = product === 'shower' ? construction.imageUrl : mirrorVisualization
 
   const changeProduct = (next: PublicProduct) => {
-    setProduct(next)
+    setSelectedProduct(next)
     setStep(0)
     setResult(null)
     setSent(false)
@@ -271,7 +283,7 @@ export default function PublicCalculator() {
   }
 
   return (
-    <div className="public-shell">
+    <div className={`public-shell${isEmbedded ? ' is-embedded' : ''}`}>
       <header className="public-header">
         <a className="public-brand" href="/" aria-label="Амальгама">
           <span aria-hidden="true">A</span>
@@ -285,27 +297,44 @@ export default function PublicCalculator() {
           <header className="public-intro">
             <div>
               <span>Онлайн-расчёт</span>
-              <h1>Рассчитайте изделие под ваши размеры</h1>
-              <p>Выберите параметры. Итоговая стоимость уточняется менеджером после замера.</p>
-            </div>
-            <div className="public-product-switch" role="group" aria-label="Тип изделия">
-              <button className={product === 'shower' ? 'is-active' : ''} type="button" onClick={() => changeProduct('shower')}>
-                <ShowerHead /> Душевая
-              </button>
-              <button className={product === 'mirror' ? 'is-active' : ''} type="button" onClick={() => changeProduct('mirror')}>
-                <ScanLine /> Зеркало
-              </button>
+              <h1>Рассчитайте стоимость изделия</h1>
+              <p>Ответьте на несколько вопросов. Точную стоимость менеджер подтвердит после замера.</p>
             </div>
           </header>
 
-          {!result ? (
+          {!started ? (
+            <section className="public-start-card">
+              <div className="public-progress-head">
+                <div><span>Шаг 1 из 5</span><strong>Что рассчитываем?</strong></div>
+                <span>20%</span>
+              </div>
+              <div className="public-progress"><i style={{ width: '20%' }} /></div>
+              <div className="public-product-choice" role="group" aria-label="Тип изделия">
+                <button className={selectedProduct === 'shower' ? 'is-active' : ''} type="button" onClick={() => changeProduct('shower')}>
+                  <span><ShowerHead /></span>
+                  <strong>Душевая</strong>
+                  <small>Перегородки, двери и ограждения</small>
+                  {selectedProduct === 'shower' ? <Check /> : null}
+                </button>
+                <button className={selectedProduct === 'mirror' ? 'is-active' : ''} type="button" onClick={() => changeProduct('mirror')}>
+                  <span><ScanLine /></span>
+                  <strong>Зеркало</strong>
+                  <small>По размеру, с подсветкой и работами</small>
+                  {selectedProduct === 'mirror' ? <Check /> : null}
+                </button>
+              </div>
+              <footer className="public-step-actions public-start-actions">
+                <button className="public-next" disabled={!selectedProduct} type="button" onClick={() => setStarted(true)}>Далее <ArrowRight /></button>
+              </footer>
+            </section>
+          ) : !result ? (
             <div className="public-calculator-grid">
               <section className="public-config-card">
                 <div className="public-progress-head">
-                  <div><span>Шаг {step + 1} из {steps.length}</span><strong>{steps[step]}</strong></div>
-                  <span>{Math.round((step + 1) / steps.length * 100)}%</span>
+                  <div><span>Шаг {step + 2} из {steps.length + 1}</span><strong>{steps[step]}</strong></div>
+                  <span>{Math.round((step + 2) / (steps.length + 1) * 100)}%</span>
                 </div>
-                <div className="public-progress"><i style={{ width: `${(step + 1) / steps.length * 100}%` }} /></div>
+                <div className="public-progress"><i style={{ width: `${(step + 2) / (steps.length + 1) * 100}%` }} /></div>
 
                 {product === 'shower' && step === 0 ? (
                   <div className="public-type-grid">
@@ -374,20 +403,10 @@ export default function PublicCalculator() {
 
                 {error ? <p className="public-error" role="alert">{error}</p> : null}
                 <footer className="public-step-actions">
-                  <button className="public-back" disabled={step === 0} type="button" onClick={() => setStep((current) => current - 1)}><ArrowLeft /> Назад</button>
+                  <button className="public-back" type="button" onClick={() => step === 0 ? setStarted(false) : setStep((current) => current - 1)}><ArrowLeft /> Назад</button>
                   <button className="public-next" disabled={busy} type="button" onClick={next}>{busy ? <LoaderCircle className="is-spinning" /> : step === steps.length - 1 ? 'Рассчитать стоимость' : 'Далее'}{!busy ? <ArrowRight /> : null}</button>
                 </footer>
               </section>
-
-              <aside className="public-preview-card">
-                <div className="public-preview-image"><img alt={product === 'shower' ? construction.title : 'Зеркало'} src={activeImage} /></div>
-                <div className="public-preview-copy">
-                  <span>Ваш выбор</span>
-                  <strong>{product === 'shower' ? publicConstruction?.title : 'Зеркало на заказ'}</strong>
-                  <small>{product === 'shower' ? `${Object.values(showerForm.dimensions).join(' × ')} мм` : `${mirrorForm.width} × ${mirrorForm.height} мм`}</small>
-                </div>
-                <div className="public-trust"><ShieldCheck /><span>Гарантия на изделие 1 год</span></div>
-              </aside>
             </div>
           ) : (
             <section className="public-result-card">
@@ -395,7 +414,7 @@ export default function PublicCalculator() {
                 <span>Ориентировочная стоимость</span>
                 <strong>{money(result.amount)}</strong>
                 <p>{result.message}</p>
-                <button type="button" onClick={() => { setResult(null); setStep(0); setSent(false) }}><ArrowLeft /> Изменить параметры</button>
+                <button type="button" onClick={() => { setResult(null); setStep(0); setStarted(true); setSent(false) }}><ArrowLeft /> Изменить параметры</button>
               </div>
               {sent ? (
                 <div className="public-success"><span><Check /></span><h2>Расчёт отправлен</h2><p>Менеджер свяжется с вами, уточнит детали и подготовит точное предложение.</p></div>
@@ -403,8 +422,7 @@ export default function PublicCalculator() {
                 <form className="public-lead-form" onSubmit={(event) => void submitLead(event)}>
                   <div><span>Получить точный расчёт</span><h2>Оставьте контакты</h2><p>Закрепим параметры и ответим по срокам изготовления.</p></div>
                   <label><span>Имя</span><input required minLength={2} autoComplete="name" value={contact.name} onChange={(event) => setContact((current) => ({ ...current, name: event.target.value }))} /></label>
-                  <label><span>Телефон</span><input required minLength={10} inputMode="tel" autoComplete="tel" placeholder="+7 999 000-00-00" value={contact.phone} onChange={(event) => setContact((current) => ({ ...current, phone: event.target.value }))} /></label>
-                  <label><span>Email, необязательно</span><input type="email" autoComplete="email" value={contact.email} onChange={(event) => setContact((current) => ({ ...current, email: event.target.value }))} /></label>
+                  <label><span>Телефон</span><input required type="tel" inputMode="tel" autoComplete="tel" pattern="\+7 \([0-9]{3}\) [0-9]{3}-[0-9]{2}-[0-9]{2}" placeholder="+7 (999) 000-00-00" value={contact.phone} onFocus={(event) => event.currentTarget.setSelectionRange(contact.phone.length, contact.phone.length)} onChange={(event) => setContact((current) => ({ ...current, phone: formatPublicPhone(event.target.value) }))} /></label>
                   <input className="public-honeypot" tabIndex={-1} autoComplete="off" aria-hidden="true" value={contact.company} onChange={(event) => setContact((current) => ({ ...current, company: event.target.value }))} />
                   {error ? <p className="public-error" role="alert">{error}</p> : null}
                   <button className="public-submit" disabled={busy} type="submit">{busy ? <LoaderCircle className="is-spinning" /> : <Send />} Отправить расчёт менеджеру</button>
