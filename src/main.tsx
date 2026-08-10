@@ -14,32 +14,30 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 
-const removeLegacyServiceWorker = async () => {
-  const hadController = Boolean(navigator.serviceWorker.controller)
-  const registrations = await navigator.serviceWorker.getRegistrations()
+const registerServiceWorker = async () => {
+  let isReloading = false
+  document.documentElement.dataset.pwaStatus = 'installing'
 
-  await Promise.all(registrations.map((registration) => registration.unregister()))
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (isReloading) return
+    isReloading = true
+    window.location.reload()
+  })
 
-  if ('caches' in window) {
-    const cacheNames = await caches.keys()
-    await Promise.all(
-      cacheNames
-        .filter((cacheName) => cacheName.startsWith('shower-calc-'))
-        .map((cacheName) => caches.delete(cacheName)),
-    )
-  }
+  const registration = await navigator.serviceWorker.register('/sw.js', {
+    scope: '/',
+    updateViaCache: 'none',
+  })
 
-  if (!hadController) return
-
-  const cleanupKey = 'shower-calc-service-worker-removed'
-  if (sessionStorage.getItem(cleanupKey) === 'true') return
-
-  sessionStorage.setItem(cleanupKey, 'true')
-  window.location.reload()
+  await registration.update()
+  await navigator.serviceWorker.ready
+  document.documentElement.dataset.pwaStatus = 'ready'
 }
 
 if (!isPublicCalculator && 'serviceWorker' in navigator && import.meta.env.PROD && window.location.protocol.startsWith('http')) {
   window.addEventListener('load', () => {
-    void removeLegacyServiceWorker().catch(() => undefined)
+    void registerServiceWorker().catch(() => {
+      document.documentElement.dataset.pwaStatus = 'failed'
+    })
   })
 }

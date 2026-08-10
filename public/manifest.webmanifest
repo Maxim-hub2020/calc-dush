@@ -1,17 +1,42 @@
 {
-  "name": "Калькулятор душевых КП",
-  "short_name": "Душевые КП",
+  "id": "/",
+  "name": "Амальгама — калькулятор КП",
+  "short_name": "Амальгама КП",
+  "description": "Расчёт душевых и зеркал, подготовка и архив коммерческих предложений.",
+  "lang": "ru",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#ffffff",
-  "theme_color": "#ffffff",
-  "orientation": "portrait",
+  "theme_color": "#2563eb",
+  "orientation": "any",
+  "categories": ["business", "productivity"],
   "icons": [
+    {
+      "src": "/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
     {
       "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }
