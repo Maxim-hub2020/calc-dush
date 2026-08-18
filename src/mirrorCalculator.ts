@@ -5,6 +5,7 @@ import {
   type MirrorMaterial,
   type MirrorPricingCatalog,
   type MirrorService,
+  type MirrorServiceGroup,
   type MirrorUnit,
 } from './mirrorPricing'
 
@@ -14,11 +15,17 @@ export type MirrorOptionSelection = {
   quantity: number
 }
 
+export type MirrorGroupSelection = {
+  id: string
+  groupId: string
+}
+
 export type MirrorForm = {
   width: number
   height: number
   materialId: string
   options: MirrorOptionSelection[]
+  groups?: MirrorGroupSelection[]
   managerEnabled: boolean
   discountEnabled: boolean
   discountPercent: number
@@ -38,6 +45,9 @@ export type MirrorCalculatedOption = {
   total: number
   category: MirrorService['category']
   visibleInQuote: boolean
+  groupId?: string
+  groupLabel?: string
+  groupSelectionId?: string
 }
 
 const roundToTen = (value: number) => Math.round(value / 10) * 10
@@ -48,11 +58,15 @@ export const getMirrorMaterial = (catalog: MirrorPricingCatalog, id: string): Mi
 export const getMirrorService = (catalog: MirrorPricingCatalog, id: string): MirrorService =>
   catalog.services.find((item) => item.id === id) ?? catalog.services[0]
 
+export const getMirrorServiceGroup = (catalog: MirrorPricingCatalog, id: string): MirrorServiceGroup | undefined =>
+  catalog.groups.find((item) => item.id === id)
+
 export const createInitialMirrorForm = (catalog: MirrorPricingCatalog, customer?: Partial<MirrorForm>): MirrorForm => ({
   width: 800,
   height: 1200,
   materialId: catalog.materials.find((item) => item.id === 'mirror-silver-4')?.id ?? catalog.materials[0].id,
   options: [],
+  groups: [],
   managerEnabled: false,
   discountEnabled: customer?.discountEnabled ?? false,
   discountPercent: customer?.discountPercent ?? catalog.settings.discountPercent,
@@ -65,6 +79,7 @@ export const createInitialMirrorForm = (catalog: MirrorPricingCatalog, customer?
 export const cloneMirrorForm = (form: MirrorForm): MirrorForm => ({
   ...form,
   options: form.options.map((option) => ({ ...option })),
+  groups: (form.groups ?? []).map((group) => ({ ...group })),
 })
 
 export const mirrorArea = (form: Pick<MirrorForm, 'width' | 'height'>) =>
@@ -74,15 +89,18 @@ export const mirrorPerimeter = (form: Pick<MirrorForm, 'width' | 'height'>) =>
   2 * (Math.max(0, Number(form.width) || 0) + Math.max(0, Number(form.height) || 0)) / 1000
 
 export const getMirrorOptionQuantity = (form: MirrorForm, service: MirrorService, requested: number) => {
-  if (service.unit === 'area') return mirrorArea(form)
-  if (service.unit === 'perimeter') return mirrorPerimeter(form)
-  return Math.max(0, Number(requested) || 0)
+  const quantity = Math.max(0, Number(requested) || 0)
+  if (service.unit === 'area') return mirrorArea(form) * quantity
+  if (service.unit === 'perimeter') return mirrorPerimeter(form) * quantity
+  return quantity
 }
 
-export const getMirrorCalculatedOptions = (
+const calculateMirrorOption = (
   catalog: MirrorPricingCatalog,
   form: MirrorForm,
-): MirrorCalculatedOption[] => form.options.map((selection) => {
+  selection: MirrorOptionSelection,
+  group?: { id: string; label: string; selectionId: string },
+): MirrorCalculatedOption => {
   const service = getMirrorService(catalog, selection.serviceId)
   const quantity = getMirrorOptionQuantity(form, service, selection.quantity)
   return {
@@ -95,8 +113,37 @@ export const getMirrorCalculatedOptions = (
     total: service.price * quantity,
     category: service.category,
     visibleInQuote: service.visibleInQuote,
+    groupId: group?.id,
+    groupLabel: group?.label,
+    groupSelectionId: group?.selectionId,
   }
-})
+}
+
+export const getMirrorCalculatedOptions = (
+  catalog: MirrorPricingCatalog,
+  form: MirrorForm,
+): MirrorCalculatedOption[] => {
+  const directOptions = form.options.map((selection) => calculateMirrorOption(catalog, form, selection))
+  const groupOptions = (form.groups ?? []).flatMap((selection) => {
+    const group = getMirrorServiceGroup(catalog, selection.groupId)
+    if (!group) return []
+    return group.items.map((item) => calculateMirrorOption(
+      catalog,
+      form,
+      { id: `${selection.id}:${item.id}`, serviceId: item.serviceId, quantity: item.quantity },
+      { id: group.id, label: group.label, selectionId: selection.id },
+    ))
+  })
+  return [...directOptions, ...groupOptions]
+}
+
+export const getMirrorCalculatedGroupTotal = (
+  catalog: MirrorPricingCatalog,
+  form: MirrorForm,
+  selectionId: string,
+) => getMirrorCalculatedOptions(catalog, form)
+  .filter((option) => option.groupSelectionId === selectionId)
+  .reduce((sum, option) => sum + option.total, 0)
 
 export const getMirrorTitle = (form: Pick<MirrorForm, 'width' | 'height'>) =>
   `Зеркало ${Math.max(0, Number(form.width) || 0)} × ${Math.max(0, Number(form.height) || 0)} мм`

@@ -15,6 +15,19 @@ export type MirrorService = {
   visibleInQuote: boolean
 }
 
+export type MirrorServiceGroupItem = {
+  id: string
+  serviceId: string
+  quantity: number
+}
+
+export type MirrorServiceGroup = {
+  id: string
+  label: string
+  items: MirrorServiceGroupItem[]
+  visibleInQuote: boolean
+}
+
 export type MirrorPricingSettings = {
   materialMarkupPercent: number
   serviceMarkupPercent: number
@@ -26,6 +39,7 @@ export type MirrorPricingSettings = {
 export type MirrorPricingCatalog = {
   materials: MirrorMaterial[]
   services: MirrorService[]
+  groups: MirrorServiceGroup[]
   settings: MirrorPricingSettings
 }
 
@@ -99,6 +113,7 @@ export const defaultMirrorCatalog: MirrorPricingCatalog = {
     service('mdf-frame', 'Рама МДФ', 5000, 'perimeter', true),
     service('bevel-10', 'Фацет 10 мм', 200, 'perimeter', true),
   ],
+  groups: [],
   settings: {
     materialMarkupPercent: 40,
     serviceMarkupPercent: 10,

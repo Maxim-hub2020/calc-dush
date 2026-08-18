@@ -50,6 +50,7 @@ import {
   createInitialForm,
   createQuote,
   getConstruction,
+  getConstructionHardwareComponents,
   getOption,
   getPublicProductPrice,
   getQuoteCustomer,
@@ -85,6 +86,7 @@ import {
   calculateMirrorQuote,
   cloneMirrorForm,
   createInitialMirrorForm,
+  getMirrorCalculatedGroupTotal,
   getMirrorCalculatedOptions,
   getMirrorMaterial,
   getMirrorService,
@@ -96,13 +98,16 @@ import {
   type MirrorMaterial,
   type MirrorPricingCatalog,
   type MirrorService,
+  type MirrorServiceGroup,
 } from './mirrorPricing'
 import {
   createDefaultDimensions,
   defaultCatalog,
   type Construction,
+  type ConstructionHardwareComponent,
   type PriceOption,
   type PricingCatalog,
+  type ShowerHardwareItem,
 } from './pricing'
 import {
   loadCatalog,
@@ -595,7 +600,15 @@ function App() {
         const validOptions = position.form.options.filter((option) => (
           mirrorCatalog.services.some((service) => service.id === option.serviceId)
         ))
-        if (materialExists && validOptions.length === position.form.options.length) return position
+        const selectedGroups = position.form.groups ?? []
+        const validGroups = selectedGroups.filter((selection) => (
+          mirrorCatalog.groups.some((group) => group.id === selection.groupId)
+        ))
+        if (
+          materialExists
+          && validOptions.length === position.form.options.length
+          && validGroups.length === selectedGroups.length
+        ) return position
         changed = true
         return {
           ...position,
@@ -603,6 +616,7 @@ function App() {
             ...position.form,
             materialId: materialExists ? position.form.materialId : mirrorCatalog.materials[0].id,
             options: validOptions,
+            groups: validGroups,
           },
         }
       })
@@ -1280,6 +1294,7 @@ function CalculatorScreen({
   const glass = getOption(catalog.glass, form.glassId)
   const hardware = getOption(catalog.hardware, form.hardwareId)
   const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
+  const hardwareComponents = getConstructionHardwareComponents(catalog, construction)
   const [activeSection, setActiveSection] = useState<ConfigSectionId>('construction')
 
   return (
@@ -1373,12 +1388,19 @@ function CalculatorScreen({
             items={catalog.hardware}
             onChange={(hardwareId) => onForm({ hardwareId })}
           />
-          <OptionSelect
-            label="Класс"
-            value={form.hardwareClassId}
-            items={catalog.hardwareClass}
-            onChange={(hardwareClassId) => onForm({ hardwareClassId })}
-          />
+          {hardwareComponents.length > 0 ? (
+            <div className="construction-composition-summary">
+              <span>Состав конструкции</span>
+              <strong>{hardwareComponents.length} позиций</strong>
+            </div>
+          ) : (
+            <OptionSelect
+              label="Класс"
+              value={form.hardwareClassId}
+              items={catalog.hardwareClass}
+              onChange={(hardwareClassId) => onForm({ hardwareClassId })}
+            />
+          )}
         </div>
       </section>
       ) : null}
@@ -1387,7 +1409,7 @@ function CalculatorScreen({
       <section className="section-block">
         <div className="section-title">
           <h2>Услуги</h2>
-          <span>{hardware.label}, {hardwareClass.label}</span>
+          <span>{hardware.label}, {hardwareComponents.length > 0 ? `${hardwareComponents.length} позиций` : hardwareClass.label}</span>
         </div>
         <div className="service-list">
           <ToggleRow
@@ -1522,6 +1544,7 @@ function MirrorCalculatorScreen({
   const material = getMirrorMaterial(catalog, form.materialId)
   const calculatedOptions = getMirrorCalculatedOptions(catalog, form)
   const selectedServices = new Set(form.options.map((option) => option.serviceId))
+  const selectedGroups = form.groups ?? []
   const availableServices = catalog.services.filter((item) => item.category !== 'delivery')
 
   const addOption = () => {
@@ -1538,6 +1561,15 @@ function MirrorCalculatorScreen({
 
   const deleteOption = (id: string) => {
     onForm({ options: form.options.filter((option) => option.id !== id) })
+  }
+
+  const toggleGroup = (groupId: string) => {
+    const selected = selectedGroups.find((selection) => selection.groupId === groupId)
+    onForm({
+      groups: selected
+        ? selectedGroups.filter((selection) => selection.id !== selected.id)
+        : [...selectedGroups, { id: crypto.randomUUID(), groupId }],
+    })
   }
 
   return (
@@ -1619,7 +1651,33 @@ function MirrorCalculatorScreen({
           {activeSection === 'options' ? (
             <section className="section-block mirror-options-section">
               <div className="section-title">
-                <h2>Работы и услуги</h2>
+                <h2>Работы и комплекты</h2>
+                <span>{selectedGroups.length + form.options.length} выбрано</span>
+              </div>
+              {catalog.groups.length > 0 ? (
+                <div className="mirror-group-options" aria-label="Группы работ">
+                  {catalog.groups.map((group) => {
+                    const selection = selectedGroups.find((item) => item.groupId === group.id)
+                    return (
+                      <button
+                        aria-pressed={Boolean(selection)}
+                        className={selection ? 'is-selected' : ''}
+                        key={group.id}
+                        type="button"
+                        onClick={() => toggleGroup(group.id)}
+                      >
+                        <span>
+                          <strong>{group.label}</strong>
+                          <small>{group.items.length} позиций в составе</small>
+                        </span>
+                        <b>{selection ? money(getMirrorCalculatedGroupTotal(catalog, form, selection.id)) : 'Добавить'}</b>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
+              <div className="mirror-options-subhead">
+                <strong>Отдельные работы</strong>
                 <button className="section-add-button" type="button" onClick={addOption}>
                   <ListPlus size={17} />
                   Добавить
@@ -3361,10 +3419,12 @@ type PriceSectionId =
   | 'glass'
   | 'hardware'
   | 'hardwareClass'
+  | 'hardwareItems'
   | 'constructions'
   | 'services'
   | 'showerSettings'
   | 'mirrorMaterials'
+  | 'mirrorGroups'
   | 'mirrorServices'
   | 'mirrorSettings'
 
@@ -3530,6 +3590,36 @@ function PricesScreen({
     setDraftCatalog({ ...catalog, [group]: catalog[group].filter((item) => item.id !== id) })
   }
 
+  const updateHardwareItem = (id: string, patch: Partial<Pick<ShowerHardwareItem, 'label' | 'price'>>) => {
+    setDraftCatalog({
+      ...catalog,
+      hardwareItems: catalog.hardwareItems.map((item) => item.id === id ? { ...item, ...patch } : item),
+    })
+  }
+
+  const addHardwareItem = () => {
+    setDraftCatalog({
+      ...catalog,
+      hardwareItems: [
+        ...catalog.hardwareItems,
+        { id: `custom-${crypto.randomUUID()}`, label: 'Новая фурнитура', price: 0 },
+      ],
+    })
+  }
+
+  const deleteHardwareItem = (id: string) => {
+    if (catalog.hardwareItems.length <= 1) return
+    setDraftCatalog({
+      ...catalog,
+      hardwareItems: catalog.hardwareItems.filter((item) => item.id !== id),
+      constructions: catalog.constructions.map((construction) => ({
+        ...construction,
+        hardwareComponents: (construction.hardwareComponents ?? [])
+          .filter((component) => component.hardwareItemId !== id),
+      })),
+    })
+  }
+
   const updateConstruction = (
     id: string,
     patch: Partial<Pick<Construction, 'basePrice' | 'installationPrice' | 'shortTitle' | 'title'>>,
@@ -3555,6 +3645,7 @@ function PricesScreen({
           basePrice: 0,
           installationPrice: 0,
           fields: template.fields.map((field) => ({ ...field })),
+          hardwareComponents: [],
         },
       ],
     })
@@ -3565,6 +3656,54 @@ function PricesScreen({
     setDraftCatalog({
       ...catalog,
       constructions: catalog.constructions.filter((item) => item.id !== id),
+    })
+  }
+
+  const addConstructionHardware = (constructionId: string) => {
+    const hardwareItem = catalog.hardwareItems[0]
+    if (!hardwareItem) return
+    setDraftCatalog({
+      ...catalog,
+      constructions: catalog.constructions.map((construction) => construction.id === constructionId
+        ? {
+            ...construction,
+            hardwareComponents: [
+              ...(construction.hardwareComponents ?? []),
+              { id: crypto.randomUUID(), hardwareItemId: hardwareItem.id, quantity: 1 },
+            ],
+          }
+        : construction),
+    })
+  }
+
+  const updateConstructionHardware = (
+    constructionId: string,
+    componentId: string,
+    patch: Partial<Pick<ConstructionHardwareComponent, 'hardwareItemId' | 'quantity'>>,
+  ) => {
+    setDraftCatalog({
+      ...catalog,
+      constructions: catalog.constructions.map((construction) => construction.id === constructionId
+        ? {
+            ...construction,
+            hardwareComponents: (construction.hardwareComponents ?? []).map((component) => (
+              component.id === componentId ? { ...component, ...patch } : component
+            )),
+          }
+        : construction),
+    })
+  }
+
+  const deleteConstructionHardware = (constructionId: string, componentId: string) => {
+    setDraftCatalog({
+      ...catalog,
+      constructions: catalog.constructions.map((construction) => construction.id === constructionId
+        ? {
+            ...construction,
+            hardwareComponents: (construction.hardwareComponents ?? [])
+              .filter((component) => component.id !== componentId),
+          }
+        : construction),
     })
   }
 
@@ -3629,6 +3768,78 @@ function PricesScreen({
     setDraftMirrorCatalog({
       ...mirrorCatalog,
       services: mirrorCatalog.services.filter((item) => item.id !== id),
+      groups: mirrorCatalog.groups.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => item.serviceId !== id),
+      })),
+    })
+  }
+
+  const updateMirrorGroup = (id: string, patch: Partial<Pick<MirrorServiceGroup, 'label' | 'visibleInQuote'>>) => {
+    setDraftMirrorCatalog({
+      ...mirrorCatalog,
+      groups: mirrorCatalog.groups.map((group) => group.id === id ? { ...group, ...patch } : group),
+    })
+  }
+
+  const addMirrorGroup = () => {
+    setDraftMirrorCatalog({
+      ...mirrorCatalog,
+      groups: [
+        ...mirrorCatalog.groups,
+        {
+          id: `custom-${crypto.randomUUID()}`,
+          label: 'Новая группа работ',
+          items: [],
+          visibleInQuote: true,
+        },
+      ],
+    })
+  }
+
+  const deleteMirrorGroup = (id: string) => {
+    setDraftMirrorCatalog({
+      ...mirrorCatalog,
+      groups: mirrorCatalog.groups.filter((group) => group.id !== id),
+    })
+  }
+
+  const addMirrorGroupItem = (groupId: string) => {
+    const service = mirrorCatalog.services[0]
+    if (!service) return
+    setDraftMirrorCatalog({
+      ...mirrorCatalog,
+      groups: mirrorCatalog.groups.map((group) => group.id === groupId
+        ? {
+            ...group,
+            items: [...group.items, { id: crypto.randomUUID(), serviceId: service.id, quantity: 1 }],
+          }
+        : group),
+    })
+  }
+
+  const updateMirrorGroupItem = (
+    groupId: string,
+    itemId: string,
+    patch: Partial<MirrorServiceGroup['items'][number]>,
+  ) => {
+    setDraftMirrorCatalog({
+      ...mirrorCatalog,
+      groups: mirrorCatalog.groups.map((group) => group.id === groupId
+        ? {
+            ...group,
+            items: group.items.map((item) => item.id === itemId ? { ...item, ...patch } : item),
+          }
+        : group),
+    })
+  }
+
+  const deleteMirrorGroupItem = (groupId: string, itemId: string) => {
+    setDraftMirrorCatalog({
+      ...mirrorCatalog,
+      groups: mirrorCatalog.groups.map((group) => group.id === groupId
+        ? { ...group, items: group.items.filter((item) => item.id !== itemId) }
+        : group),
     })
   }
 
@@ -3700,19 +3911,32 @@ function PricesScreen({
         isOpen={openSection === 'hardwareClass'}
         items={catalog.hardwareClass}
         suffix="₽"
-        title="Класс фурнитуры"
+        title="Резервный класс фурнитуры"
         onAdd={() => addOption('hardwareClass')}
         onChange={(id, value) => updateOption('hardwareClass', id, { price: value })}
         onDelete={(id) => deleteOption('hardwareClass', id)}
         onNameChange={(id, value) => updateOption('hardwareClass', id, { label: value })}
         onToggle={() => toggleSection('hardwareClass')}
       />
+      <PriceGroup
+        category="shower"
+        controlsId="price-hardware-items"
+        isOpen={openSection === 'hardwareItems'}
+        items={catalog.hardwareItems}
+        suffix="₽/шт."
+        title="Фурнитура поштучно"
+        onAdd={addHardwareItem}
+        onChange={(id, value) => updateHardwareItem(id, { price: value })}
+        onDelete={deleteHardwareItem}
+        onNameChange={(id, value) => updateHardwareItem(id, { label: value })}
+        onToggle={() => toggleSection('hardwareItems')}
+      />
 
       <section className={openSection === 'constructions' ? 'section-block price-accordion price-category-shower is-open' : 'section-block price-accordion price-category-shower'}>
         <PriceAccordionHeader
           controlsId="price-constructions"
           isOpen={openSection === 'constructions'}
-          meta="База и монтаж"
+          meta="База, монтаж и состав"
           title="Конструкции"
           onAdd={addConstruction}
           onToggle={() => toggleSection('constructions')}
@@ -3726,8 +3950,13 @@ function PricesScreen({
                 installationPrice={item.installationPrice}
                 key={item.id}
                 label={item.shortTitle}
+                hardwareComponents={item.hardwareComponents ?? []}
+                hardwareItems={catalog.hardwareItems}
+                onAddHardware={() => addConstructionHardware(item.id)}
                 onBasePriceChange={(value) => updateConstruction(item.id, { basePrice: value })}
                 onDelete={() => deleteConstruction(item.id)}
+                onHardwareChange={(componentId, patch) => updateConstructionHardware(item.id, componentId, patch)}
+                onHardwareDelete={(componentId) => deleteConstructionHardware(item.id, componentId)}
                 onInstallationPriceChange={(value) => updateConstruction(item.id, { installationPrice: value })}
                 onLabelChange={(value) => updateConstruction(item.id, { shortTitle: value, title: value })}
               />
@@ -3793,6 +4022,39 @@ function PricesScreen({
         onNameChange={(id, value) => updateMirrorMaterial(id, { label: value })}
         onToggle={() => toggleSection('mirrorMaterials')}
       />
+
+      <section className={openSection === 'mirrorGroups' ? 'section-block price-accordion price-category-mirror is-open' : 'section-block price-accordion price-category-mirror'}>
+        <PriceAccordionHeader
+          controlsId="price-mirror-groups"
+          isOpen={openSection === 'mirrorGroups'}
+          meta="Комплекты из справочника работ"
+          title="Группы работ"
+          onAdd={addMirrorGroup}
+          onToggle={() => toggleSection('mirrorGroups')}
+        />
+        {openSection === 'mirrorGroups' ? (
+          <div className="price-list price-accordion-body" id="price-mirror-groups">
+            {mirrorCatalog.groups.map((group) => (
+              <MirrorServiceGroupEditor
+                group={group}
+                key={group.id}
+                services={mirrorCatalog.services}
+                onAddItem={() => addMirrorGroupItem(group.id)}
+                onChange={(patch) => updateMirrorGroup(group.id, patch)}
+                onDelete={() => deleteMirrorGroup(group.id)}
+                onDeleteItem={(itemId) => deleteMirrorGroupItem(group.id, itemId)}
+                onItemChange={(itemId, patch) => updateMirrorGroupItem(group.id, itemId, patch)}
+              />
+            ))}
+            {mirrorCatalog.groups.length === 0 ? (
+              <div className="price-editor-empty">
+                <strong>Групп пока нет</strong>
+                <span>Создайте комплект и добавьте в него операции из раздела «Работы».</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
 
       <section className={openSection === 'mirrorServices' ? 'section-block price-accordion price-category-works is-open' : 'section-block price-accordion price-category-works'}>
         <PriceAccordionHeader
@@ -4007,9 +4269,17 @@ type ConstructionPriceRowProps = {
   label: string
   basePrice: number
   installationPrice: number
+  hardwareComponents: ConstructionHardwareComponent[]
+  hardwareItems: ShowerHardwareItem[]
   canDelete: boolean
+  onAddHardware: () => void
   onLabelChange: (value: string) => void
   onBasePriceChange: (value: number) => void
+  onHardwareChange: (
+    componentId: string,
+    patch: Partial<Pick<ConstructionHardwareComponent, 'hardwareItemId' | 'quantity'>>,
+  ) => void
+  onHardwareDelete: (componentId: string) => void
   onInstallationPriceChange: (value: number) => void
   onDelete: () => void
 }
@@ -4018,60 +4288,128 @@ function ConstructionPriceRow({
   label,
   basePrice,
   installationPrice,
+  hardwareComponents,
+  hardwareItems,
   canDelete,
+  onAddHardware,
   onLabelChange,
   onBasePriceChange,
+  onHardwareChange,
+  onHardwareDelete,
   onInstallationPriceChange,
   onDelete,
 }: ConstructionPriceRowProps) {
   return (
-    <div className="construction-price-row">
-      <label className="price-name-field">
-        <span className="sr-only">Название конструкции</span>
-        <input
-          aria-label={`Название конструкции: ${label || 'без названия'}`}
-          value={label}
-          onChange={(event) => onLabelChange(event.target.value)}
-        />
-      </label>
-      <label className="construction-price-field">
-        <span>База</span>
-        <div className="price-value-field">
+    <div className="construction-price-editor">
+      <div className="construction-price-row">
+        <label className="price-name-field">
+          <span className="sr-only">Название конструкции</span>
           <input
-            aria-label={`Базовая цена: ${label || 'конструкция'}`}
-            inputMode="numeric"
-            min={0}
-            type="number"
-            value={basePrice}
-            onChange={(event) => onBasePriceChange(Math.max(0, Number(event.target.value) || 0))}
+            aria-label={`Название конструкции: ${label || 'без названия'}`}
+            value={label}
+            onChange={(event) => onLabelChange(event.target.value)}
           />
-          <small>₽</small>
+        </label>
+        <label className="construction-price-field">
+          <span>База изделия</span>
+          <div className="price-value-field">
+            <input
+              aria-label={`Базовая цена: ${label || 'конструкция'}`}
+              inputMode="numeric"
+              min={0}
+              type="number"
+              value={basePrice}
+              onChange={(event) => onBasePriceChange(Math.max(0, Number(event.target.value) || 0))}
+            />
+            <small>₽</small>
+          </div>
+        </label>
+        <label className="construction-price-field">
+          <span>Монтаж</span>
+          <div className="price-value-field">
+            <input
+              aria-label={`Стоимость монтажа: ${label || 'конструкция'}`}
+              inputMode="numeric"
+              min={0}
+              type="number"
+              value={installationPrice}
+              onChange={(event) => onInstallationPriceChange(Math.max(0, Number(event.target.value) || 0))}
+            />
+            <small>₽</small>
+          </div>
+        </label>
+        <button
+          aria-label={`Удалить конструкцию ${label || 'без названия'}`}
+          className="price-delete"
+          disabled={!canDelete}
+          title={canDelete ? 'Удалить конструкцию' : 'Должна остаться хотя бы одна конструкция'}
+          type="button"
+          onClick={onDelete}
+        >
+          <Trash2 size={17} />
+        </button>
+      </div>
+
+      <div className="composition-editor">
+        <div className="composition-editor-head">
+          <div>
+            <strong>Состав фурнитуры</strong>
+            <span>Цена конструкции собирается из этих позиций</span>
+          </div>
+          <button type="button" onClick={onAddHardware}>
+            <Plus size={15} />
+            Добавить фурнитуру
+          </button>
         </div>
-      </label>
-      <label className="construction-price-field">
-        <span>Монтаж</span>
-        <div className="price-value-field">
-          <input
-            aria-label={`Стоимость монтажа: ${label || 'конструкция'}`}
-            inputMode="numeric"
-            min={0}
-            type="number"
-            value={installationPrice}
-            onChange={(event) => onInstallationPriceChange(Math.max(0, Number(event.target.value) || 0))}
-          />
-          <small>₽</small>
-        </div>
-      </label>
-      <button
-        aria-label={`Удалить конструкцию ${label || 'без названия'}`}
-        className="price-delete"
-        disabled={!canDelete}
-        title={canDelete ? 'Удалить конструкцию' : 'Должна остаться хотя бы одна конструкция'}
-        type="button"
-        onClick={onDelete}
-      >
-        <Trash2 size={17} />
-      </button>
+        {hardwareComponents.length > 0 ? (
+          <div className="composition-item-list">
+            {hardwareComponents.map((component) => {
+              const item = hardwareItems.find((entry) => entry.id === component.hardwareItemId) ?? hardwareItems[0]
+              return (
+                <div className="composition-item-row" key={component.id}>
+                  <label>
+                    <span>Фурнитура</span>
+                    <select
+                      value={component.hardwareItemId}
+                      onChange={(event) => onHardwareChange(component.id, { hardwareItemId: event.target.value })}
+                    >
+                      {hardwareItems.map((hardwareItem) => (
+                        <option key={hardwareItem.id} value={hardwareItem.id}>{hardwareItem.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Количество</span>
+                    <input
+                      inputMode="decimal"
+                      min={0}
+                      step="0.1"
+                      type="number"
+                      value={component.quantity}
+                      onChange={(event) => onHardwareChange(component.id, {
+                        quantity: Math.max(0, Number(event.target.value) || 0),
+                      })}
+                    />
+                  </label>
+                  <strong>{money((item?.price ?? 0) * component.quantity)}</strong>
+                  <button
+                    aria-label={`Удалить ${item?.label ?? 'фурнитуру'} из конструкции`}
+                    className="price-delete"
+                    type="button"
+                    onClick={() => onHardwareDelete(component.id)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="composition-editor-note">
+            Состав не заполнен. Пока используется цена из раздела «Резервный класс фурнитуры».
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -4139,6 +4477,114 @@ function MirrorServicePriceRow({ item, canDelete, onChange, onDelete }: MirrorSe
       >
         <Trash2 size={17} />
       </button>
+    </div>
+  )
+}
+
+type MirrorServiceGroupEditorProps = {
+  group: MirrorServiceGroup
+  services: MirrorService[]
+  onAddItem: () => void
+  onChange: (patch: Partial<Pick<MirrorServiceGroup, 'label' | 'visibleInQuote'>>) => void
+  onDelete: () => void
+  onDeleteItem: (itemId: string) => void
+  onItemChange: (itemId: string, patch: Partial<MirrorServiceGroup['items'][number]>) => void
+}
+
+function MirrorServiceGroupEditor({
+  group,
+  services,
+  onAddItem,
+  onChange,
+  onDelete,
+  onDeleteItem,
+  onItemChange,
+}: MirrorServiceGroupEditorProps) {
+  return (
+    <div className="mirror-group-editor">
+      <div className="mirror-group-editor-head">
+        <label className="price-name-field">
+          <span>Название группы</span>
+          <input value={group.label} onChange={(event) => onChange({ label: event.target.value })} />
+        </label>
+        <label className="mirror-service-visible">
+          <input
+            checked={group.visibleInQuote}
+            type="checkbox"
+            onChange={(event) => onChange({ visibleInQuote: event.target.checked })}
+          />
+          <span>Показывать группу в КП</span>
+        </label>
+        <button aria-label={`Удалить группу ${group.label}`} className="price-delete" type="button" onClick={onDelete}>
+          <Trash2 size={17} />
+        </button>
+      </div>
+
+      <div className="composition-editor">
+        <div className="composition-editor-head">
+          <div>
+            <strong>Что входит в группу</strong>
+            <span>Цена каждой операции редактируется в разделе «Работы»</span>
+          </div>
+          <button type="button" onClick={onAddItem}>
+            <Plus size={15} />
+            Добавить работу
+          </button>
+        </div>
+        {group.items.length > 0 ? (
+          <div className="composition-item-list">
+            {group.items.map((groupItem) => {
+              const service = services.find((entry) => entry.id === groupItem.serviceId) ?? services[0]
+              const quantityLabel = service?.unit === 'piece' ? 'Количество' : 'Коэффициент'
+              const formulaLabel = service?.unit === 'area'
+                ? `площадь × ${groupItem.quantity}`
+                : service?.unit === 'perimeter'
+                  ? `периметр × ${groupItem.quantity}`
+                  : `${groupItem.quantity} шт.`
+              return (
+                <div className="composition-item-row mirror-group-item-row" key={groupItem.id}>
+                  <label>
+                    <span>Работа</span>
+                    <select
+                      value={groupItem.serviceId}
+                      onChange={(event) => onItemChange(groupItem.id, { serviceId: event.target.value })}
+                    >
+                      {services.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>{quantityLabel}</span>
+                    <input
+                      inputMode="decimal"
+                      min={0}
+                      step="0.1"
+                      type="number"
+                      value={groupItem.quantity}
+                      onChange={(event) => onItemChange(groupItem.id, {
+                        quantity: Math.max(0, Number(event.target.value) || 0),
+                      })}
+                    />
+                  </label>
+                  <span className="composition-formula">
+                    <strong>{formulaLabel}</strong>
+                    <small>{money(service?.price ?? 0)}/{service ? mirrorUnitLabels[service.unit] : 'ед.'}</small>
+                  </span>
+                  <button
+                    aria-label={`Удалить ${service?.label ?? 'работу'} из группы`}
+                    className="price-delete"
+                    type="button"
+                    onClick={() => onDeleteItem(groupItem.id)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="composition-editor-note">В группу пока ничего не входит.</p>
+        )}
+      </div>
     </div>
   )
 }

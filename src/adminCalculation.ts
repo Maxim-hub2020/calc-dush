@@ -1,5 +1,7 @@
 import {
   getConstruction,
+  getConstructionHardwareBasePrice,
+  getConstructionHardwareComponents,
   getOption,
   money,
   roundMoneyUp,
@@ -57,6 +59,7 @@ export const buildShowerCalculationBreakdown = (
   const glass = getOption(catalog.glass, form.glassId)
   const hardware = getOption(catalog.hardware, form.hardwareId)
   const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
+  const hardwareComponents = getConstructionHardwareComponents(catalog, construction)
   const heightField = construction.fields.find((field) => field.key.startsWith('HEIGHT'))
   const height = Number(form.dimensions[heightField?.key ?? 'HEIGHT_0'] ?? 0)
   const widths = construction.fields
@@ -66,7 +69,8 @@ export const buildShowerCalculationBreakdown = (
   const panelPrices = panelAreas.map((area) => Math.round(area * glass.price))
   const glassArea = panelAreas.reduce((sum, area) => sum + area, 0)
   const glassPrice = panelPrices.reduce((sum, price) => sum + price, 0)
-  const hardwarePrice = hardwareClass.price * hardware.price / 100
+  const hardwareBasePrice = getConstructionHardwareBasePrice(catalog, construction, hardwareClass.price)
+  const hardwarePrice = hardwareBasePrice * hardware.price / 100
   const productMarkup = Math.max(0, Number(catalog.services.productMarkupPercent) || 0)
   const hardwareMarkup = Math.max(0, Number(catalog.services.hardwareMarkupPercent) || 0)
   const productPart = (glassPrice + construction.basePrice) * percentFactor(productMarkup)
@@ -129,9 +133,22 @@ export const buildShowerCalculationBreakdown = (
             formula: `(${money(glassPrice)} + ${money(construction.basePrice)}) × (1 + ${number(productMarkup)}%)`,
             value: money(productPart),
           },
+          ...(
+            hardwareComponents.length > 0
+              ? hardwareComponents.map((component) => ({
+                  label: component.item.label,
+                  formula: `${number(component.quantity)} шт. × ${money(component.item.price)}`,
+                  value: money(component.total),
+                }))
+              : [{
+                  label: `Класс «${hardwareClass.label}»`,
+                  formula: 'Состав конструкции пока не заполнен',
+                  value: money(hardwareClass.price),
+                }]
+          ),
           {
             label: `Фурнитура «${hardware.label}»`,
-            formula: `${money(hardwareClass.price)} × ${number(hardware.price)}%`,
+            formula: `${money(hardwareBasePrice)} × ${number(hardware.price)}%`,
             value: money(hardwarePrice),
           },
           {

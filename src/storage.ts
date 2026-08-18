@@ -46,10 +46,22 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
     services.deliveryKmRate = 50
   }
 
+  const hardwareItems = mergeItems(defaultCatalog.hardwareItems, saved.hardwareItems)
+  const hardwareItemIds = new Set(hardwareItems.map((item) => item.id))
+
   return {
-    constructions,
+    constructions: constructions.map((construction) => ({
+      ...construction,
+      hardwareComponents: (construction.hardwareComponents ?? [])
+        .filter((component) => hardwareItemIds.has(component.hardwareItemId))
+        .map((component) => ({
+          ...component,
+          quantity: Math.max(0, Number(component.quantity) || 0),
+        })),
+    })),
     glass: mergeItems(defaultCatalog.glass, saved.glass),
     hardware: mergeItems(defaultCatalog.hardware, saved.hardware),
+    hardwareItems,
     hardwareClass: mergeItems(defaultCatalog.hardwareClass, saved.hardwareClass),
     services,
   }
@@ -68,10 +80,21 @@ export const mergeMirrorCatalog = (saved: Partial<MirrorPricingCatalog> = {}): M
     return items.map((item) => ({ ...defaults.find((entry) => entry.id === item.id), ...item } as T))
   }
 
+  const services = mergeItems(defaultMirrorCatalog.services, saved.services)
+    .filter((item) => item.category !== 'delivery')
+  const serviceIds = new Set(services.map((service) => service.id))
+  const groups = mergeItems(defaultMirrorCatalog.groups, saved.groups).map((group) => ({
+    ...group,
+    visibleInQuote: group.visibleInQuote !== false,
+    items: (group.items ?? [])
+      .filter((item) => serviceIds.has(item.serviceId))
+      .map((item) => ({ ...item, quantity: Math.max(0, Number(item.quantity) || 0) })),
+  }))
+
   return {
     materials: mergeItems(defaultMirrorCatalog.materials, saved.materials),
-    services: mergeItems(defaultMirrorCatalog.services, saved.services)
-      .filter((item) => item.category !== 'delivery'),
+    services,
+    groups,
     settings: { ...defaultMirrorCatalog.settings, ...saved.settings },
   }
 }

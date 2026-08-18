@@ -16,12 +16,21 @@ export type Construction = {
   imageUrl: string
   sketch: 'single' | 'panel-door' | 'panel' | 'niche' | 'corner' | 'corner-plus' | 'double-corner' | 'slider' | 'slider-corner' | 'slider-double' | 'trapezoid'
   fields: DimensionField[]
+  hardwareComponents?: ConstructionHardwareComponent[]
 }
 
 export type PriceOption = {
   id: string
   label: string
   price: number
+}
+
+export type ShowerHardwareItem = PriceOption
+
+export type ConstructionHardwareComponent = {
+  id: string
+  hardwareItemId: string
+  quantity: number
 }
 
 export type ServicePrices = {
@@ -39,6 +48,7 @@ export type PricingCatalog = {
   constructions: Construction[]
   glass: PriceOption[]
   hardware: PriceOption[]
+  hardwareItems: ShowerHardwareItem[]
   hardwareClass: PriceOption[]
   services: ServicePrices
 }
@@ -230,6 +240,14 @@ export const defaultCatalog: PricingCatalog = {
     { id: 'black', label: 'Черный', price: 120 },
     { id: 'bronze', label: 'Бронза', price: 135 },
     { id: 'gold', label: 'Золото', price: 140 },
+  ],
+  hardwareItems: [
+    { id: 'shower-hinge', label: 'Петля душевая', price: 5000 },
+    { id: 'shower-support-profile', label: 'Душевой опорный профиль', price: 1500 },
+    { id: 'shower-glass-holder', label: 'Держатель стекла', price: 1000 },
+    { id: 'shower-track', label: 'Трек 30×10, 2 м', price: 2400 },
+    { id: 'shower-pipe-wall-mount', label: 'Крепление трубы к стене', price: 600 },
+    { id: 'shower-magnetic-seal', label: 'Магнитный уплотнитель', price: 1100 },
   ],
   hardwareClass: [
     { id: 'standard', label: 'Стандарт', price: 3700 },

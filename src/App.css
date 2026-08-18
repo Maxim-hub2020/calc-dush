@@ -1413,6 +1413,178 @@
   min-width: 0;
 }
 
+.construction-price-editor,
+.mirror-group-editor {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.construction-price-editor > .construction-price-row {
+  padding: 12px;
+  border-radius: 0;
+}
+
+.composition-editor {
+  padding: 12px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+
+.composition-editor-head,
+.mirror-group-editor-head,
+.mirror-options-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.composition-editor-head > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.composition-editor-head strong {
+  color: var(--heading);
+  font-size: 13px;
+}
+
+.composition-editor-head span,
+.composition-editor-note,
+.price-editor-empty span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.composition-editor-head > button {
+  display: inline-flex;
+  min-height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.composition-item-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.composition-item-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 110px 105px 40px;
+  align-items: end;
+  gap: 8px;
+}
+
+.composition-item-row > label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.composition-item-row > label > span,
+.mirror-group-editor-head .price-name-field > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 740;
+}
+
+.composition-item-row select,
+.composition-item-row input,
+.mirror-group-editor-head input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--heading);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.composition-item-row > strong {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--heading);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.composition-editor-note {
+  margin: 10px 0 0;
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: var(--soft);
+}
+
+.mirror-group-editor-head {
+  padding: 12px;
+}
+
+.mirror-group-editor-head .price-name-field {
+  display: grid;
+  min-width: 220px;
+  flex: 1 1 auto;
+  gap: 5px;
+}
+
+.mirror-group-editor-head .mirror-service-visible {
+  flex: 0 0 auto;
+}
+
+.composition-formula {
+  min-height: 40px;
+  display: grid;
+  align-content: center;
+  justify-items: end;
+  gap: 2px;
+  color: var(--heading);
+  white-space: nowrap;
+}
+
+.composition-formula strong {
+  font-size: 11px;
+}
+
+.composition-formula small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.price-editor-empty {
+  min-height: 96px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 18px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  text-align: center;
+}
+
 .construction-price-field {
   display: flex;
   min-width: 0;
@@ -1497,6 +1669,57 @@
   .construction-price-row > .price-delete {
     grid-column: 3;
     grid-row: 1;
+  }
+
+  .composition-editor-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .composition-editor-head > button {
+    width: 100%;
+  }
+
+  .composition-item-row,
+  .mirror-group-item-row {
+    grid-template-columns: minmax(0, 1fr) 88px 40px;
+  }
+
+  .composition-item-row > label:first-child {
+    grid-column: 1 / 4;
+  }
+
+  .composition-item-row > strong,
+  .composition-formula {
+    grid-column: 1;
+    grid-row: 2;
+    justify-content: flex-start;
+    justify-items: start;
+  }
+
+  .composition-item-row > label:nth-child(2) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .composition-item-row > .price-delete {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .mirror-group-editor-head {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .mirror-group-editor-head .price-name-field {
+    min-width: 0;
+    flex-basis: calc(100% - 52px);
+  }
+
+  .mirror-group-editor-head .mirror-service-visible {
+    order: 3;
+    flex-basis: 100%;
   }
 }
 
@@ -3091,6 +3314,91 @@
 .mirror-option-list {
   display: grid;
   gap: 9px;
+}
+
+.mirror-group-options {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.mirror-group-options > button {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--heading);
+  text-align: left;
+}
+
+.mirror-group-options > button.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.mirror-group-options > button > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mirror-group-options strong,
+.mirror-group-options small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mirror-group-options strong {
+  font-size: 13px;
+}
+
+.mirror-group-options small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.mirror-group-options b {
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.mirror-options-subhead {
+  margin: 2px 0 9px;
+}
+
+.mirror-options-subhead > strong {
+  color: var(--heading);
+  font-size: 13px;
+}
+
+.construction-composition-summary {
+  min-height: 58px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+.construction-composition-summary strong {
+  color: var(--heading);
+  font-size: 13px;
+}
+
+.construction-composition-summary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .mirror-option-row {
