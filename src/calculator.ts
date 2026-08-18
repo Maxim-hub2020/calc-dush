@@ -246,21 +246,28 @@ export const getConstruction = (catalog: PricingCatalog, id: string) =>
 
 export const getOption = (items: PriceOption[], id: string) => findById(items, id, items[0])
 
-export const getConstructionHardwareComponents = (catalog: PricingCatalog, construction: Construction) => (
-  (construction.hardwareComponents ?? []).flatMap((component) => {
+export const getConstructionHardwareComponents = (
+  catalog: PricingCatalog,
+  construction: Construction,
+  glassThickness?: 6 | 8,
+) => (
+  (construction.hardwareComponents ?? [])
+    .filter((component) => !glassThickness || !component.glassThickness || component.glassThickness === glassThickness)
+    .flatMap((component) => {
     const item = catalog.hardwareItems.find((hardwareItem) => hardwareItem.id === component.hardwareItemId)
     if (!item) return []
     const quantity = Math.max(0, Number(component.quantity) || 0)
     return [{ ...component, item, quantity, total: item.price * quantity }]
-  })
+    })
 )
 
 export const getConstructionHardwareBasePrice = (
   catalog: PricingCatalog,
   construction: Construction,
   legacyHardwareClassPrice: number,
+  glassThickness?: 6 | 8,
 ) => {
-  const components = getConstructionHardwareComponents(catalog, construction)
+  const components = getConstructionHardwareComponents(catalog, construction, glassThickness)
   return components.length > 0
     ? components.reduce((sum, component) => sum + component.total, 0)
     : Math.max(0, Number(legacyHardwareClassPrice) || 0)
@@ -318,7 +325,12 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
     .map((field) => Number(form.dimensions[field.key] ?? 0))
   const glassArea = widths.reduce((sum, width) => sum + width * 0.001 * height * 0.001, 0)
   const glassPrice = widths.reduce((sum, width) => sum + Math.round(width * 0.001 * height * 0.001 * glass.price), 0)
-  const hardwareBasePrice = getConstructionHardwareBasePrice(catalog, construction, hardwareClass.price)
+  const hardwareBasePrice = getConstructionHardwareBasePrice(
+    catalog,
+    construction,
+    hardwareClass.price,
+    glass.thickness,
+  )
   const hardwarePrice = (hardwareBasePrice * hardware.price) / 100
   const hasSurcharge = height > catalog.services.heightSurchargeAfter
   const surchargeFactor = hasSurcharge ? 1 + catalog.services.heightSurchargePercent / 100 : 1
@@ -430,7 +442,7 @@ const createShowerQuoteItem = (catalog: PricingCatalog, draft: ShowerQuoteDraftI
   const glass = getOption(catalog.glass, draft.form.glassId)
   const hardware = getOption(catalog.hardware, draft.form.hardwareId)
   const hardwareClass = getOption(catalog.hardwareClass, draft.form.hardwareClassId)
-  const hasHardwareComposition = getConstructionHardwareComponents(catalog, construction).length > 0
+  const hasHardwareComposition = getConstructionHardwareComponents(catalog, construction, glass.thickness).length > 0
 
   return {
     id: crypto.randomUUID(),

@@ -1294,7 +1294,8 @@ function CalculatorScreen({
   const glass = getOption(catalog.glass, form.glassId)
   const hardware = getOption(catalog.hardware, form.hardwareId)
   const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
-  const hardwareComponents = getConstructionHardwareComponents(catalog, construction)
+  const glassThickness = glass.thickness ?? 8
+  const hardwareComponents = getConstructionHardwareComponents(catalog, construction, glassThickness)
   const [activeSection, setActiveSection] = useState<ConfigSectionId>('construction')
 
   return (
@@ -1376,9 +1377,25 @@ function CalculatorScreen({
           <h2>Внешний вид</h2>
           <span>{glass.label}</span>
         </div>
+        <div className="glass-thickness-switch" aria-label="Толщина стекла">
+          {([8, 6] as const).map((thickness) => (
+            <button
+              aria-pressed={glassThickness === thickness}
+              className={glassThickness === thickness ? 'is-active' : ''}
+              key={thickness}
+              type="button"
+              onClick={() => {
+                const option = catalog.glass.find((item) => (item.thickness ?? 8) === thickness)
+                if (option) onForm({ glassId: option.id })
+              }}
+            >
+              {thickness} мм
+            </button>
+          ))}
+        </div>
         <OptionGrid
           activeId={form.glassId}
-          items={catalog.glass}
+          items={catalog.glass.filter((item) => (item.thickness ?? 8) === glassThickness)}
           onSelect={(glassId) => onForm({ glassId })}
         />
         <div className="inline-selects">
@@ -2136,6 +2153,21 @@ type OptionGridProps = {
   onSelect: (id: string) => void
 }
 
+const getOptionSwatch = (id: string) => {
+  if (id.includes('matte')) return 'matte'
+  if (id.includes('bronze') || id.includes('grey') || id === 'tinted') return 'tinted'
+  if (
+    id.includes('cristall')
+    || id.includes('larta')
+    || id.includes('salavat')
+    || id.includes('moru')
+    || id.includes('rainbow')
+    || id.includes('stopsol-clear')
+    || id === 'optiwhite'
+  ) return 'optiwhite'
+  return 'clear'
+}
+
 function OptionGrid({ activeId, items, priceSuffix, onSelect }: OptionGridProps) {
   return (
     <div className={priceSuffix ? 'option-grid' : 'option-grid option-grid-label-only'}>
@@ -2146,7 +2178,7 @@ function OptionGrid({ activeId, items, priceSuffix, onSelect }: OptionGridProps)
           type="button"
           onClick={() => onSelect(item.id)}
         >
-          <i className={`glass-swatch swatch-${item.id}`} aria-hidden="true" />
+          <i className={`glass-swatch swatch-${getOptionSwatch(item.id)}`} aria-hidden="true" />
           <span>{item.label}</span>
           {priceSuffix ? <small>
             {shortMoney(item.price)} {priceSuffix}
@@ -3567,7 +3599,7 @@ function PricesScreen({
   const updateOption = (
     group: 'glass' | 'hardware' | 'hardwareClass',
     id: string,
-    patch: Partial<Pick<PriceOption, 'label' | 'price'>>,
+    patch: Partial<Pick<PriceOption, 'label' | 'price' | 'thickness'>>,
   ) => {
     setDraftCatalog({
       ...catalog,
@@ -3580,7 +3612,12 @@ function PricesScreen({
       ...catalog,
       [group]: [
         ...catalog[group],
-        { id: `custom-${crypto.randomUUID()}`, label: 'Новая позиция', price: 0 },
+        {
+          id: `custom-${crypto.randomUUID()}`,
+          label: 'Новая позиция',
+          price: 0,
+          ...(group === 'glass' ? { thickness: 8 as const } : {}),
+        },
       ],
     })
   }
@@ -3679,7 +3716,7 @@ function PricesScreen({
   const updateConstructionHardware = (
     constructionId: string,
     componentId: string,
-    patch: Partial<Pick<ConstructionHardwareComponent, 'hardwareItemId' | 'quantity'>>,
+    patch: Partial<Pick<ConstructionHardwareComponent, 'hardwareItemId' | 'quantity' | 'glassThickness'>>,
   ) => {
     setDraftCatalog({
       ...catalog,
@@ -3890,6 +3927,7 @@ function PricesScreen({
         onChange={(id, value) => updateOption('glass', id, { price: value })}
         onDelete={(id) => deleteOption('glass', id)}
         onNameChange={(id, value) => updateOption('glass', id, { label: value })}
+        onThicknessChange={(id, thickness) => updateOption('glass', id, { thickness })}
         onToggle={() => toggleSection('glass')}
       />
       <PriceGroup
@@ -4120,6 +4158,7 @@ type PriceGroupProps = {
   items: PriceOption[]
   onChange: (id: string, value: number) => void
   onNameChange: (id: string, value: string) => void
+  onThicknessChange?: (id: string, thickness: 6 | 8) => void
   onAdd: () => void
   onDelete: (id: string) => void
   onToggle: () => void
@@ -4134,6 +4173,7 @@ function PriceGroup({
   items,
   onChange,
   onNameChange,
+  onThicknessChange,
   onAdd,
   onDelete,
   onToggle,
@@ -4157,9 +4197,13 @@ function PriceGroup({
               label={item.label}
               price={item.price}
               suffix={suffix}
+              thickness={item.thickness}
               onDelete={() => onDelete(item.id)}
               onLabelChange={(value) => onNameChange(item.id, value)}
               onPriceChange={(value) => onChange(item.id, value)}
+              onThicknessChange={onThicknessChange
+                ? (thickness) => onThicknessChange(item.id, thickness)
+                : undefined}
             />
           ))}
         </div>
@@ -4214,9 +4258,11 @@ type EditablePriceRowProps = {
   label: string
   price: number
   suffix: string
+  thickness?: 6 | 8
   canDelete: boolean
   onLabelChange: (value: string) => void
   onPriceChange: (value: number) => void
+  onThicknessChange?: (thickness: 6 | 8) => void
   onDelete: () => void
 }
 
@@ -4224,13 +4270,15 @@ function EditablePriceRow({
   label,
   price,
   suffix,
+  thickness,
   canDelete,
   onLabelChange,
   onPriceChange,
+  onThicknessChange,
   onDelete,
 }: EditablePriceRowProps) {
   return (
-    <div className="price-edit-row">
+    <div className={onThicknessChange ? 'price-edit-row has-thickness' : 'price-edit-row'}>
       <label className="price-name-field">
         <span className="sr-only">Название позиции</span>
         <input
@@ -4239,6 +4287,19 @@ function EditablePriceRow({
           onChange={(event) => onLabelChange(event.target.value)}
         />
       </label>
+      {onThicknessChange ? (
+        <label className="price-thickness-field">
+          <span className="sr-only">Толщина стекла {label}</span>
+          <select
+            aria-label={`Толщина: ${label || 'позиция'}`}
+            value={thickness ?? 8}
+            onChange={(event) => onThicknessChange(Number(event.target.value) as 6 | 8)}
+          >
+            <option value="6">6 мм</option>
+            <option value="8">8 мм</option>
+          </select>
+        </label>
+      ) : null}
       <label className="price-value-field">
         <span className="sr-only">Цена позиции {label}</span>
         <input
@@ -4277,7 +4338,7 @@ type ConstructionPriceRowProps = {
   onBasePriceChange: (value: number) => void
   onHardwareChange: (
     componentId: string,
-    patch: Partial<Pick<ConstructionHardwareComponent, 'hardwareItemId' | 'quantity'>>,
+    patch: Partial<Pick<ConstructionHardwareComponent, 'hardwareItemId' | 'quantity' | 'glassThickness'>>,
   ) => void
   onHardwareDelete: (componentId: string) => void
   onInstallationPriceChange: (value: number) => void
@@ -4390,6 +4451,21 @@ function ConstructionPriceRow({
                         quantity: Math.max(0, Number(event.target.value) || 0),
                       })}
                     />
+                  </label>
+                  <label>
+                    <span>Толщина</span>
+                    <select
+                      value={component.glassThickness ?? ''}
+                      onChange={(event) => onHardwareChange(component.id, {
+                        glassThickness: event.target.value
+                          ? Number(event.target.value) as 6 | 8
+                          : undefined,
+                      })}
+                    >
+                      <option value="">6 и 8 мм</option>
+                      <option value="6">6 мм</option>
+                      <option value="8">8 мм</option>
+                    </select>
                   </label>
                   <strong>{money((item?.price ?? 0) * component.quantity)}</strong>
                   <button

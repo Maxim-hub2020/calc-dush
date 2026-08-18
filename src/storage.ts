@@ -20,6 +20,7 @@ const writeJson = (key: string, value: unknown) => {
 }
 
 export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalog => {
+  const savedRevision = Math.max(0, Number(saved.revision) || 0)
   const mergeItems = <T extends { id: string }>(defaults: T[], items?: T[]) => {
     if (!Array.isArray(items) || items.length === 0) return defaults
     const defaultsById = new Map(defaults.map((item) => [item.id, item]))
@@ -36,6 +37,9 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
       ...item,
       imageUrl: currentDefault?.imageUrl ?? defaultCatalog.constructions[0].imageUrl,
       installationPrice: Number.isFinite(item.installationPrice) ? item.installationPrice : legacyInstallationPrice,
+      hardwareComponents: savedRevision < defaultCatalog.revision && currentDefault
+        ? currentDefault.hardwareComponents
+        : item.hardwareComponents,
     }
   })
   const services = { ...defaultCatalog.services, ...savedServices }
@@ -46,10 +50,13 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
     services.deliveryKmRate = 50
   }
 
-  const hardwareItems = mergeItems(defaultCatalog.hardwareItems, saved.hardwareItems)
+  const hardwareItems = savedRevision < defaultCatalog.revision
+    ? defaultCatalog.hardwareItems
+    : mergeItems(defaultCatalog.hardwareItems, saved.hardwareItems)
   const hardwareItemIds = new Set(hardwareItems.map((item) => item.id))
 
   return {
+    revision: defaultCatalog.revision,
     constructions: constructions.map((construction) => ({
       ...construction,
       hardwareComponents: (construction.hardwareComponents ?? [])
@@ -57,9 +64,14 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
         .map((component) => ({
           ...component,
           quantity: Math.max(0, Number(component.quantity) || 0),
+          glassThickness: component.glassThickness === 6 || component.glassThickness === 8
+            ? component.glassThickness
+            : undefined,
         })),
     })),
-    glass: mergeItems(defaultCatalog.glass, saved.glass),
+    glass: savedRevision < defaultCatalog.revision
+      ? defaultCatalog.glass
+      : mergeItems(defaultCatalog.glass, saved.glass),
     hardware: mergeItems(defaultCatalog.hardware, saved.hardware),
     hardwareItems,
     hardwareClass: mergeItems(defaultCatalog.hardwareClass, saved.hardwareClass),

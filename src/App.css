@@ -486,6 +486,7 @@
 .text-field input,
 .price-row input,
 .price-edit-row input,
+.price-edit-row select,
 .construction-price-row input,
 .select-field select,
 .search-field input {
@@ -505,6 +506,7 @@
 .field-row input,
 .price-row input,
 .price-edit-row input,
+.price-edit-row select,
 .construction-price-row input {
   height: 46px;
   padding: 0 10px;
@@ -523,6 +525,7 @@
 .text-field input:focus,
 .price-row input:focus,
 .price-edit-row input:focus,
+.price-edit-row select:focus,
 .construction-price-row input:focus,
 .select-field select:focus,
 .search-field input:focus {
@@ -534,6 +537,33 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.glass-thickness-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 4px;
+  border-radius: 9px;
+  background: #f1f5f9;
+}
+
+.glass-thickness-switch button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.glass-thickness-switch button.is-active {
+  background: #fff;
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
 }
 
 .option-chip {
@@ -1405,6 +1435,14 @@
   min-width: 0;
 }
 
+.price-edit-row.has-thickness {
+  grid-template-columns: minmax(0, 1fr) 86px minmax(108px, 132px) 40px;
+}
+
+.price-thickness-field {
+  min-width: 0;
+}
+
 .construction-price-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(106px, 124px) minmax(106px, 124px) 40px;
@@ -1486,7 +1524,7 @@
 
 .composition-item-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 110px 105px 40px;
+  grid-template-columns: minmax(180px, 1fr) 90px 100px 105px 40px;
   align-items: end;
   gap: 8px;
 }
@@ -1604,6 +1642,11 @@
   min-width: 0;
 }
 
+.price-thickness-field select {
+  height: 46px;
+  padding: 0 9px;
+}
+
 .price-name-field input {
   text-align: left;
 }
@@ -1680,13 +1723,16 @@
     width: 100%;
   }
 
-  .composition-item-row,
+  .composition-item-row {
+    grid-template-columns: minmax(0, 1fr) 76px 88px 40px;
+  }
+
   .mirror-group-item-row {
     grid-template-columns: minmax(0, 1fr) 88px 40px;
   }
 
   .composition-item-row > label:first-child {
-    grid-column: 1 / 4;
+    grid-column: 1 / 5;
   }
 
   .composition-item-row > strong,
@@ -1702,8 +1748,13 @@
     grid-row: 2;
   }
 
-  .composition-item-row > .price-delete {
+  .composition-item-row > label:nth-child(3) {
     grid-column: 3;
+    grid-row: 2;
+  }
+
+  .composition-item-row > .price-delete {
+    grid-column: 4;
     grid-row: 2;
   }
 
@@ -1739,6 +1790,10 @@
   .price-edit-row {
     grid-template-columns: minmax(0, 1fr) 94px 38px;
     gap: 6px;
+  }
+
+  .price-edit-row.has-thickness {
+    grid-template-columns: minmax(0, 1fr) 68px 82px 38px;
   }
 
   .price-delete {

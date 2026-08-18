@@ -59,7 +59,7 @@ export const buildShowerCalculationBreakdown = (
   const glass = getOption(catalog.glass, form.glassId)
   const hardware = getOption(catalog.hardware, form.hardwareId)
   const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
-  const hardwareComponents = getConstructionHardwareComponents(catalog, construction)
+  const hardwareComponents = getConstructionHardwareComponents(catalog, construction, glass.thickness)
   const heightField = construction.fields.find((field) => field.key.startsWith('HEIGHT'))
   const height = Number(form.dimensions[heightField?.key ?? 'HEIGHT_0'] ?? 0)
   const widths = construction.fields
@@ -69,7 +69,12 @@ export const buildShowerCalculationBreakdown = (
   const panelPrices = panelAreas.map((area) => Math.round(area * glass.price))
   const glassArea = panelAreas.reduce((sum, area) => sum + area, 0)
   const glassPrice = panelPrices.reduce((sum, price) => sum + price, 0)
-  const hardwareBasePrice = getConstructionHardwareBasePrice(catalog, construction, hardwareClass.price)
+  const hardwareBasePrice = getConstructionHardwareBasePrice(
+    catalog,
+    construction,
+    hardwareClass.price,
+    glass.thickness,
+  )
   const hardwarePrice = hardwareBasePrice * hardware.price / 100
   const productMarkup = Math.max(0, Number(catalog.services.productMarkupPercent) || 0)
   const hardwareMarkup = Math.max(0, Number(catalog.services.hardwareMarkupPercent) || 0)
