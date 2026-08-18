@@ -1637,6 +1637,30 @@
   line-height: 1;
 }
 
+.construction-base-summary {
+  min-height: 46px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 5px 9px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.construction-base-summary > span,
+.construction-base-summary > small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.construction-base-summary > strong {
+  color: var(--heading);
+  font-size: 12px;
+}
+
 .price-name-field,
 .price-value-field {
   min-width: 0;
@@ -1699,12 +1723,13 @@
     grid-row: 1;
   }
 
-  .construction-price-row > .construction-price-field:nth-of-type(2) {
+  .construction-price-row > .construction-base-price-field,
+  .construction-price-row > .construction-base-summary {
     grid-column: 1;
     grid-row: 2;
   }
 
-  .construction-price-row > .construction-price-field:nth-of-type(3) {
+  .construction-price-row > .construction-installation-field {
     grid-column: 2;
     grid-row: 2;
   }

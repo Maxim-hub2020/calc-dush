@@ -75,10 +75,13 @@ export const buildShowerCalculationBreakdown = (
     hardwareClass.price,
     glass.thickness,
   )
-  const hardwarePrice = hardwareBasePrice * hardware.price / 100
+  const hasHardwareComposition = hardwareComponents.length > 0
+  const fallbackConstructionBase = hasHardwareComposition ? 0 : Math.max(0, Number(construction.basePrice) || 0)
+  const hardwareColorMarkup = Math.max(0, Number(hardware.price) || 0)
+  const hardwarePrice = hardwareBasePrice * percentFactor(hardwareColorMarkup)
   const productMarkup = Math.max(0, Number(catalog.services.productMarkupPercent) || 0)
   const hardwareMarkup = Math.max(0, Number(catalog.services.hardwareMarkupPercent) || 0)
-  const productPart = (glassPrice + construction.basePrice) * percentFactor(productMarkup)
+  const productPart = (glassPrice + fallbackConstructionBase) * percentFactor(productMarkup)
   const hardwarePart = hardwarePrice * percentFactor(hardwareMarkup)
   const valid = Object.keys(unitResult.errors).length === 0
   const baseProduct = valid ? ceilToTen(productPart + hardwarePart) : 0
@@ -128,14 +131,14 @@ export const buildShowerCalculationBreakdown = (
       {
         title: 'Конструкция и фурнитура',
         rows: [
-          {
-            label: 'База конструкции',
+          ...(!hasHardwareComposition ? [{
+            label: 'Резервная база конструкции',
             formula: construction.title,
-            value: money(construction.basePrice),
-          },
+            value: money(fallbackConstructionBase),
+          }] : []),
           {
-            label: 'Изделие с наценкой',
-            formula: `(${money(glassPrice)} + ${money(construction.basePrice)}) × (1 + ${number(productMarkup)}%)`,
+            label: 'Стекло с наценкой',
+            formula: `(${money(glassPrice)} + ${money(fallbackConstructionBase)}) × (1 + ${number(productMarkup)}%)`,
             value: money(productPart),
           },
           ...(
@@ -152,8 +155,13 @@ export const buildShowerCalculationBreakdown = (
                 }]
           ),
           {
-            label: `Фурнитура «${hardware.label}»`,
-            formula: `${money(hardwareBasePrice)} × ${number(hardware.price)}%`,
+            label: 'Сумма состава фурнитуры в хроме',
+            formula: hardwareComponents.length > 0 ? 'Сумма всех позиций выше' : `Класс «${hardwareClass.label}»`,
+            value: money(hardwareBasePrice),
+          },
+          {
+            label: `Цвет «${hardware.label}»`,
+            formula: `${money(hardwareBasePrice)} × (1 + ${number(hardwareColorMarkup)}%)`,
             value: money(hardwarePrice),
           },
           {

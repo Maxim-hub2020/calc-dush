@@ -331,7 +331,10 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
     hardwareClass.price,
     glass.thickness,
   )
-  const hardwarePrice = (hardwareBasePrice * hardware.price) / 100
+  const hasHardwareComposition = getConstructionHardwareComponents(catalog, construction, glass.thickness).length > 0
+  const fallbackConstructionBase = hasHardwareComposition ? 0 : Math.max(0, Number(construction.basePrice) || 0)
+  const hardwareColorFactor = 1 + Math.max(0, Number(hardware.price) || 0) / 100
+  const hardwarePrice = hardwareBasePrice * hardwareColorFactor
   const hasSurcharge = height > catalog.services.heightSurchargeAfter
   const surchargeFactor = hasSurcharge ? 1 + catalog.services.heightSurchargePercent / 100 : 1
   const applySurcharge = (value: number) => roundToTen(value * surchargeFactor)
@@ -340,7 +343,7 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
 
   const baseProduct = Object.keys(errors).length > 0
     ? 0
-    : ceilToTen((glassPrice + construction.basePrice) * productMarkupFactor + hardwarePrice * hardwareMarkupFactor)
+    : ceilToTen((glassPrice + fallbackConstructionBase) * productMarkupFactor + hardwarePrice * hardwareMarkupFactor)
   const baseProductWithSurcharge = applySurcharge(baseProduct)
   const baseInstallation = form.installation ? construction.installationPrice : 0
   const designerPercent = Math.max(0, Number(catalog.services.designerPercent) || 0)

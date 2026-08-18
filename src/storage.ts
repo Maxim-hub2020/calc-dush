@@ -36,8 +36,9 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
     return {
       ...item,
       imageUrl: currentDefault?.imageUrl ?? defaultCatalog.constructions[0].imageUrl,
+      basePrice: savedRevision < 3 && currentDefault ? currentDefault.basePrice : item.basePrice,
       installationPrice: Number.isFinite(item.installationPrice) ? item.installationPrice : legacyInstallationPrice,
-      hardwareComponents: savedRevision < defaultCatalog.revision && currentDefault
+      hardwareComponents: savedRevision < 2 && currentDefault
         ? currentDefault.hardwareComponents
         : item.hardwareComponents,
     }
@@ -50,7 +51,7 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
     services.deliveryKmRate = 50
   }
 
-  const hardwareItems = savedRevision < defaultCatalog.revision
+  const hardwareItems = savedRevision < 2
     ? defaultCatalog.hardwareItems
     : mergeItems(defaultCatalog.hardwareItems, saved.hardwareItems)
   const hardwareItemIds = new Set(hardwareItems.map((item) => item.id))
@@ -69,10 +70,15 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
             : undefined,
         })),
     })),
-    glass: savedRevision < defaultCatalog.revision
+    glass: savedRevision < 2
       ? defaultCatalog.glass
       : mergeItems(defaultCatalog.glass, saved.glass),
-    hardware: mergeItems(defaultCatalog.hardware, saved.hardware),
+    hardware: savedRevision < 3
+      ? [
+          ...defaultCatalog.hardware,
+          ...(saved.hardware ?? []).filter((item) => !defaultCatalog.hardware.some((entry) => entry.id === item.id)),
+        ]
+      : mergeItems(defaultCatalog.hardware, saved.hardware),
     hardwareItems,
     hardwareClass: mergeItems(defaultCatalog.hardwareClass, saved.hardwareClass),
     services,

@@ -3935,7 +3935,7 @@ function PricesScreen({
         controlsId="price-hardware"
         isOpen={openSection === 'hardware'}
         items={catalog.hardware}
-        suffix="%"
+        suffix="% к хрому"
         title="Цвет фурнитуры"
         onAdd={() => addOption('hardware')}
         onChange={(id, value) => updateOption('hardware', id, { price: value })}
@@ -4360,6 +4360,15 @@ function ConstructionPriceRow({
   onInstallationPriceChange,
   onDelete,
 }: ConstructionPriceRowProps) {
+  const componentBaseFor = (thickness: 6 | 8) => hardwareComponents.reduce((sum, component) => {
+    if (component.glassThickness && component.glassThickness !== thickness) return sum
+    const item = hardwareItems.find((entry) => entry.id === component.hardwareItemId)
+    return sum + (item?.price ?? 0) * component.quantity
+  }, 0)
+  const hasHardwareComposition = hardwareComponents.length > 0
+  const componentBase6 = componentBaseFor(6)
+  const componentBase8 = componentBaseFor(8)
+
   return (
     <div className="construction-price-editor">
       <div className="construction-price-row">
@@ -4371,21 +4380,29 @@ function ConstructionPriceRow({
             onChange={(event) => onLabelChange(event.target.value)}
           />
         </label>
-        <label className="construction-price-field">
-          <span>База изделия</span>
-          <div className="price-value-field">
-            <input
-              aria-label={`Базовая цена: ${label || 'конструкция'}`}
-              inputMode="numeric"
-              min={0}
-              type="number"
-              value={basePrice}
-              onChange={(event) => onBasePriceChange(Math.max(0, Number(event.target.value) || 0))}
-            />
-            <small>₽</small>
+        {hasHardwareComposition ? (
+          <div className="construction-base-summary">
+            <span>База по составу</span>
+            <strong>6 мм: {money(componentBase6)}</strong>
+            <small>8 мм: {money(componentBase8)}</small>
           </div>
-        </label>
-        <label className="construction-price-field">
+        ) : (
+          <label className="construction-price-field construction-base-price-field">
+            <span>Резервная база</span>
+            <div className="price-value-field">
+              <input
+                aria-label={`Базовая цена: ${label || 'конструкция'}`}
+                inputMode="numeric"
+                min={0}
+                type="number"
+                value={basePrice}
+                onChange={(event) => onBasePriceChange(Math.max(0, Number(event.target.value) || 0))}
+              />
+              <small>₽</small>
+            </div>
+          </label>
+        )}
+        <label className="construction-price-field construction-installation-field">
           <span>Монтаж</span>
           <div className="price-value-field">
             <input
