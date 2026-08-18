@@ -1405,19 +1405,18 @@ function CalculatorScreen({
             items={catalog.hardware}
             onChange={(hardwareId) => onForm({ hardwareId })}
           />
+          <OptionSelect
+            label="Класс фурнитуры"
+            value={form.hardwareClassId}
+            items={catalog.hardwareClass}
+            onChange={(hardwareClassId) => onForm({ hardwareClassId })}
+          />
           {hardwareComponents.length > 0 ? (
             <div className="construction-composition-summary">
               <span>Состав конструкции</span>
               <strong>{hardwareComponents.length} позиций</strong>
             </div>
-          ) : (
-            <OptionSelect
-              label="Класс"
-              value={form.hardwareClassId}
-              items={catalog.hardwareClass}
-              onChange={(hardwareClassId) => onForm({ hardwareClassId })}
-            />
-          )}
+          ) : null}
         </div>
       </section>
       ) : null}
@@ -1426,7 +1425,7 @@ function CalculatorScreen({
       <section className="section-block">
         <div className="section-title">
           <h2>Услуги</h2>
-          <span>{hardware.label}, {hardwareComponents.length > 0 ? `${hardwareComponents.length} позиций` : hardwareClass.label}</span>
+          <span>{hardwareClass.label} · {hardware.label} · {hardwareComponents.length} позиций</span>
         </div>
         <div className="service-list">
           <ToggleRow
@@ -1480,6 +1479,7 @@ function CalculatorScreen({
         form={form}
         glass={glass}
         hardware={hardware}
+        hardwareClass={hardwareClass}
       />
 
       <div className="summary-column">
@@ -1845,9 +1845,10 @@ type ProductVisualizationProps = {
   form: CalculatorForm
   glass: PriceOption
   hardware: PriceOption
+  hardwareClass: PriceOption
 }
 
-function ProductVisualization({ construction, form, glass, hardware }: ProductVisualizationProps) {
+function ProductVisualization({ construction, form, glass, hardware, hardwareClass }: ProductVisualizationProps) {
   return (
     <section className="visualization-panel workspace-panel">
       <div className="panel-heading">
@@ -1861,7 +1862,7 @@ function ProductVisualization({ construction, form, glass, hardware }: ProductVi
         <img src={construction.imageUrl} alt={`Душевая: ${construction.title}`} />
         <figcaption>
           <strong>{construction.title}</strong>
-          <span>{glass.label} · {hardware.label}</span>
+          <span>{glass.label} · {hardwareClass.label} · {hardware.label}</span>
         </figcaption>
       </figure>
       <div className="visualization-specs" aria-label="Размеры выбранной конструкции">
@@ -3948,8 +3949,8 @@ function PricesScreen({
         controlsId="price-hardware-class"
         isOpen={openSection === 'hardwareClass'}
         items={catalog.hardwareClass}
-        suffix="₽"
-        title="Резервный класс фурнитуры"
+        suffix="% к стандарту"
+        title="Класс фурнитуры"
         onAdd={() => addOption('hardwareClass')}
         onChange={(id, value) => updateOption('hardwareClass', id, { price: value })}
         onDelete={(id) => deleteOption('hardwareClass', id)}

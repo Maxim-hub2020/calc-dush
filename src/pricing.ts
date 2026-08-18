@@ -74,7 +74,7 @@ const thicknessComponents = (
 ]
 
 export const defaultCatalog: PricingCatalog = {
-  revision: 3,
+  revision: 4,
   constructions: [
     {
       id: '6663',
@@ -446,8 +446,8 @@ export const defaultCatalog: PricingCatalog = {
     { id: 'av24-magnetic-135-8', label: 'AV24 FDPP-501.8: магнитный уплотнитель 135° 8 мм', price: 1400 },
   ],
   hardwareClass: [
-    { id: 'standard', label: 'Стандарт', price: 3700 },
-    { id: 'premium', label: 'Премиум', price: 9600 },
+    { id: 'standard', label: 'Стандарт', price: 0 },
+    { id: 'premium', label: 'Премиум', price: 100 },
   ],
   services: {
     deliveryBase: 1500,

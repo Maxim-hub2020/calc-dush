@@ -3460,6 +3460,7 @@
 }
 
 .construction-composition-summary {
+  grid-column: 1 / -1;
   min-height: 58px;
   display: grid;
   align-content: center;

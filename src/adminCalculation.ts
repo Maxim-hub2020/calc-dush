@@ -72,13 +72,14 @@ export const buildShowerCalculationBreakdown = (
   const hardwareBasePrice = getConstructionHardwareBasePrice(
     catalog,
     construction,
-    hardwareClass.price,
     glass.thickness,
   )
   const hasHardwareComposition = hardwareComponents.length > 0
   const fallbackConstructionBase = hasHardwareComposition ? 0 : Math.max(0, Number(construction.basePrice) || 0)
+  const hardwareClassMarkup = Math.max(0, Number(hardwareClass.price) || 0)
+  const hardwareClassPrice = hardwareBasePrice * percentFactor(hardwareClassMarkup)
   const hardwareColorMarkup = Math.max(0, Number(hardware.price) || 0)
-  const hardwarePrice = hardwareBasePrice * percentFactor(hardwareColorMarkup)
+  const hardwarePrice = hardwareClassPrice * percentFactor(hardwareColorMarkup)
   const productMarkup = Math.max(0, Number(catalog.services.productMarkupPercent) || 0)
   const hardwareMarkup = Math.max(0, Number(catalog.services.hardwareMarkupPercent) || 0)
   const productPart = (glassPrice + fallbackConstructionBase) * percentFactor(productMarkup)
@@ -149,9 +150,9 @@ export const buildShowerCalculationBreakdown = (
                   value: money(component.total),
                 }))
               : [{
-                  label: `Класс «${hardwareClass.label}»`,
+                  label: 'Состав конструкции',
                   formula: 'Состав конструкции пока не заполнен',
-                  value: money(hardwareClass.price),
+                  value: money(0),
                 }]
           ),
           {
@@ -160,8 +161,13 @@ export const buildShowerCalculationBreakdown = (
             value: money(hardwareBasePrice),
           },
           {
+            label: `Класс «${hardwareClass.label}»`,
+            formula: `${money(hardwareBasePrice)} × (1 + ${number(hardwareClassMarkup)}%)`,
+            value: money(hardwareClassPrice),
+          },
+          {
             label: `Цвет «${hardware.label}»`,
-            formula: `${money(hardwareBasePrice)} × (1 + ${number(hardwareColorMarkup)}%)`,
+            formula: `${money(hardwareClassPrice)} × (1 + ${number(hardwareColorMarkup)}%)`,
             value: money(hardwarePrice),
           },
           {

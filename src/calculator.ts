@@ -264,13 +264,12 @@ export const getConstructionHardwareComponents = (
 export const getConstructionHardwareBasePrice = (
   catalog: PricingCatalog,
   construction: Construction,
-  legacyHardwareClassPrice: number,
   glassThickness?: 6 | 8,
 ) => {
   const components = getConstructionHardwareComponents(catalog, construction, glassThickness)
   return components.length > 0
     ? components.reduce((sum, component) => sum + component.total, 0)
-    : Math.max(0, Number(legacyHardwareClassPrice) || 0)
+    : 0
 }
 
 export const createInitialForm = (catalog: PricingCatalog): CalculatorForm => {
@@ -328,13 +327,13 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
   const hardwareBasePrice = getConstructionHardwareBasePrice(
     catalog,
     construction,
-    hardwareClass.price,
     glass.thickness,
   )
   const hasHardwareComposition = getConstructionHardwareComponents(catalog, construction, glass.thickness).length > 0
   const fallbackConstructionBase = hasHardwareComposition ? 0 : Math.max(0, Number(construction.basePrice) || 0)
+  const hardwareClassFactor = 1 + Math.max(0, Number(hardwareClass.price) || 0) / 100
   const hardwareColorFactor = 1 + Math.max(0, Number(hardware.price) || 0) / 100
-  const hardwarePrice = hardwareBasePrice * hardwareColorFactor
+  const hardwarePrice = hardwareBasePrice * hardwareClassFactor * hardwareColorFactor
   const hasSurcharge = height > catalog.services.heightSurchargeAfter
   const surchargeFactor = hasSurcharge ? 1 + catalog.services.heightSurchargePercent / 100 : 1
   const applySurcharge = (value: number) => roundToTen(value * surchargeFactor)
@@ -445,8 +444,6 @@ const createShowerQuoteItem = (catalog: PricingCatalog, draft: ShowerQuoteDraftI
   const glass = getOption(catalog.glass, draft.form.glassId)
   const hardware = getOption(catalog.hardware, draft.form.hardwareId)
   const hardwareClass = getOption(catalog.hardwareClass, draft.form.hardwareClassId)
-  const hasHardwareComposition = getConstructionHardwareComponents(catalog, construction, glass.thickness).length > 0
-
   return {
     id: crypto.randomUUID(),
     kind: 'shower',
@@ -456,7 +453,7 @@ const createShowerQuoteItem = (catalog: PricingCatalog, draft: ShowerQuoteDraftI
     constructionTitle: construction.title,
     glassLabel: glass.label,
     hardwareLabel: hardware.label,
-    hardwareClassLabel: hasHardwareComposition ? 'По составу конструкции' : hardwareClass.label,
+    hardwareClassLabel: hardwareClass.label,
   }
 }
 
