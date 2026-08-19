@@ -137,6 +137,7 @@ import {
   type ServerSession,
 } from './serverSync'
 import { shareQuotePdf, type QuotePdfPreview } from './quotePdf'
+import { ProductionWorkspace } from './ProductionWorkspace'
 import mirrorVisualization from './assets/mirror-visualization.png'
 
 type ProductKind = 'shower' | 'mirror'
@@ -332,6 +333,11 @@ function App() {
   const [editingPriceSnapshot, setEditingPriceSnapshot] = useState<EditingPriceSnapshot | null>(null)
   const [pdfQuoteId, setPdfQuoteId] = useState('')
   const [pdfPreview, setPdfPreview] = useState<QuotePdfPreview | null>(null)
+  const [productionWorkspace, setProductionWorkspace] = useState<{
+    form: CalculatorForm
+    itemIndex: number
+    quoteNumber: string
+  } | null>(null)
   const [serverSession, setServerSession] = useState<ServerSession | null>(() => loadServerSession())
   const [syncStatus, setSyncStatus] = useState<PriceSyncStatus>(serverSession ? 'loading' : 'signed-out')
   const [syncMessage, setSyncMessage] = useState('')
@@ -809,6 +815,17 @@ function App() {
     void downloadQuotePdf(quote)
   }
 
+  const openProductionWorkspace = () => {
+    if (activePosition.kind !== 'shower') return
+    if (focusFirstInvalidPosition()) return
+    const editingQuote = quotes.find((quote) => quote.id === editingQuoteId)
+    setProductionWorkspace({
+      form: cloneForm(activePosition.form),
+      itemIndex: Math.max(0, positions.findIndex((position) => position.id === activePosition.id)),
+      quoteNumber: editingQuote?.number ?? getNextQuoteNumber(quotes),
+    })
+  }
+
   const addPosition = (kind: ProductKind) => {
     const sharedSettings = pickSharedPatch(activePosition.form)
     const next = kind === 'mirror'
@@ -1104,6 +1121,7 @@ function App() {
             onDelivery={updateOrderDelivery}
             onForm={updateForm}
             onPdf={downloadCurrentQuotePdf}
+            onProduction={isAdmin ? openProductionWorkspace : undefined}
             onQuantity={updatePositionQuantity}
             onSave={saveCurrentQuote}
             onSelectPosition={selectPosition}
@@ -1184,6 +1202,17 @@ function App() {
         <PdfPreviewDialog preview={pdfPreview} onClose={() => setPdfPreview(null)} />
       ) : null}
 
+      {productionWorkspace ? (
+        <ProductionWorkspace
+          catalog={catalog}
+          form={productionWorkspace.form}
+          itemIndex={productionWorkspace.itemIndex}
+          quoteNumber={productionWorkspace.quoteNumber}
+          onClose={() => setProductionWorkspace(null)}
+          onPreview={setPdfPreview}
+        />
+      ) : null}
+
     </div>
   )
 }
@@ -1199,7 +1228,7 @@ function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
       <section aria-labelledby="pdf-preview-title" aria-modal="true" className="pdf-preview-dialog" role="dialog">
         <header>
           <div>
-            <span>Коммерческое предложение</span>
+            <span>{preview.documentLabel}</span>
             <h2 id="pdf-preview-title">{preview.title}</h2>
           </div>
           <button aria-label="Закрыть просмотр PDF" title="Закрыть" type="button" onClick={onClose}>
@@ -1208,7 +1237,7 @@ function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
         </header>
         <div className="pdf-preview-ready">
           <FileDown size={52} aria-hidden="true" />
-          <h3>PDF сформирован</h3>
+          <h3>{preview.documentLabel}: PDF сформирован</h3>
           <p>Документ готов к просмотру и сохранению.</p>
           <strong>{preview.fileName}</strong>
         </div>
@@ -1252,6 +1281,7 @@ type CalculatorScreenProps = {
   onDelivery: (patch: Partial<QuoteDelivery>) => void
   onForm: (patch: Partial<CalculatorForm>) => void
   onPdf: () => void
+  onProduction?: () => void
   onQuantity: (quantity: number) => void
   onSave: () => void
   onOpenArchive: () => void
@@ -1305,6 +1335,7 @@ function CalculatorScreen({
   onDimension,
   onForm,
   onPdf,
+  onProduction,
   onSave,
   onOpenArchive,
   onOpenQuote,
@@ -1514,6 +1545,7 @@ function CalculatorScreen({
           hasErrors={positionSummaries.some((position) => position.hasErrors)}
           isPdfBusy={isPdfBusy}
           onPdf={onPdf}
+          onProduction={onProduction}
           onSave={onSave}
         />
         <RecentCalculations
@@ -2313,6 +2345,7 @@ type SummaryDockProps = {
   hasErrors: boolean
   isPdfBusy: boolean
   onPdf: () => void
+  onProduction?: () => void
   onSave: () => void
 }
 
@@ -2416,6 +2449,7 @@ function SummaryDock({
   hasErrors,
   isPdfBusy,
   onPdf,
+  onProduction,
   onSave,
 }: SummaryDockProps) {
   return (
@@ -2470,6 +2504,12 @@ function SummaryDock({
           <FileDown size={19} />
           {isPdfBusy ? 'Формируем...' : 'Создать PDF'}
         </button>
+        {onProduction ? (
+          <button className="production-action" disabled={hasErrors} type="button" onClick={onProduction}>
+            <Ruler size={19} />
+            Чертежи для производства
+          </button>
+        ) : null}
       </div>
     </aside>
   )

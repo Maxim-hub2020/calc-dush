@@ -1,6 +1,7 @@
 import type { Quote } from './calculator'
 import type { MirrorPricingCatalog } from './mirrorPricing'
 import type { PricingCatalog } from './pricing'
+import type { ProductionPlanAnalysis } from './productionPlanning'
 
 const sessionKey = 'shower-calc.server-session.v1'
 
@@ -122,14 +123,17 @@ const authenticatedRequest = async (path: string, init: RequestInit = {}) => {
   const session = loadServerSession()
   if (!session) throw new ServerSyncError('auth', 'Войдите в CRM')
 
-  const run = (access: string) => fetch(`${apiBase()}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...init.headers,
-      Authorization: `Bearer ${access}`,
-    },
-  })
+  const run = (access: string) => {
+    const isFormData = init.body instanceof FormData
+    return fetch(`${apiBase()}${path}`, {
+      ...init,
+      headers: {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...init.headers,
+        Authorization: `Bearer ${access}`,
+      },
+    })
+  }
 
   let response: Response
   try {
@@ -189,4 +193,18 @@ export const deleteServerQuote = async (quoteId: string) => {
   await authenticatedRequest(`/calculator-quotes/${encodeURIComponent(quoteId)}/`, {
     method: 'DELETE',
   })
+}
+
+export const analyzeProductionPlan = async (
+  image: File,
+  context: Record<string, unknown>,
+): Promise<ProductionPlanAnalysis> => {
+  const body = new FormData()
+  body.append('image', image)
+  body.append('context', JSON.stringify(context))
+  const response = await authenticatedRequest('/calculator-production/analyze/', {
+    method: 'POST',
+    body,
+  })
+  return response.json() as Promise<ProductionPlanAnalysis>
 }

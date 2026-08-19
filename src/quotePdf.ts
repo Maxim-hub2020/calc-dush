@@ -435,6 +435,7 @@ const pdfFileName = (quote: Quote) => `${quote.number.trim()}.pdf`
 export type QuotePdfPreview = {
   fileName: string
   title: string
+  documentLabel: string
   url: string
 }
 
@@ -443,5 +444,5 @@ export const shareQuotePdf = async (quote: Quote): Promise<QuotePdfPreview> => {
   const title = `${quote.number} - коммерческое предложение`
   const blob = await createQuotePdfBlob(quote)
 
-  return { fileName, title, url: URL.createObjectURL(blob) }
+  return { fileName, title, documentLabel: 'Коммерческое предложение', url: URL.createObjectURL(blob) }
 }
