@@ -26,7 +26,13 @@ export type PriceOption = {
   thickness?: 6 | 8
 }
 
-export type ShowerHardwareItem = PriceOption
+export type ShowerHardwareItem = PriceOption & {
+  sectionId: ShowerHardwareSectionId
+  sku?: string
+  sourceUrl?: string
+  sourceProductId?: string
+  priceOnRequest?: boolean
+}
 
 export type ConstructionHardwareComponent = {
   id: string
@@ -61,7 +67,12 @@ const hardwareComponent = (
   hardwareItemId: string,
   quantity: number,
   glassThickness?: 6 | 8,
-): ConstructionHardwareComponent => ({ id, hardwareItemId, quantity, glassThickness })
+): ConstructionHardwareComponent => ({
+  id,
+  hardwareItemId: legacyShowerHardwareIdMap[hardwareItemId] ?? hardwareItemId,
+  quantity,
+  glassThickness,
+})
 
 const thicknessComponents = (
   prefix: string,
@@ -74,7 +85,7 @@ const thicknessComponents = (
 ]
 
 export const defaultCatalog: PricingCatalog = {
-  revision: 4,
+  revision: 5,
   constructions: [
     {
       id: '6663',
@@ -408,43 +419,7 @@ export const defaultCatalog: PricingCatalog = {
     { id: 'gunmetal', label: 'Оружейная сталь', price: 60 },
     { id: 'gold', label: 'Золото / брашированное золото', price: 55 },
   ],
-  hardwareItems: [
-    { id: 'av24-fdp122', label: 'AV24 FDP-122: петля стена-стекло 6/8 мм', price: 999 },
-    { id: 'av24-fdp115', label: 'AV24 FDP-115: петля стекло-стекло 180° 6/8 мм', price: 1550 },
-    { id: 'av24-fdp184', label: 'AV24 FDP-184: петля стекло-стекло 90° 6/8 мм', price: 3200 },
-    { id: 'av24-fdk22', label: 'AV24 FDK-22: коннектор стена-стекло 90° 6/8 мм', price: 490 },
-    { id: 'av24-fdk23', label: 'AV24 FDK-23: коннектор с пластиной 6/8 мм', price: 650 },
-    { id: 'av24-fdk24', label: 'AV24 FDK-24: коннектор стекло-стекло 90° 6/8 мм', price: 850 },
-    { id: 'av24-fdk27', label: 'AV24 FDK-27: коннектор стена-стекло 135° 6/8 мм', price: 800 },
-    { id: 'av24-fdk28', label: 'AV24 FDK-28: коннектор стекло-стекло 135° 6/8 мм', price: 1000 },
-    { id: 'av24-fdr30', label: 'AV24 FDR-30: ручка-кноб 6/8 мм', price: 390 },
-    { id: 'av24-profile-8', label: 'AV24 FDPA-50.3: опорный профиль 8 мм, 3 м', price: 1090 },
-    { id: 'av24-profile-cap-8', label: 'AV24 FDPA-500.1: верхняя заглушка профиля 8 мм', price: 210 },
-    { id: 'av24-profile-end-8', label: 'AV24 FDPA-501: торцевая заглушка профиля 8 мм', price: 160 },
-    { id: 'av24-fdt151', label: 'AV24 FDT-151: труба Ø19 мм, 1 м', price: 999 },
-    { id: 'av24-fdc14', label: 'AV24 FDC-14: крепление трубы Ø19 к стене', price: 250 },
-    { id: 'av24-fdc12', label: 'AV24 FDC-12: торцевой держатель стекла', price: 490 },
-    { id: 'av24-fds1', label: 'AV24 FDS-1: раздвижная система', price: 4200 },
-    { id: 'av24-fdt352', label: 'AV24 FDT-352: трек 30×10 мм, 2 м', price: 2700 },
-    { id: 'av24-fdc30', label: 'AV24 FDC-30: крепление трека к стене', price: 470 },
-    { id: 'av24-fdc33', label: 'AV24 FDC-33: торцевой держатель трека', price: 720 },
-    { id: 'av24-fdc35', label: 'AV24 FDC-35: сквозной держатель трека', price: 830 },
-    { id: 'av24-fdc10', label: 'AV24 FDC-10: крепление трубы Ø19 к стене', price: 310 },
-    { id: 'av24-fdc11', label: 'AV24 FDC-11: сквозной держатель стекла', price: 490 },
-    { id: 'av24-threshold', label: 'AV24 FDPP-10.1: акриловый порог, 1 м', price: 199 },
-    { id: 'av24-bottom-seal-6', label: 'AV24 FDPP-436.6: нижний уплотнитель 6 мм', price: 180 },
-    { id: 'av24-bottom-seal-8', label: 'AV24 FDPP-436.8: нижний уплотнитель 8 мм', price: 190 },
-    { id: 'av24-chi-seal-6', label: 'AV24 FDPP-402.6: Ч-образный уплотнитель 6 мм', price: 300 },
-    { id: 'av24-chi-seal-8', label: 'AV24 FDPP-402.8: Ч-образный уплотнитель 8 мм', price: 250 },
-    { id: 'av24-f-seal-6', label: 'AV24 FDPP-407.6: F-образный уплотнитель 6 мм', price: 290 },
-    { id: 'av24-f-seal-8', label: 'AV24 FDPP-407.8: F-образный уплотнитель 8 мм', price: 320 },
-    { id: 'av24-magnetic-90-6', label: 'AV24 FDPP-502.6: магнитный уплотнитель 90° 6 мм', price: 1160 },
-    { id: 'av24-magnetic-90-8', label: 'AV24 FDPP-502.8: магнитный уплотнитель 90° 8 мм', price: 1370 },
-    { id: 'av24-magnetic-180-6', label: 'AV24 FDPP-501.6: магнитный уплотнитель 180° 6 мм', price: 1160 },
-    { id: 'av24-magnetic-180-8', label: 'AV24 FDPP-503.8: магнитный уплотнитель 180° 8 мм', price: 1700 },
-    { id: 'av24-magnetic-135-6', label: 'AV24 FDPP-501.6: магнитный уплотнитель 135° 6 мм', price: 1160 },
-    { id: 'av24-magnetic-135-8', label: 'AV24 FDPP-501.8: магнитный уплотнитель 135° 8 мм', price: 1400 },
-  ],
+  hardwareItems: av24ShowerHardwareItems,
   hardwareClass: [
     { id: 'standard', label: 'Стандарт', price: 0 },
     { id: 'premium', label: 'Премиум', price: 100 },
@@ -478,3 +453,8 @@ import shower6751 from './assets/showers/shower-6751.webp'
 import shower6752 from './assets/showers/shower-6752.webp'
 import shower6753 from './assets/showers/shower-6753.webp'
 import shower6754 from './assets/showers/shower-6754.webp'
+import {
+  av24ShowerHardwareItems,
+  legacyShowerHardwareIdMap,
+  type ShowerHardwareSectionId,
+} from './showerAv24Components'

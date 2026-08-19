@@ -111,6 +111,7 @@ import {
   type PricingCatalog,
   type ShowerHardwareItem,
 } from './pricing'
+import { showerHardwareSections, type ShowerHardwareSectionId } from './showerAv24Components'
 import {
   loadCatalog,
   loadMirrorCatalog,
@@ -516,11 +517,13 @@ function App() {
           : mirrorCatalogRef.current
         const mirrorCatalogNeedsMigration = !hasRemoteMirror
           || Math.max(0, Number(remoteMirror.revision) || 0) < nextMirrorCatalog.revision
+        const showerCatalogNeedsMigration = !hasRemoteShower
+          || Math.max(0, Number(remoteShower.revision) || 0) < nextCatalog.revision
 
         setCatalog(nextCatalog)
         setMirrorCatalog(nextMirrorCatalog)
 
-        const saved = !hasRemoteShower || mirrorCatalogNeedsMigration
+        const saved = showerCatalogNeedsMigration || mirrorCatalogNeedsMigration
           ? await saveServerCatalogs(nextCatalog, nextMirrorCatalog)
           : remote
         if (cancelled) return
@@ -3620,6 +3623,8 @@ function PricesScreen({
   const [catalog, setDraftCatalog] = useState(() => structuredClone(savedCatalog))
   const [mirrorCatalog, setDraftMirrorCatalog] = useState(() => structuredClone(savedMirrorCatalog))
   const [openSection, setOpenSection] = useState<PriceSectionId | null>(null)
+  const [openShowerHardwareSection, setOpenShowerHardwareSection] = useState<ShowerHardwareSectionId | null>(null)
+  const [showerHardwareQuery, setShowerHardwareQuery] = useState('')
   const [priceTab, setPriceTab] = useState<'shower' | 'mirror' | 'works' | 'delivery'>('shower')
   const dirtyCount = useMemo(
     () => countChangedValues(catalog, savedCatalog) + countChangedValues(mirrorCatalog, savedMirrorCatalog),
@@ -3631,8 +3636,29 @@ function PricesScreen({
       items: mirrorCatalog.services.filter((item) => item.sectionId === section.id),
     }))
     .filter((section) => section.items.length > 0), [mirrorCatalog.services])
+  const showerPriceSections = useMemo(() => {
+    const query = showerHardwareQuery.trim().toLocaleLowerCase('ru')
+    return showerHardwareSections
+      .map((section) => ({
+        ...section,
+        items: catalog.hardwareItems.filter((item) => item.sectionId === section.id && (
+          !query
+          || item.label.toLocaleLowerCase('ru').includes(query)
+          || item.sku?.toLocaleLowerCase('ru').includes(query)
+        )),
+        total: catalog.hardwareItems.filter((item) => item.sectionId === section.id).length,
+      }))
+      .filter((section) => section.total > 0 && (!query || section.items.length > 0))
+  }, [catalog.hardwareItems, showerHardwareQuery])
+  const showerHardwareMatchCount = showerPriceSections.reduce((sum, section) => sum + section.items.length, 0)
   const isDirty = dirtyCount > 0
 
+  useEffect(() => {
+    if (!showerHardwareQuery.trim() || showerPriceSections.length === 0) return
+    if (!showerPriceSections.some((section) => section.id === openShowerHardwareSection)) {
+      setOpenShowerHardwareSection(showerPriceSections[0].id)
+    }
+  }, [openShowerHardwareSection, showerHardwareQuery, showerPriceSections])
   useEffect(() => onDirtyChange(isDirty), [isDirty, onDirtyChange])
   useEffect(() => {
     if (isDirty) return
@@ -3693,7 +3719,7 @@ function PricesScreen({
     setDraftCatalog({ ...catalog, [group]: catalog[group].filter((item) => item.id !== id) })
   }
 
-  const updateHardwareItem = (id: string, patch: Partial<Pick<ShowerHardwareItem, 'label' | 'price'>>) => {
+  const updateHardwareItem = (id: string, patch: Partial<ShowerHardwareItem>) => {
     setDraftCatalog({
       ...catalog,
       hardwareItems: catalog.hardwareItems.map((item) => item.id === id ? { ...item, ...patch } : item),
@@ -3705,9 +3731,15 @@ function PricesScreen({
       ...catalog,
       hardwareItems: [
         ...catalog.hardwareItems,
-        { id: `custom-${crypto.randomUUID()}`, label: 'Новая фурнитура', price: 0 },
+        {
+          id: `custom-${crypto.randomUUID()}`,
+          label: 'Новая фурнитура',
+          price: 0,
+          sectionId: 'accessories',
+        },
       ],
     })
+    setOpenShowerHardwareSection('accessories')
   }
 
   const deleteHardwareItem = (id: string) => {
@@ -4023,19 +4055,67 @@ function PricesScreen({
         onNameChange={(id, value) => updateOption('hardwareClass', id, { label: value })}
         onToggle={() => toggleSection('hardwareClass')}
       />
-      <PriceGroup
-        category="shower"
-        controlsId="price-hardware-items"
-        isOpen={openSection === 'hardwareItems'}
-        items={catalog.hardwareItems}
-        suffix="₽/шт."
-        title="Фурнитура поштучно"
-        onAdd={addHardwareItem}
-        onChange={(id, value) => updateHardwareItem(id, { price: value })}
-        onDelete={deleteHardwareItem}
-        onNameChange={(id, value) => updateHardwareItem(id, { label: value })}
-        onToggle={() => toggleSection('hardwareItems')}
-      />
+      <section className={openSection === 'hardwareItems' ? 'section-block price-accordion price-category-shower is-open' : 'section-block price-accordion price-category-shower'}>
+        <PriceAccordionHeader
+          controlsId="price-hardware-items"
+          isOpen={openSection === 'hardwareItems'}
+          meta={`${formatPositionCount(catalog.hardwareItems.length)} · ${showerHardwareSections.length} разделов`}
+          title="Фурнитура AV-24"
+          onAdd={addHardwareItem}
+          onToggle={() => toggleSection('hardwareItems')}
+        />
+        {openSection === 'hardwareItems' ? (
+          <div className="price-accordion-body shower-price-catalog" id="price-hardware-items">
+            <label className="shower-hardware-search">
+              <Search size={17} aria-hidden="true" />
+              <span className="sr-only">Поиск фурнитуры AV-24</span>
+              <input
+                placeholder="Поиск по названию или артикулу"
+                type="search"
+                value={showerHardwareQuery}
+                onChange={(event) => setShowerHardwareQuery(event.target.value)}
+              />
+              {showerHardwareQuery ? <small>{formatPositionCount(showerHardwareMatchCount)}</small> : null}
+            </label>
+            <div className="shower-price-section-list">
+              {showerPriceSections.map((section) => {
+                const isOpen = openShowerHardwareSection === section.id
+                return (
+                  <section className={isOpen ? 'shower-price-section is-open' : 'shower-price-section'} key={section.id}>
+                    <button
+                      aria-expanded={isOpen}
+                      className="shower-price-section-toggle"
+                      type="button"
+                      onClick={() => setOpenShowerHardwareSection((current) => current === section.id ? null : section.id)}
+                    >
+                      <span>
+                        <strong>{section.label}</strong>
+                        <small>{showerHardwareQuery ? `${formatPositionCount(section.items.length)} из ${section.total}` : formatPositionCount(section.total)}</small>
+                      </span>
+                      <ChevronDown size={18} aria-hidden="true" />
+                    </button>
+                    {isOpen ? (
+                      <div className="price-list shower-price-section-body">
+                        {section.items.map((item) => (
+                          <ShowerHardwarePriceRow
+                            canDelete={catalog.hardwareItems.length > 1}
+                            item={item}
+                            key={item.id}
+                            onChange={(patch) => updateHardwareItem(item.id, patch)}
+                            onDelete={() => deleteHardwareItem(item.id)}
+                          />
+                        ))}
+                        {section.items.length === 0 ? <p className="shower-hardware-empty">В этом разделе совпадений нет.</p> : null}
+                      </div>
+                    ) : null}
+                  </section>
+                )
+              })}
+              {showerPriceSections.length === 0 ? <p className="shower-hardware-empty">По вашему запросу ничего не найдено.</p> : null}
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <section className={openSection === 'constructions' ? 'section-block price-accordion price-category-shower is-open' : 'section-block price-accordion price-category-shower'}>
         <PriceAccordionHeader
@@ -4406,6 +4486,175 @@ function EditablePriceRow({
   )
 }
 
+type ShowerHardwarePriceRowProps = {
+  item: ShowerHardwareItem
+  canDelete: boolean
+  onChange: (patch: Partial<ShowerHardwareItem>) => void
+  onDelete: () => void
+}
+
+function ShowerHardwarePriceRow({ item, canDelete, onChange, onDelete }: ShowerHardwarePriceRowProps) {
+  return (
+    <div className="shower-hardware-price-row">
+      <div className="mirror-service-name">
+        <label className="price-name-field">
+          <span className="sr-only">Название фурнитуры</span>
+          <input value={item.label} onChange={(event) => onChange({ label: event.target.value })} />
+        </label>
+        {item.sourceUrl ? (
+          <a href={item.sourceUrl} rel="noreferrer" target="_blank">
+            {item.sku ? `AV-24 · арт. ${item.sku}` : 'AV-24 · карточка товара'}
+            <ExternalLink size={12} aria-hidden="true" />
+          </a>
+        ) : null}
+      </div>
+      <label className="price-value-field">
+        <span className="sr-only">Цена фурнитуры</span>
+        <input
+          inputMode="decimal"
+          min={0}
+          step="0.01"
+          type="number"
+          value={item.price}
+          onChange={(event) => {
+            const price = Math.max(0, Number(event.target.value) || 0)
+            onChange({ price, ...(price > 0 ? { priceOnRequest: false } : {}) })
+          }}
+        />
+        <small>₽/шт.</small>
+      </label>
+      <label className="shower-hardware-category">
+        <span>Группа</span>
+        <select
+          value={item.sectionId}
+          onChange={(event) => onChange({ sectionId: event.target.value as ShowerHardwareSectionId })}
+        >
+          {showerHardwareSections.map((section) => (
+            <option key={section.id} value={section.id}>{section.label}</option>
+          ))}
+        </select>
+      </label>
+      <label className="shower-hardware-on-request">
+        <input
+          checked={Boolean(item.priceOnRequest)}
+          type="checkbox"
+          onChange={(event) => onChange({ priceOnRequest: event.target.checked })}
+        />
+        <span>Цена по запросу</span>
+      </label>
+      <button
+        aria-label={`Удалить ${item.label}`}
+        className="price-delete"
+        disabled={!canDelete}
+        type="button"
+        onClick={onDelete}
+      >
+        <Trash2 size={17} />
+      </button>
+    </div>
+  )
+}
+
+type ShowerHardwarePickerProps = {
+  items: ShowerHardwareItem[]
+  value: string
+  onChange: (id: string) => void
+}
+
+function ShowerHardwarePicker({ items, value, onChange }: ShowerHardwarePickerProps) {
+  const selected = items.find((item) => item.id === value) ?? items[0]
+  const [isOpen, setIsOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [sectionId, setSectionId] = useState<ShowerHardwareSectionId>(selected?.sectionId ?? 'accessories')
+  const filteredItems = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('ru')
+    return items.filter((item) => item.sectionId === sectionId && (
+      !normalizedQuery
+      || item.label.toLocaleLowerCase('ru').includes(normalizedQuery)
+      || item.sku?.toLocaleLowerCase('ru').includes(normalizedQuery)
+    ))
+  }, [items, query, sectionId])
+
+  useEffect(() => {
+    if (selected?.sectionId) setSectionId(selected.sectionId)
+  }, [selected?.sectionId])
+
+  if (!selected) return null
+
+  return (
+    <div className="composition-hardware-picker">
+      <button
+        aria-expanded={isOpen}
+        className="composition-hardware-picker-toggle"
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span>
+          <strong>{selected.label}</strong>
+          <small>{selected.sku ? `AV-24 · ${selected.sku}` : 'Своя позиция'}</small>
+        </span>
+        <ChevronDown size={16} aria-hidden="true" />
+      </button>
+      {selected.sourceUrl ? (
+        <a className="composition-hardware-source" href={selected.sourceUrl} rel="noreferrer" target="_blank">
+          Открыть на AV-24
+          <ExternalLink size={12} aria-hidden="true" />
+        </a>
+      ) : null}
+      {isOpen ? (
+        <div className="composition-hardware-picker-panel">
+          <div className="composition-hardware-picker-tools">
+            <select
+              aria-label="Группа фурнитуры"
+              value={sectionId}
+              onChange={(event) => setSectionId(event.target.value as ShowerHardwareSectionId)}
+            >
+              {showerHardwareSections.map((section) => (
+                <option key={section.id} value={section.id}>{section.label}</option>
+              ))}
+            </select>
+            <label>
+              <Search size={15} aria-hidden="true" />
+              <span className="sr-only">Поиск фурнитуры</span>
+              <input
+                autoFocus
+                placeholder="Название или артикул"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <button aria-label="Закрыть выбор фурнитуры" type="button" onClick={() => setIsOpen(false)}>
+              <X size={16} />
+            </button>
+          </div>
+          <div className="composition-hardware-picker-list">
+            {filteredItems.map((item) => (
+              <button
+                className={item.id === value ? 'is-selected' : ''}
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  onChange(item.id)
+                  setIsOpen(false)
+                  setQuery('')
+                }}
+              >
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{item.sku ? `арт. ${item.sku}` : 'Своя позиция'}</small>
+                </span>
+                <b>{item.priceOnRequest ? 'По запросу' : money(item.price)}</b>
+              </button>
+            ))}
+            {filteredItems.length === 0 ? <p>Совпадений нет</p> : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 type ConstructionPriceRowProps = {
   label: string
   basePrice: number
@@ -4525,17 +4774,14 @@ function ConstructionPriceRow({
               const item = hardwareItems.find((entry) => entry.id === component.hardwareItemId) ?? hardwareItems[0]
               return (
                 <div className="composition-item-row" key={component.id}>
-                  <label>
+                  <div className="composition-hardware-field">
                     <span>Фурнитура</span>
-                    <select
+                    <ShowerHardwarePicker
+                      items={hardwareItems}
                       value={component.hardwareItemId}
-                      onChange={(event) => onHardwareChange(component.id, { hardwareItemId: event.target.value })}
-                    >
-                      {hardwareItems.map((hardwareItem) => (
-                        <option key={hardwareItem.id} value={hardwareItem.id}>{hardwareItem.label}</option>
-                      ))}
-                    </select>
-                  </label>
+                      onChange={(hardwareItemId) => onHardwareChange(component.id, { hardwareItemId })}
+                    />
+                  </div>
                   <label>
                     <span>Количество</span>
                     <input

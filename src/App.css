@@ -1756,7 +1756,8 @@
     grid-template-columns: minmax(0, 1fr) 88px 40px;
   }
 
-  .composition-item-row > label:first-child {
+  .composition-item-row > label:first-child,
+  .composition-item-row > .composition-hardware-field {
     grid-column: 1 / 5;
   }
 
@@ -1781,6 +1782,22 @@
   .composition-item-row > .price-delete {
     grid-column: 4;
     grid-row: 2;
+  }
+
+  .composition-hardware-picker-tools {
+    grid-template-columns: minmax(0, 1fr) 34px;
+  }
+
+  .composition-hardware-picker-tools > select {
+    grid-column: 1 / 3;
+  }
+
+  .composition-hardware-picker-tools > label {
+    grid-column: 1;
+  }
+
+  .composition-hardware-picker-tools > button {
+    grid-column: 2;
   }
 
   .mirror-group-editor-head {
@@ -3827,6 +3844,350 @@
   accent-color: var(--accent);
 }
 
+.shower-price-catalog,
+.shower-price-section-list {
+  display: grid;
+  gap: 9px;
+}
+
+.shower-hardware-search {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+}
+
+.shower-hardware-search input {
+  min-width: 0;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--heading);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.shower-hardware-search small {
+  color: var(--accent-dark);
+  font-size: 11px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.shower-price-section {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.shower-price-section-toggle {
+  width: 100%;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 11px;
+  border: 0;
+  background: #fff;
+  color: var(--heading);
+  text-align: left;
+}
+
+.shower-price-section-toggle > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.shower-price-section-toggle strong {
+  font-size: 13px;
+}
+
+.shower-price-section-toggle small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.shower-price-section-toggle svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+
+.shower-price-section.is-open .shower-price-section-toggle svg {
+  color: var(--accent);
+  transform: rotate(180deg);
+}
+
+.shower-price-section-body {
+  max-height: 620px;
+  overflow-y: auto;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+}
+
+.shower-hardware-price-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 126px 170px 150px 40px;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.shower-hardware-price-row input,
+.shower-hardware-price-row select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--heading);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.shower-hardware-category {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.shower-hardware-category > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.shower-hardware-on-request {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--heading);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.shower-hardware-on-request input {
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.shower-hardware-empty {
+  margin: 0;
+  padding: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 680;
+  text-align: center;
+}
+
+.composition-hardware-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.composition-hardware-field > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 740;
+}
+
+.composition-hardware-picker {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.composition-hardware-picker-toggle {
+  width: 100%;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--heading);
+  text-align: left;
+}
+
+.composition-hardware-picker-toggle > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.composition-hardware-picker-toggle strong,
+.composition-hardware-picker-toggle small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composition-hardware-picker-toggle strong {
+  font-size: 11px;
+}
+
+.composition-hardware-picker-toggle small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 680;
+}
+
+.composition-hardware-source {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-dark);
+  font-size: 9px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.composition-hardware-source:hover {
+  text-decoration: underline;
+}
+
+.composition-hardware-picker-panel {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.composition-hardware-picker-tools {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.75fr) minmax(160px, 1fr) 34px;
+  gap: 6px;
+}
+
+.composition-hardware-picker-tools select,
+.composition-hardware-picker-tools input {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--heading);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 680;
+}
+
+.composition-hardware-picker-tools > label {
+  position: relative;
+  min-width: 0;
+}
+
+.composition-hardware-picker-tools > label svg {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+
+.composition-hardware-picker-tools > label input {
+  width: 100%;
+  padding-left: 29px;
+}
+
+.composition-hardware-picker-tools > button {
+  width: 34px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--muted);
+}
+
+.composition-hardware-picker-list {
+  max-height: 300px;
+  display: grid;
+  gap: 5px;
+  overflow-y: auto;
+}
+
+.composition-hardware-picker-list > button {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--heading);
+  text-align: left;
+}
+
+.composition-hardware-picker-list > button > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.composition-hardware-picker-list strong {
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.composition-hardware-picker-list small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.composition-hardware-picker-list b {
+  color: var(--accent-dark);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.composition-hardware-picker-list > button.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.composition-hardware-picker-list > p {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
 @media (max-width: 759px) {
   .app-tabs .tab-button {
     gap: 4px;
@@ -3871,6 +4232,30 @@
   }
 
   .mirror-service-price-row > .price-delete {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .shower-hardware-price-row {
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 0.42fr) 40px;
+    align-items: end;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .shower-hardware-price-row > .mirror-service-name {
+    grid-column: 1 / 3;
+  }
+
+  .shower-hardware-category {
+    grid-column: 1 / 3;
+  }
+
+  .shower-hardware-on-request {
+    grid-column: 1 / 3;
+  }
+
+  .shower-hardware-price-row > .price-delete {
     grid-column: 3;
     grid-row: 1;
   }

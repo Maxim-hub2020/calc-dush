@@ -1,6 +1,7 @@
 import type { Quote } from './calculator'
 import { defaultMirrorCatalog, type MirrorPricingCatalog } from './mirrorPricing'
 import { defaultCatalog, type PricingCatalog } from './pricing'
+import { legacyShowerHardwareIdMap } from './showerAv24Components'
 
 const catalogKey = 'shower-calc.catalog.v1'
 const mirrorCatalogKey = 'shower-calc.mirror-catalog.v1'
@@ -51,9 +52,24 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
     services.deliveryKmRate = 50
   }
 
-  const hardwareItems = savedRevision < 2
-    ? defaultCatalog.hardwareItems
-    : mergeItems(defaultCatalog.hardwareItems, saved.hardwareItems)
+  const normalizedSavedHardwareItems = (saved.hardwareItems ?? []).map((item) => ({
+    ...item,
+    id: legacyShowerHardwareIdMap[item.id] ?? item.id,
+  }))
+  const defaultHardwareItemIds = new Set(defaultCatalog.hardwareItems.map((item) => item.id))
+  const savedHardwareItemsById = new Map(normalizedSavedHardwareItems.map((item) => [item.id, item]))
+  const hardwareItems = (savedRevision < 5
+    ? [
+        ...defaultCatalog.hardwareItems.map((item) => {
+          const savedItem = savedHardwareItemsById.get(item.id)
+          return { ...item, ...savedItem, sectionId: savedItem?.sectionId ?? item.sectionId }
+        }),
+        ...normalizedSavedHardwareItems
+          .filter((item) => !defaultHardwareItemIds.has(item.id))
+          .map((item) => ({ ...item, sectionId: item.sectionId ?? 'accessories' })),
+      ]
+    : mergeItems(defaultCatalog.hardwareItems, normalizedSavedHardwareItems))
+    .map((item) => ({ ...item, sectionId: item.sectionId ?? 'accessories' }))
   const hardwareItemIds = new Set(hardwareItems.map((item) => item.id))
 
   return {
@@ -61,6 +77,10 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
     constructions: constructions.map((construction) => ({
       ...construction,
       hardwareComponents: (construction.hardwareComponents ?? [])
+        .map((component) => ({
+          ...component,
+          hardwareItemId: legacyShowerHardwareIdMap[component.hardwareItemId] ?? component.hardwareItemId,
+        }))
         .filter((component) => hardwareItemIds.has(component.hardwareItemId))
         .map((component) => ({
           ...component,
