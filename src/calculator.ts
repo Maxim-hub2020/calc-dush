@@ -1,4 +1,10 @@
-import { defaultCatalog, type Construction, type PriceOption, type PricingCatalog } from './pricing'
+import {
+  defaultCatalog,
+  resolveHardwareComponentGlassThickness,
+  type Construction,
+  type PriceOption,
+  type PricingCatalog,
+} from './pricing'
 import {
   getMirrorCalculatedOptions,
   getMirrorMaterial,
@@ -252,12 +258,19 @@ export const getConstructionHardwareComponents = (
   glassThickness?: 6 | 8,
 ) => (
   (construction.hardwareComponents ?? [])
-    .filter((component) => !glassThickness || !component.glassThickness || component.glassThickness === glassThickness)
     .flatMap((component) => {
-    const item = catalog.hardwareItems.find((hardwareItem) => hardwareItem.id === component.hardwareItemId)
-    if (!item) return []
-    const quantity = Math.max(0, Number(component.quantity) || 0)
-    return [{ ...component, item, quantity, total: item.price * quantity }]
+      const item = catalog.hardwareItems.find((hardwareItem) => hardwareItem.id === component.hardwareItemId)
+      if (!item) return []
+      const compatibleThickness = resolveHardwareComponentGlassThickness(component, item)
+      if (glassThickness && compatibleThickness && compatibleThickness !== glassThickness) return []
+      const quantity = Math.max(0, Number(component.quantity) || 0)
+      return [{
+        ...component,
+        glassThickness: compatibleThickness,
+        item,
+        quantity,
+        total: item.price * quantity,
+      }]
     })
 )
 

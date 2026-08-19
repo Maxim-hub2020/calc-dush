@@ -1,6 +1,10 @@
 import type { Quote } from './calculator'
 import { defaultMirrorCatalog, type MirrorPricingCatalog } from './mirrorPricing'
-import { defaultCatalog, type PricingCatalog } from './pricing'
+import {
+  defaultCatalog,
+  resolveHardwareComponentGlassThickness,
+  type PricingCatalog,
+} from './pricing'
 import { legacyShowerHardwareIdMap } from './showerAv24Components'
 
 const catalogKey = 'shower-calc.catalog.v1'
@@ -71,6 +75,7 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
     : mergeItems(defaultCatalog.hardwareItems, normalizedSavedHardwareItems))
     .map((item) => ({ ...item, sectionId: item.sectionId ?? 'accessories' }))
   const hardwareItemIds = new Set(hardwareItems.map((item) => item.id))
+  const hardwareItemsById = new Map(hardwareItems.map((item) => [item.id, item]))
 
   return {
     revision: defaultCatalog.revision,
@@ -82,13 +87,16 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
           hardwareItemId: legacyShowerHardwareIdMap[component.hardwareItemId] ?? component.hardwareItemId,
         }))
         .filter((component) => hardwareItemIds.has(component.hardwareItemId))
-        .map((component) => ({
-          ...component,
-          quantity: Math.max(0, Number(component.quantity) || 0),
-          glassThickness: component.glassThickness === 6 || component.glassThickness === 8
-            ? component.glassThickness
-            : undefined,
-        })),
+        .map((component) => {
+          const hardwareItem = hardwareItemsById.get(component.hardwareItemId)
+          return {
+            ...component,
+            quantity: Math.max(0, Number(component.quantity) || 0),
+            glassThickness: hardwareItem
+              ? resolveHardwareComponentGlassThickness(component, hardwareItem)
+              : undefined,
+          }
+        }),
     })),
     glass: savedRevision < 2
       ? defaultCatalog.glass

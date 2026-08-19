@@ -41,6 +41,30 @@ export type ConstructionHardwareComponent = {
   glassThickness?: 6 | 8
 }
 
+const mentionsGlassThickness = (label: string, thickness: 6 | 8) => {
+  const normalized = label.toLocaleLowerCase('ru').replaceAll('ё', 'е')
+  const pairedThickness = /(?:^|[^\d])6\s*(?:\/|\\|,|\+|-|и)\s*8\s*мм(?:$|[^\p{L}\d])/u
+  if (pairedThickness.test(normalized)) return true
+  return new RegExp(`(?:^|[^\\d])${thickness}\\s*мм(?:$|[^\\p{L}\\d])`, 'u').test(normalized)
+}
+
+export const inferHardwareItemGlassThickness = (
+  item: Pick<ShowerHardwareItem, 'label'>,
+): 6 | 8 | undefined => {
+  const supports6 = mentionsGlassThickness(item.label, 6)
+  const supports8 = mentionsGlassThickness(item.label, 8)
+  return supports6 === supports8 ? undefined : supports6 ? 6 : 8
+}
+
+export const resolveHardwareComponentGlassThickness = (
+  component: Pick<ConstructionHardwareComponent, 'glassThickness'>,
+  item: Pick<ShowerHardwareItem, 'label'>,
+): 6 | 8 | undefined => {
+  const explicitThickness = Number(component.glassThickness)
+  if (explicitThickness === 6 || explicitThickness === 8) return explicitThickness
+  return inferHardwareItemGlassThickness(item)
+}
+
 export type ServicePrices = {
   deliveryBase: number
   deliveryKmRate: number
@@ -85,7 +109,7 @@ const thicknessComponents = (
 ]
 
 export const defaultCatalog: PricingCatalog = {
-  revision: 5,
+  revision: 6,
   constructions: [
     {
       id: '6663',
