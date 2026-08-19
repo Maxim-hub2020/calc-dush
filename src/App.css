@@ -5362,6 +5362,32 @@ body { padding: 0; background: #f7f7f4; }
 .archive-empty p { margin: 0 0 18px; color: #64748b; }
 
 .prices-screen { max-width: 1180px; margin: 0 auto; padding-bottom: 92px; }
+.price-global-search { display: grid; gap: 10px; padding: 12px; overflow: hidden; }
+.price-global-search-field { min-height: 48px; display: grid; grid-template-columns: 22px minmax(0,1fr) 36px; align-items: center; gap: 8px; padding: 0 7px 0 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: white; color: #64748b; }
+.price-global-search-field:focus-within { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); color: #2563eb; }
+.price-global-search-field input { width: 100%; min-width: 0; height: 46px; padding: 0; border: 0; outline: 0; background: transparent; color: #1f2937; font: inherit; font-size: 14px; font-weight: 680; }
+.price-global-search-field input::-webkit-search-cancel-button { display: none; }
+.price-global-search-field > button { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: #f1f5f9; color: #64748b; }
+.price-global-search-output { display: grid; gap: 8px; }
+.price-global-search-output > header { display: flex; align-items: baseline; gap: 7px; padding: 0 2px; }
+.price-global-search-output > header strong { color: #1f2937; font-size: 13px; }
+.price-global-search-output > header span,
+.price-global-search-output > small { color: #64748b; font-size: 11px; font-weight: 680; }
+.price-global-search-output > p { margin: 0; padding: 18px; border-radius: 9px; background: #f8fafc; color: #64748b; font-size: 13px; text-align: center; }
+.price-global-search-results { max-height: 480px; display: grid; gap: 5px; overflow-y: auto; overscroll-behavior: contain; }
+.price-global-search-result { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: stretch; gap: 5px; }
+.price-global-search-result > button { min-width: 0; min-height: 52px; display: grid; grid-template-columns: minmax(0,1fr) auto 18px; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid #e2e8f0; border-radius: 9px; background: #f8fafc; color: #1f2937; text-align: left; }
+.price-global-search-result > button:hover { border-color: #bfdbfe; background: #eff6ff; }
+.price-global-search-result > button > span { min-width: 0; display: grid; gap: 3px; }
+.price-global-search-result > button strong,
+.price-global-search-result > button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.price-global-search-result > button strong { font-size: 12px; }
+.price-global-search-result > button small { color: #64748b; font-size: 10px; font-weight: 680; }
+.price-global-search-result > button b { color: #2563eb; font-size: 12px; white-space: nowrap; }
+.price-global-search-result > button > svg { color: #94a3b8; }
+.price-global-search-result > a { width: 44px; display: grid; place-items: center; border: 1px solid #bfdbfe; border-radius: 9px; background: #eff6ff; color: #2563eb; }
+.price-search-target { animation: price-search-highlight 1.8s ease; }
+@keyframes price-search-highlight { 0%,55% { box-shadow: 0 0 0 3px rgba(37,99,235,.22); background: #eff6ff; } 100% { box-shadow: none; } }
 .price-category-tabs { padding: 4px; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 4px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f1f5f9; }
 .price-category-tabs button { min-height: 44px; border: 0; border-radius: 9px; background: transparent; color: #64748b; font: inherit; font-size: 13px; font-weight: 750; }
 .price-category-tabs button.is-active { color: #2563eb; background: white; box-shadow: 0 2px 8px rgba(15,23,42,.08); }
@@ -5478,6 +5504,10 @@ body { padding: 0; background: #f7f7f4; }
   .archive-detail { display: none; }
   .price-category-tabs { position: sticky; top: 72px; z-index: 12; grid-template-columns: repeat(4,minmax(0,1fr)); }
   .price-category-tabs button { padding-inline: 4px; font-size: 11px; }
+  .price-global-search { padding: 10px; }
+  .price-global-search-result > button { grid-template-columns: minmax(0,1fr) auto; gap: 7px; }
+  .price-global-search-result > button > svg { display: none; }
+  .price-global-search-result > button b { grid-column: 2; grid-row: 1; align-self: start; }
   .price-save-bar { left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); justify-content: flex-end; }
   .price-save-bar > span { margin-right: auto; }
   .server-sync-panel, .admin-head, .price-accordion { border-radius: 12px; }

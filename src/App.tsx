@@ -3523,6 +3523,37 @@ type PriceSectionId =
   | 'mirrorServices'
   | 'mirrorSettings'
 
+type PriceTabId = 'shower' | 'mirror' | 'works' | 'delivery'
+
+type PriceSearchEntry = {
+  key: string
+  label: string
+  price: number
+  suffix: string
+  tab: PriceTabId
+  tabLabel: string
+  section: PriceSectionId
+  sectionLabel: string
+  anchorId: string
+  sku?: string
+  sourceUrl?: string
+  showerHardwareSectionId?: ShowerHardwareSectionId
+}
+
+const normalizePriceSearchText = (value: string) => value
+  .toLocaleLowerCase('ru')
+  .replaceAll('ё', 'е')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+const normalizePriceSearchNumber = (value: string) => value
+  .replace(/[^\d,.-]/g, '')
+  .replace(',', '.')
+
+const formatPriceSearchValue = (value: number, suffix: string) => (
+  `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value)} ${suffix}`
+)
+
 type PriceServerSyncPanelProps = Pick<PricesScreenProps, 'onLogin' | 'onLogout' | 'onRetry' | 'syncState'>
 
 function PriceServerSyncPanel({ onLogin, onLogout, onRetry, syncState }: PriceServerSyncPanelProps) {
@@ -3625,7 +3656,8 @@ function PricesScreen({
   const [openSection, setOpenSection] = useState<PriceSectionId | null>(null)
   const [openShowerHardwareSection, setOpenShowerHardwareSection] = useState<ShowerHardwareSectionId | null>(null)
   const [showerHardwareQuery, setShowerHardwareQuery] = useState('')
-  const [priceTab, setPriceTab] = useState<'shower' | 'mirror' | 'works' | 'delivery'>('shower')
+  const [priceSearchQuery, setPriceSearchQuery] = useState('')
+  const [priceTab, setPriceTab] = useState<PriceTabId>('shower')
   const dirtyCount = useMemo(
     () => countChangedValues(catalog, savedCatalog) + countChangedValues(mirrorCatalog, savedMirrorCatalog),
     [catalog, mirrorCatalog, savedCatalog, savedMirrorCatalog],
@@ -3651,6 +3683,200 @@ function PricesScreen({
       .filter((section) => section.total > 0 && (!query || section.items.length > 0))
   }, [catalog.hardwareItems, showerHardwareQuery])
   const showerHardwareMatchCount = showerPriceSections.reduce((sum, section) => sum + section.items.length, 0)
+  const priceSearchEntries = useMemo(() => {
+    const entries: PriceSearchEntry[] = []
+    const add = (entry: PriceSearchEntry) => entries.push(entry)
+
+    catalog.glass.forEach((item) => add({
+      key: `shower-glass-${item.id}`,
+      label: item.label,
+      price: item.price,
+      suffix: '₽/м²',
+      tab: 'shower',
+      tabLabel: 'Душевые',
+      section: 'glass',
+      sectionLabel: 'Стекло',
+      anchorId: 'price-glass',
+    }))
+    catalog.hardware.forEach((item) => add({
+      key: `shower-color-${item.id}`,
+      label: item.label,
+      price: item.price,
+      suffix: '% к хрому',
+      tab: 'shower',
+      tabLabel: 'Душевые',
+      section: 'hardware',
+      sectionLabel: 'Цвет фурнитуры',
+      anchorId: 'price-hardware',
+    }))
+    catalog.hardwareClass.forEach((item) => add({
+      key: `shower-class-${item.id}`,
+      label: item.label,
+      price: item.price,
+      suffix: '% к стандарту',
+      tab: 'shower',
+      tabLabel: 'Душевые',
+      section: 'hardwareClass',
+      sectionLabel: 'Класс фурнитуры',
+      anchorId: 'price-hardware-class',
+    }))
+    catalog.hardwareItems.forEach((item) => add({
+      key: `shower-hardware-${item.id}`,
+      label: item.label,
+      price: item.price,
+      suffix: '₽/шт.',
+      tab: 'shower',
+      tabLabel: 'Душевые',
+      section: 'hardwareItems',
+      sectionLabel: showerHardwareSections.find((section) => section.id === item.sectionId)?.label ?? 'Фурнитура AV-24',
+      anchorId: `price-shower-hardware-${item.id}`,
+      sku: item.sku,
+      sourceUrl: item.sourceUrl,
+      showerHardwareSectionId: item.sectionId,
+    }))
+    catalog.constructions.forEach((item) => {
+      add({
+        key: `construction-base-${item.id}`,
+        label: `${item.shortTitle} — база конструкции`,
+        price: item.basePrice,
+        suffix: '₽',
+        tab: 'shower',
+        tabLabel: 'Душевые',
+        section: 'constructions',
+        sectionLabel: 'Конструкции',
+        anchorId: 'price-constructions',
+      })
+      add({
+        key: `construction-installation-${item.id}`,
+        label: `${item.shortTitle} — монтаж`,
+        price: item.installationPrice,
+        suffix: '₽',
+        tab: 'shower',
+        tabLabel: 'Душевые',
+        section: 'constructions',
+        sectionLabel: 'Конструкции',
+        anchorId: 'price-constructions',
+      })
+    })
+
+    ;([
+      ['deliveryBase', 'Стандартная доставка по городу', '₽'],
+      ['deliveryKmRate', 'Доплата за городом', '₽/км'],
+      ['heightSurchargeAfter', 'Высота: порог надбавки', 'мм'],
+      ['heightSurchargePercent', 'Надбавка за высоту', '%'],
+    ] as const).forEach(([key, label, suffix]) => add({
+      key: `delivery-${key}`,
+      label,
+      price: catalog.services[key],
+      suffix,
+      tab: 'delivery',
+      tabLabel: 'Доставка',
+      section: 'services',
+      sectionLabel: 'Услуги',
+      anchorId: 'price-services',
+    }))
+    ;([
+      ['productMarkupPercent', 'Наценка на изделие', '%'],
+      ['hardwareMarkupPercent', 'Наценка на фурнитуру', '%'],
+      ['designerPercent', 'Дизайнер', '%'],
+      ['discountPercent', 'Скидка по умолчанию', '%'],
+    ] as const).forEach(([key, label, suffix]) => add({
+      key: `shower-setting-${key}`,
+      label,
+      price: catalog.services[key],
+      suffix,
+      tab: 'shower',
+      tabLabel: 'Душевые',
+      section: 'showerSettings',
+      sectionLabel: 'Настройки душевых',
+      anchorId: 'price-shower-settings',
+    }))
+
+    mirrorCatalog.materials.forEach((item) => add({
+      key: `mirror-material-${item.id}`,
+      label: item.label,
+      price: item.price,
+      suffix: '₽/м²',
+      tab: 'mirror',
+      tabLabel: 'Зеркала',
+      section: 'mirrorMaterials',
+      sectionLabel: 'Материалы зеркал',
+      anchorId: 'price-mirror-materials',
+    }))
+    mirrorCatalog.services.forEach((item) => add({
+      key: `mirror-service-${item.id}`,
+      label: item.label,
+      price: item.price,
+      suffix: `₽/${mirrorUnitLabels[item.unit]}`,
+      tab: 'works',
+      tabLabel: 'Работы',
+      section: 'mirrorServices',
+      sectionLabel: mirrorServiceSections.find((section) => section.id === item.sectionId)?.label ?? 'Работы и комплектующие',
+      anchorId: `price-mirror-service-${item.id}`,
+      sku: item.sku,
+      sourceUrl: item.sourceUrl,
+    }))
+    mirrorCatalog.groups.forEach((group) => add({
+      key: `mirror-group-${group.id}`,
+      label: group.label,
+      price: group.items.reduce((total, groupItem) => {
+        const service = mirrorCatalog.services.find((item) => item.id === groupItem.serviceId)
+        return total + (service?.price ?? 0) * groupItem.quantity
+      }, 0),
+      suffix: '₽',
+      tab: 'mirror',
+      tabLabel: 'Зеркала',
+      section: 'mirrorGroups',
+      sectionLabel: 'Группы работ',
+      anchorId: `price-mirror-group-${group.id}`,
+    }))
+    ;([
+      ['materialMarkupPercent', 'Наценка на материал', '%'],
+      ['serviceMarkupPercent', 'Наценка на работы', '%'],
+      ['managerPercent', 'Менеджер', '%'],
+      ['designerPercent', 'Дизайнер', '%'],
+      ['discountPercent', 'Скидка по умолчанию', '%'],
+    ] as const).forEach(([key, label, suffix]) => add({
+      key: `mirror-setting-${key}`,
+      label,
+      price: mirrorCatalog.settings[key],
+      suffix,
+      tab: 'mirror',
+      tabLabel: 'Зеркала',
+      section: 'mirrorSettings',
+      sectionLabel: 'Настройки зеркал',
+      anchorId: 'price-mirror-settings',
+    }))
+
+    return entries
+  }, [catalog, mirrorCatalog])
+  const priceSearchMatches = useMemo(() => {
+    const query = normalizePriceSearchText(priceSearchQuery)
+    if (!query) return []
+    const numericQuery = normalizePriceSearchNumber(query)
+    const searchesPrice = /\d/.test(query) && numericQuery.length > 0
+
+    return priceSearchEntries
+      .map((entry) => {
+        const label = normalizePriceSearchText(entry.label)
+        const sku = normalizePriceSearchText(entry.sku ?? '')
+        const context = normalizePriceSearchText(`${entry.tabLabel} ${entry.sectionLabel}`)
+        const price = normalizePriceSearchNumber(String(entry.price))
+        let score = Number.POSITIVE_INFINITY
+
+        if (sku === query || (searchesPrice && price === numericQuery)) score = 0
+        else if (label.startsWith(query) || sku.startsWith(query)) score = 1
+        else if (label.includes(query) || sku.includes(query)) score = 2
+        else if (context.includes(query)) score = 3
+        else if (searchesPrice && price.includes(numericQuery)) score = 4
+
+        return { entry, score }
+      })
+      .filter((match) => Number.isFinite(match.score))
+      .sort((left, right) => left.score - right.score || left.entry.label.localeCompare(right.entry.label, 'ru'))
+      .map((match) => match.entry)
+  }, [priceSearchEntries, priceSearchQuery])
+  const visiblePriceSearchMatches = priceSearchMatches.slice(0, 100)
   const isDirty = dirtyCount > 0
 
   useEffect(() => {
@@ -3686,6 +3912,31 @@ function PricesScreen({
   }
   const toggleSection = (section: PriceSectionId) => {
     setOpenSection((current) => (current === section ? null : section))
+  }
+  const openPriceSearchEntry = (entry: PriceSearchEntry) => {
+    setPriceTab(entry.tab)
+    setOpenSection(entry.section)
+    setPriceSearchQuery('')
+
+    if (entry.showerHardwareSectionId) {
+      setOpenShowerHardwareSection(entry.showerHardwareSectionId)
+      setShowerHardwareQuery(entry.sku || entry.label)
+    }
+
+    const reveal = (attempt = 0) => {
+      const target = document.getElementById(entry.anchorId)
+      if (!target && attempt < 4) {
+        window.setTimeout(() => reveal(attempt + 1), 80)
+        return
+      }
+      if (!target) return
+      const details = target.closest('details')
+      if (details instanceof HTMLDetailsElement) details.open = true
+      target.classList.add('price-search-target')
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      window.setTimeout(() => target.classList.remove('price-search-target'), 1800)
+    }
+    window.setTimeout(reveal, 80)
   }
 
   const updateOption = (
@@ -4000,6 +4251,65 @@ function PricesScreen({
           <RotateCcw size={16} />
           Сбросить
         </button>
+      </section>
+
+      <section className="section-block price-global-search">
+        <label className="price-global-search-field">
+          <Search size={19} aria-hidden="true" />
+          <span className="sr-only">Поиск по всем ценам</span>
+          <input
+            placeholder="Название, артикул или цена"
+            type="search"
+            value={priceSearchQuery}
+            onChange={(event) => setPriceSearchQuery(event.target.value)}
+          />
+          {priceSearchQuery ? (
+            <button aria-label="Очистить поиск" type="button" onClick={() => setPriceSearchQuery('')}>
+              <X size={17} />
+            </button>
+          ) : null}
+        </label>
+        {priceSearchQuery.trim() ? (
+          <div className="price-global-search-output" aria-live="polite">
+            <header>
+              <strong>{formatPositionCount(priceSearchMatches.length)}</strong>
+              <span>по всем разделам цен</span>
+            </header>
+            {visiblePriceSearchMatches.length > 0 ? (
+              <div className="price-global-search-results">
+                {visiblePriceSearchMatches.map((entry) => (
+                  <div className="price-global-search-result" key={entry.key}>
+                    <button type="button" onClick={() => openPriceSearchEntry(entry)}>
+                      <span>
+                        <strong>{entry.label}</strong>
+                        <small>
+                          {entry.tabLabel} · {entry.sectionLabel}
+                          {entry.sku ? ` · арт. ${entry.sku}` : ''}
+                        </small>
+                      </span>
+                      <b>{formatPriceSearchValue(entry.price, entry.suffix)}</b>
+                      <ChevronRight size={17} aria-hidden="true" />
+                    </button>
+                    {entry.sourceUrl ? (
+                      <a
+                        aria-label={`Открыть ${entry.label} на сайте поставщика`}
+                        href={entry.sourceUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                        title="Открыть карточку поставщика"
+                      >
+                        <ExternalLink size={16} />
+                      </a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : <p>Совпадений не найдено.</p>}
+            {priceSearchMatches.length > visiblePriceSearchMatches.length ? (
+              <small>Показаны первые {visiblePriceSearchMatches.length} результатов. Уточните запрос.</small>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <nav className="price-category-tabs" aria-label="Разделы цен">
@@ -4495,7 +4805,7 @@ type ShowerHardwarePriceRowProps = {
 
 function ShowerHardwarePriceRow({ item, canDelete, onChange, onDelete }: ShowerHardwarePriceRowProps) {
   return (
-    <div className="shower-hardware-price-row">
+    <div className="shower-hardware-price-row" id={`price-shower-hardware-${item.id}`}>
       <div className="mirror-service-name">
         <label className="price-name-field">
           <span className="sr-only">Название фурнитуры</span>
@@ -4848,7 +5158,7 @@ type MirrorServicePriceRowProps = {
 
 function MirrorServicePriceRow({ item, canDelete, onChange, onDelete }: MirrorServicePriceRowProps) {
   return (
-    <div className="mirror-service-price-row">
+    <div className="mirror-service-price-row" id={`price-mirror-service-${item.id}`}>
       <div className="mirror-service-name">
         <label className="price-name-field">
           <span className="sr-only">Название работы или комплектующей</span>
@@ -4931,7 +5241,7 @@ function MirrorServiceGroupEditor({
   onItemChange,
 }: MirrorServiceGroupEditorProps) {
   return (
-    <div className="mirror-group-editor">
+    <div className="mirror-group-editor" id={`price-mirror-group-${group.id}`}>
       <div className="mirror-group-editor-head">
         <label className="price-name-field">
           <span>Название группы</span>
