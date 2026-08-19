@@ -1,4 +1,22 @@
+import { vdsMirrorComponents } from './mirrorVdsComponents'
+
 export type MirrorUnit = 'piece' | 'area' | 'perimeter'
+
+export type MirrorServiceSectionId =
+  | 'works'
+  | 'switches'
+  | 'power'
+  | 'led-tape'
+  | 'heating'
+  | 'electrical'
+  | 'profiles'
+  | 'mounting'
+  | 'consumables'
+
+export type MirrorServiceSection = {
+  id: MirrorServiceSectionId
+  label: string
+}
 
 export type MirrorMaterial = {
   id: string
@@ -12,7 +30,10 @@ export type MirrorService = {
   price: number
   unit: MirrorUnit
   category: 'work' | 'delivery'
+  sectionId: MirrorServiceSectionId
   visibleInQuote: boolean
+  sku?: string
+  sourceUrl?: string
 }
 
 export type MirrorServiceGroupItem = {
@@ -37,6 +58,7 @@ export type MirrorPricingSettings = {
 }
 
 export type MirrorPricingCatalog = {
+  revision: number
   materials: MirrorMaterial[]
   services: MirrorService[]
   groups: MirrorServiceGroup[]
@@ -51,7 +73,20 @@ const service = (
   unit: MirrorUnit,
   visibleInQuote: boolean,
   category: MirrorService['category'] = 'work',
-): MirrorService => ({ id, label, price, unit, category, visibleInQuote })
+  sectionId: MirrorServiceSectionId = 'works',
+): MirrorService => ({ id, label, price, unit, category, sectionId, visibleInQuote })
+
+export const mirrorServiceSections: MirrorServiceSection[] = [
+  { id: 'works', label: 'Работы и монтаж' },
+  { id: 'switches', label: 'Выключатели и управление' },
+  { id: 'power', label: 'Источники питания' },
+  { id: 'led-tape', label: 'Светодиодные ленты' },
+  { id: 'heating', label: 'Обогрев зеркал' },
+  { id: 'electrical', label: 'Электрика и соединители' },
+  { id: 'profiles', label: 'Профили и каркас' },
+  { id: 'mounting', label: 'Крепление и навеска' },
+  { id: 'consumables', label: 'Клей, скотч и расходники' },
+]
 
 export const mirrorUnitLabels: Record<MirrorUnit, string> = {
   piece: 'шт.',
@@ -60,6 +95,7 @@ export const mirrorUnitLabels: Record<MirrorUnit, string> = {
 }
 
 export const defaultMirrorCatalog: MirrorPricingCatalog = {
+  revision: 1,
   materials: [
     material('glass-4', 'Стекло 4 мм', 950),
     material('glass-5', 'Стекло 5 мм', 1350),
@@ -112,6 +148,7 @@ export const defaultMirrorCatalog: MirrorPricingCatalog = {
     service('aluminium-frame', 'Рамка алюминиевая', 2200, 'perimeter', true),
     service('mdf-frame', 'Рама МДФ', 5000, 'perimeter', true),
     service('bevel-10', 'Фацет 10 мм', 200, 'perimeter', true),
+    ...vdsMirrorComponents,
   ],
   groups: [],
   settings: {

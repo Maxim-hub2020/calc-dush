@@ -3396,6 +3396,132 @@
   gap: 9px;
 }
 
+.mirror-service-catalog,
+.mirror-price-section-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mirror-service-catalog {
+  margin-bottom: 14px;
+}
+
+.mirror-service-section,
+.mirror-price-section {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mirror-service-section > summary,
+.mirror-price-section > summary {
+  min-height: 54px;
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 11px;
+  color: var(--heading);
+}
+
+.mirror-service-section > summary::-webkit-details-marker,
+.mirror-price-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mirror-service-section > summary > span,
+.mirror-price-section > summary > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.mirror-service-section > summary strong,
+.mirror-price-section > summary strong {
+  font-size: 13px;
+}
+
+.mirror-service-section > summary small,
+.mirror-price-section > summary small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.mirror-service-section > summary svg,
+.mirror-price-section > summary svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+
+.mirror-service-section[open] > summary svg,
+.mirror-price-section[open] > summary svg {
+  color: var(--accent);
+  transform: rotate(180deg);
+}
+
+.mirror-service-picker-list {
+  max-height: 360px;
+  display: grid;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+}
+
+.mirror-service-picker-list > button {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--heading);
+  text-align: left;
+}
+
+.mirror-service-picker-list > button > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mirror-service-picker-list > button strong {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.mirror-service-picker-list > button small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.mirror-service-picker-list > button b {
+  color: var(--accent-dark);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mirror-service-picker-list > button.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.mirror-service-picker-list > button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
 .mirror-group-options {
   display: grid;
   gap: 7px;
@@ -3651,6 +3777,33 @@
   min-width: 0;
 }
 
+.mirror-price-section-body {
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+}
+
+.mirror-service-name {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.mirror-service-name > a {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-dark);
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mirror-service-name > a:hover {
+  text-decoration: underline;
+}
+
 .mirror-service-unit,
 .mirror-service-category {
   display: grid;
@@ -3704,7 +3857,7 @@
     border-bottom: 1px solid var(--line);
   }
 
-  .mirror-service-price-row > .price-name-field {
+  .mirror-service-price-row > .mirror-service-name {
     grid-column: 1 / 3;
   }
 

@@ -98,13 +98,22 @@ export const resetCatalog = () => {
 }
 
 export const mergeMirrorCatalog = (saved: Partial<MirrorPricingCatalog> = {}): MirrorPricingCatalog => {
+  const savedRevision = Math.max(0, Number(saved.revision) || 0)
   const mergeItems = <T extends { id: string }>(defaults: T[], items?: T[]) => {
     if (!Array.isArray(items) || items.length === 0) return defaults
     return items.map((item) => ({ ...defaults.find((entry) => entry.id === item.id), ...item } as T))
   }
 
-  const services = mergeItems(defaultMirrorCatalog.services, saved.services)
+  const savedServices = Array.isArray(saved.services) ? saved.services : []
+  const savedServicesById = new Map(savedServices.map((item) => [item.id, item]))
+  const services = (savedRevision < 1
+    ? [
+        ...defaultMirrorCatalog.services.map((item) => ({ ...item, ...savedServicesById.get(item.id) })),
+        ...savedServices.filter((item) => !defaultMirrorCatalog.services.some((entry) => entry.id === item.id)),
+      ]
+    : mergeItems(defaultMirrorCatalog.services, saved.services))
     .filter((item) => item.category !== 'delivery')
+    .map((item) => ({ ...item, sectionId: item.sectionId ?? 'works' }))
   const serviceIds = new Set(services.map((service) => service.id))
   const groups = mergeItems(defaultMirrorCatalog.groups, saved.groups).map((group) => ({
     ...group,
@@ -115,6 +124,7 @@ export const mergeMirrorCatalog = (saved: Partial<MirrorPricingCatalog> = {}): M
   }))
 
   return {
+    revision: defaultMirrorCatalog.revision,
     materials: mergeItems(defaultMirrorCatalog.materials, saved.materials),
     services,
     groups,

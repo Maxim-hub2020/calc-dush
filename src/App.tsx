@@ -9,6 +9,7 @@ import {
   Cloud,
   CloudOff,
   Copy,
+  ExternalLink,
   FileDown,
   GripVertical,
   Image,
@@ -94,6 +95,7 @@ import {
   type MirrorForm,
 } from './mirrorCalculator'
 import {
+  mirrorServiceSections,
   mirrorUnitLabels,
   type MirrorMaterial,
   type MirrorPricingCatalog,
@@ -163,6 +165,19 @@ const formatDate = (date: string) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(date))
+
+const formatPositionCount = (count: number) => {
+  const lastTwo = count % 100
+  const last = count % 10
+  const word = lastTwo >= 11 && lastTwo <= 14
+    ? 'позиций'
+    : last === 1
+      ? 'позиция'
+      : last >= 2 && last <= 4
+        ? 'позиции'
+        : 'позиций'
+  return `${count} ${word}`
+}
 
 const countChangedValues = (current: unknown, saved: unknown): number => {
   if (Object.is(current, saved)) return 0
@@ -499,11 +514,13 @@ function App() {
         const nextMirrorCatalog = hasRemoteMirror
           ? mergeMirrorCatalog(remote.mirror_catalog as MirrorPricingCatalog)
           : mirrorCatalogRef.current
+        const mirrorCatalogNeedsMigration = !hasRemoteMirror
+          || Math.max(0, Number(remoteMirror.revision) || 0) < nextMirrorCatalog.revision
 
         setCatalog(nextCatalog)
         setMirrorCatalog(nextMirrorCatalog)
 
-        const saved = !hasRemoteShower || !hasRemoteMirror
+        const saved = !hasRemoteShower || mirrorCatalogNeedsMigration
           ? await saveServerCatalogs(nextCatalog, nextMirrorCatalog)
           : remote
         if (cancelled) return
@@ -1563,9 +1580,17 @@ function MirrorCalculatorScreen({
   const selectedServices = new Set(form.options.map((option) => option.serviceId))
   const selectedGroups = form.groups ?? []
   const availableServices = catalog.services.filter((item) => item.category !== 'delivery')
+  const serviceSections = useMemo(() => mirrorServiceSections
+    .map((section) => ({
+      ...section,
+      items: catalog.services.filter((item) => item.category !== 'delivery' && item.sectionId === section.id),
+    }))
+    .filter((section) => section.items.length > 0), [catalog.services])
 
-  const addOption = () => {
-    const service = availableServices.find((item) => !selectedServices.has(item.id)) ?? availableServices[0]
+  const addOption = (serviceId?: string) => {
+    const service = availableServices.find((item) => item.id === serviceId)
+      ?? availableServices.find((item) => !selectedServices.has(item.id))
+      ?? availableServices[0]
     if (!service) return
     onForm({
       options: [...form.options, { id: crypto.randomUUID(), serviceId: service.id, quantity: 1 }],
@@ -1693,12 +1718,42 @@ function MirrorCalculatorScreen({
                   })}
                 </div>
               ) : null}
+              <div className="mirror-service-catalog" aria-label="Каталог работ и комплектующих">
+                {serviceSections.map((section) => (
+                  <details className="mirror-service-section" key={section.id}>
+                    <summary>
+                      <span>
+                        <strong>{section.label}</strong>
+                        <small>{formatPositionCount(section.items.length)}</small>
+                      </span>
+                      <ChevronDown size={18} aria-hidden="true" />
+                    </summary>
+                    <div className="mirror-service-picker-list">
+                      {section.items.map((item) => {
+                        const selected = selectedServices.has(item.id)
+                        return (
+                          <button
+                            aria-pressed={selected}
+                            className={selected ? 'is-selected' : ''}
+                            disabled={selected}
+                            key={item.id}
+                            type="button"
+                            onClick={() => addOption(item.id)}
+                          >
+                            <span>
+                              <strong>{item.label}</strong>
+                              {item.sku ? <small>VDSF · арт. {item.sku}</small> : null}
+                            </span>
+                            <b>{money(item.price)}/{mirrorUnitLabels[item.unit]}</b>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </details>
+                ))}
+              </div>
               <div className="mirror-options-subhead">
-                <strong>Отдельные работы</strong>
-                <button className="section-add-button" type="button" onClick={addOption}>
-                  <ListPlus size={17} />
-                  Добавить
-                </button>
+                <strong>Выбранные работы и комплектующие</strong>
               </div>
               <div className="mirror-option-list">
                 {form.options.map((option, index) => {
@@ -1712,8 +1767,12 @@ function MirrorCalculatorScreen({
                           value={option.serviceId}
                           onChange={(event) => updateOption(option.id, { serviceId: event.target.value, quantity: 1 })}
                         >
-                          {availableServices.map((item) => (
-                            <option key={item.id} value={item.id}>{item.label}</option>
+                          {serviceSections.map((section) => (
+                            <optgroup key={section.id} label={section.label}>
+                              {section.items.map((item) => (
+                                <option key={item.id} value={item.id}>{item.label}</option>
+                              ))}
+                            </optgroup>
                           ))}
                         </select>
                       </label>
@@ -1742,10 +1801,10 @@ function MirrorCalculatorScreen({
                   )
                 })}
                 {form.options.length === 0 ? (
-                  <button className="mirror-options-empty" type="button" onClick={addOption}>
+                  <div className="mirror-options-empty">
                     <ListPlus size={22} />
-                    <span>Добавить работу или монтаж</span>
-                  </button>
+                    <span>Выберите позицию в одном из разделов выше</span>
+                  </div>
                 ) : null}
               </div>
             </section>
@@ -3566,6 +3625,12 @@ function PricesScreen({
     () => countChangedValues(catalog, savedCatalog) + countChangedValues(mirrorCatalog, savedMirrorCatalog),
     [catalog, mirrorCatalog, savedCatalog, savedMirrorCatalog],
   )
+  const mirrorPriceSections = useMemo(() => mirrorServiceSections
+    .map((section) => ({
+      ...section,
+      items: mirrorCatalog.services.filter((item) => item.sectionId === section.id),
+    }))
+    .filter((section) => section.items.length > 0), [mirrorCatalog.services])
   const isDirty = dirtyCount > 0
 
   useEffect(() => onDirtyChange(isDirty), [isDirty, onDirtyChange])
@@ -3795,6 +3860,7 @@ function PricesScreen({
           price: 0,
           unit: 'piece',
           category: 'work',
+          sectionId: 'works',
           visibleInQuote: true,
         },
       ],
@@ -4099,21 +4165,34 @@ function PricesScreen({
         <PriceAccordionHeader
           controlsId="price-mirror-services"
           isOpen={openSection === 'mirrorServices'}
-          meta="Работы, монтаж, доставка"
-          title="Работы для зеркал"
+          meta={`${formatPositionCount(mirrorCatalog.services.length)} · ${mirrorPriceSections.length} разделов`}
+          title="Работы и комплектующие"
           onAdd={addMirrorService}
           onToggle={() => toggleSection('mirrorServices')}
         />
         {openSection === 'mirrorServices' ? (
-          <div className="price-list price-accordion-body" id="price-mirror-services">
-            {mirrorCatalog.services.map((item) => (
-              <MirrorServicePriceRow
-                canDelete={mirrorCatalog.services.length > 1}
-                item={item}
-                key={item.id}
-                onChange={(patch) => updateMirrorService(item.id, patch)}
-                onDelete={() => deleteMirrorService(item.id)}
-              />
+          <div className="price-accordion-body mirror-price-section-list" id="price-mirror-services">
+            {mirrorPriceSections.map((section) => (
+              <details className="mirror-price-section" key={section.id}>
+                <summary>
+                  <span>
+                    <strong>{section.label}</strong>
+                    <small>{formatPositionCount(section.items.length)}</small>
+                  </span>
+                  <ChevronDown size={18} aria-hidden="true" />
+                </summary>
+                <div className="price-list mirror-price-section-body">
+                  {section.items.map((item) => (
+                    <MirrorServicePriceRow
+                      canDelete={mirrorCatalog.services.length > 1}
+                      item={item}
+                      key={item.id}
+                      onChange={(patch) => updateMirrorService(item.id, patch)}
+                      onDelete={() => deleteMirrorService(item.id)}
+                    />
+                  ))}
+                </div>
+              </details>
             ))}
           </div>
         ) : null}
@@ -4524,15 +4603,24 @@ type MirrorServicePriceRowProps = {
 function MirrorServicePriceRow({ item, canDelete, onChange, onDelete }: MirrorServicePriceRowProps) {
   return (
     <div className="mirror-service-price-row">
-      <label className="price-name-field">
-        <span className="sr-only">Название работы</span>
-        <input value={item.label} onChange={(event) => onChange({ label: event.target.value })} />
-      </label>
+      <div className="mirror-service-name">
+        <label className="price-name-field">
+          <span className="sr-only">Название работы или комплектующей</span>
+          <input value={item.label} onChange={(event) => onChange({ label: event.target.value })} />
+        </label>
+        {item.sku && item.sourceUrl ? (
+          <a href={item.sourceUrl} rel="noreferrer" target="_blank">
+            VDSF · арт. {item.sku}
+            <ExternalLink size={12} aria-hidden="true" />
+          </a>
+        ) : null}
+      </div>
       <label className="price-value-field">
-        <span className="sr-only">Цена работы</span>
+        <span className="sr-only">Цена работы или комплектующей</span>
         <input
-          inputMode="numeric"
+          inputMode="decimal"
           min={0}
+          step="0.01"
           type="number"
           value={item.price}
           onChange={(event) => onChange({ price: Math.max(0, Number(event.target.value) || 0) })}
@@ -4546,12 +4634,14 @@ function MirrorServicePriceRow({ item, canDelete, onChange, onDelete }: MirrorSe
         </select>
       </label>
       <label className="mirror-service-category">
-        <span>Раздел</span>
+        <span>Группа</span>
         <select
-          value={item.category}
-          onChange={(event) => onChange({ category: event.target.value as MirrorService['category'] })}
+          value={item.sectionId}
+          onChange={(event) => onChange({ sectionId: event.target.value as MirrorService['sectionId'] })}
         >
-          <option value="work">Работы</option>
+          {mirrorServiceSections.map((section) => (
+            <option key={section.id} value={section.id}>{section.label}</option>
+          ))}
         </select>
       </label>
       <label className="mirror-service-visible">
