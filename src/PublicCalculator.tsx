@@ -87,6 +87,7 @@ const initialShowerForm = (): CalculatorForm => ({
 const apiRequest = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(`/api/public-calculator/${path}`, {
     ...init,
+    cache: init?.cache ?? 'no-store',
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
   const payload = await response.json() as T & { detail?: string }

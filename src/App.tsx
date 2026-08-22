@@ -610,6 +610,75 @@ function App() {
     }
   }, [serverSession, syncAttempt])
   useEffect(() => {
+    if (!serverSession || !serverSyncReady || pricesDirty) return undefined
+
+    let cancelled = false
+    let running = false
+    let timer: number | undefined
+
+    const refreshCatalogs = () => {
+      if (cancelled || running || !navigator.onLine) return
+      running = true
+      void loadServerCatalogs()
+        .then((remote) => {
+          if (cancelled) return
+          const remoteShower = remote.shower_catalog as Partial<PricingCatalog>
+          const remoteMirror = remote.mirror_catalog as Partial<MirrorPricingCatalog>
+          const nextCatalog = Array.isArray(remoteShower.constructions) && remoteShower.constructions.length > 0
+            ? mergeCatalog(remote.shower_catalog as PricingCatalog)
+            : catalogRef.current
+          const nextMirrorCatalog = Array.isArray(remoteMirror.materials) && remoteMirror.materials.length > 0
+            ? mergeMirrorCatalog(remote.mirror_catalog as MirrorPricingCatalog)
+            : mirrorCatalogRef.current
+          if (JSON.stringify(nextCatalog) !== JSON.stringify(catalogRef.current)) setCatalog(nextCatalog)
+          if (JSON.stringify(nextMirrorCatalog) !== JSON.stringify(mirrorCatalogRef.current)) {
+            setMirrorCatalog(nextMirrorCatalog)
+          }
+          setSyncUpdatedAt(remote.updated_at || new Date().toISOString())
+          setSyncMessage('')
+          setSyncStatus('synced')
+        })
+        .catch((error) => {
+          if (cancelled) return
+          if (error instanceof ServerSyncError && error.code === 'auth') {
+            clearServerSession()
+            setServerSession(null)
+            setSyncStatus('signed-out')
+          } else {
+            setSyncStatus('error')
+          }
+          setSyncMessage(error instanceof Error ? error.message : 'Не удалось обновить цены')
+        })
+        .finally(() => {
+          running = false
+        })
+    }
+
+    const scheduleRefresh = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(refreshCatalogs, 250)
+    }
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleRefresh()
+    }
+
+    window.addEventListener('online', scheduleRefresh)
+    window.addEventListener('focus', scheduleRefresh)
+    document.addEventListener('visibilitychange', handleVisibility)
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refreshCatalogs()
+    }, 60_000)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      window.clearInterval(interval)
+      window.removeEventListener('online', scheduleRefresh)
+      window.removeEventListener('focus', scheduleRefresh)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [pricesDirty, serverSession, serverSyncReady])
+  useEffect(() => {
     if (!serverSession || !serverSyncReady) return undefined
     let cancelled = false
     setSyncStatus('saving')

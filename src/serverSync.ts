@@ -127,6 +127,7 @@ const authenticatedRequest = async (path: string, init: RequestInit = {}) => {
     const isFormData = init.body instanceof FormData
     return fetch(`${apiBase()}${path}`, {
       ...init,
+      cache: init.cache ?? 'no-store',
       headers: {
         ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...init.headers,

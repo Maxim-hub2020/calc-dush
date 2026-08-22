@@ -113,6 +113,12 @@
 }
 
 @media (max-width: 600px) {
+  .public-shell input,
+  .public-shell select,
+  .public-shell textarea {
+    font-size: 16px !important;
+  }
+
   .public-header { min-height: 64px; padding: 0 16px; }
   .public-brand > span { width: 34px; height: 34px; font-size: 21px; }
   .public-brand strong { font-size: 17px; }
