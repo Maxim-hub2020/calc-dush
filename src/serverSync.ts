@@ -1,7 +1,6 @@
 import type { Quote } from './calculator'
 import type { MirrorPricingCatalog } from './mirrorPricing'
 import type { PricingCatalog } from './pricing'
-import type { ProductionPlanAnalysis } from './productionPlanning'
 
 const sessionKey = 'shower-calc.server-session.v1'
 
@@ -194,18 +193,4 @@ export const deleteServerQuote = async (quoteId: string) => {
   await authenticatedRequest(`/calculator-quotes/${encodeURIComponent(quoteId)}/`, {
     method: 'DELETE',
   })
-}
-
-export const analyzeProductionPlan = async (
-  image: File,
-  context: Record<string, unknown>,
-): Promise<ProductionPlanAnalysis> => {
-  const body = new FormData()
-  body.append('image', image)
-  body.append('context', JSON.stringify(context))
-  const response = await authenticatedRequest('/calculator-production/analyze/', {
-    method: 'POST',
-    body,
-  })
-  return response.json() as Promise<ProductionPlanAnalysis>
 }

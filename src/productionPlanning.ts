@@ -5,8 +5,15 @@ import {
   type CalculatorForm,
 } from './calculator'
 import type { PricingCatalog } from './pricing'
+import {
+  getShowerHardwareMachiningTemplate,
+  hardwareSectionNeedsMachiningTemplate,
+  type MachiningPattern,
+  type ShowerHardwareMachiningTemplate,
+} from './showerHardwareMachining'
 
 export type ProductionOperationKind = 'hole' | 'notch' | 'cutout' | 'template'
+export type ProductionPanelRole = 'fixed' | 'door'
 
 export type ProductionOperation = {
   id: string
@@ -18,11 +25,14 @@ export type ProductionOperation = {
   heightMm: number
   diameterMm: number
   confirmed: boolean
+  sourceSku: string
+  sourceUrl?: string
 }
 
 export type ProductionPanel = {
   id: string
   label: string
+  role: ProductionPanelRole
   shape: 'rectangle' | 'trapezoid'
   widthMm: number
   heightMm: number
@@ -53,32 +63,18 @@ export type ProductionPurchaseItem = {
   sourceUrl?: string
 }
 
-export type ProductionPlanAnalysis = {
-  summary: string
-  confidence: number
-  panels: Array<{
-    label: string
-    shape: 'rectangle' | 'trapezoid'
-    widthMm: number
-    heightMm: number
-    topWidthMm: number
-    quantity: number
-    notes: string
-  }>
-  operations: Array<{
-    panelLabel: string
-    kind: ProductionOperationKind
-    label: string
-    xMm: number
-    yMm: number
-    widthMm: number
-    heightMm: number
-    diameterMm: number
-    confirmedFromSource: boolean
-  }>
-  recognizedDimensions: Array<{ label: string; valueMm: number; source: string }>
-  warnings: string[]
-  needsReview: boolean
+export type ProductionTemplateStatus = 'verified' | 'not-required' | 'missing' | 'incompatible'
+
+export type ProductionTemplateCheck = {
+  id: string
+  hardwareItemId: string
+  label: string
+  sku: string
+  quantity: number
+  status: ProductionTemplateStatus
+  message: string
+  productUrl?: string
+  drawingUrl?: string
 }
 
 export type ProductionPackage = {
@@ -90,18 +86,18 @@ export type ProductionPackage = {
   glassThickness: 6 | 8
   hardwareColor: string
   hardwareClass: string
-  referenceImageDataUrl: string
-  referenceFileName: string
-  analysisSummary: string
-  confidence: number | null
-  recognizedDimensions: ProductionPlanAnalysis['recognizedDimensions']
   panels: ProductionPanel[]
   cuts: ProductionCutItem[]
   purchases: ProductionPurchaseItem[]
+  templateChecks: ProductionTemplateCheck[]
   warnings: string[]
+  blockingIssues: string[]
   notes: string
   confirmed: boolean
 }
+
+type ResolvedComponent = ReturnType<typeof getConstructionHardwareComponents>[number]
+type Edge = 'left' | 'right'
 
 const positive = (value: unknown, fallback = 0) => Math.max(0, Number(value) || fallback)
 
@@ -111,23 +107,40 @@ const panelLabel = (label: string, index: number) => {
   return cleaned.charAt(0).toLocaleUpperCase('ru') + cleaned.slice(1)
 }
 
+const panelRolesBySketch: Record<ProductionPackage['constructionSketch'], ProductionPanelRole[]> = {
+  single: ['fixed'],
+  panel: ['fixed'],
+  niche: ['door'],
+  'panel-door': ['fixed', 'door'],
+  corner: ['fixed', 'door'],
+  'corner-plus': ['fixed', 'fixed', 'door'],
+  'double-corner': ['fixed', 'door', 'fixed', 'door'],
+  slider: ['fixed', 'door'],
+  'slider-corner': ['fixed', 'door', 'fixed'],
+  'slider-double': ['fixed', 'door', 'fixed', 'door'],
+  trapezoid: ['fixed', 'door', 'fixed'],
+}
+
 const getPanelDefaults = (catalog: PricingCatalog, form: CalculatorForm): ProductionPanel[] => {
   const construction = getConstruction(catalog, form.constructionId)
   const heightField = construction.fields.find((field) => field.key.startsWith('HEIGHT'))
   const height = positive(heightField ? form.dimensions[heightField.key] : 0, 2000)
+  const roles = panelRolesBySketch[construction.sketch]
   return construction.fields
     .filter((field) => field.key.startsWith('WIDTH'))
     .map((field, index) => {
       const width = positive(form.dimensions[field.key], field.defaultValue)
+      const role = roles[index] ?? (/двер/i.test(field.label) ? 'door' : 'fixed')
       return {
         id: crypto.randomUUID(),
         label: panelLabel(field.label, index),
-        shape: construction.sketch === 'trapezoid' && index !== 1 ? 'trapezoid' as const : 'rectangle' as const,
+        role,
+        shape: construction.sketch === 'trapezoid' && role === 'fixed' ? 'trapezoid' as const : 'rectangle' as const,
         widthMm: width,
         heightMm: height,
         topWidthMm: width,
         quantity: 1,
-        notes: 'Размер перенесён из калькулятора. Проверить технологические зазоры.',
+        notes: role === 'door' ? 'Дверное стекло' : 'Неподвижное стекло',
         operations: [],
       }
     })
@@ -169,6 +182,254 @@ const isCutMaterial = (label: string, sectionId: string) => (
   )
 )
 
+const spacedPositions = (count: number, height: number, margin = 250) => {
+  if (count <= 0) return []
+  const safeMargin = Math.min(margin, Math.max(80, height / 3))
+  if (count === 1) return [height / 2]
+  const span = Math.max(0, height - safeMargin * 2)
+  return Array.from({ length: count }, (_, index) => safeMargin + span * index / (count - 1))
+}
+
+const hingeEdge = (_panels: ProductionPanel[], _door: ProductionPanel): Edge => 'left'
+const oppositeEdge = (edge: Edge): Edge => edge === 'left' ? 'right' : 'left'
+const edgeX = (panel: ProductionPanel, edge: Edge, offset: number) => edge === 'left' ? offset : panel.widthMm - offset
+
+const addHole = (
+  panel: ProductionPanel,
+  component: ResolvedComponent,
+  template: ShowerHardwareMachiningTemplate,
+  label: string,
+  xMm: number,
+  yMm: number,
+  diameterMm: number,
+) => panel.operations.push({
+  id: crypto.randomUUID(),
+  kind: 'hole',
+  label,
+  xMm,
+  yMm,
+  widthMm: 0,
+  heightMm: 0,
+  diameterMm,
+  confirmed: true,
+  sourceSku: component.item.sku ?? '',
+  sourceUrl: template.drawingUrl,
+})
+
+const addEdgeCut = (
+  panel: ProductionPanel,
+  component: ResolvedComponent,
+  template: ShowerHardwareMachiningTemplate,
+  kind: 'notch' | 'cutout',
+  label: string,
+  edge: Edge,
+  yMm: number,
+  depthMm: number,
+  openingMm: number,
+) => panel.operations.push({
+  id: crypto.randomUUID(),
+  kind,
+  label,
+  xMm: edgeX(panel, edge, depthMm / 2),
+  yMm,
+  widthMm: depthMm,
+  heightMm: openingMm,
+  diameterMm: 0,
+  confirmed: true,
+  sourceSku: component.item.sku ?? '',
+  sourceUrl: template.drawingUrl,
+})
+
+const groupCountByPanel = (panels: ProductionPanel[], quantity: number) => panels.map((panel, index) => ({
+  panel,
+  count: Math.floor(quantity / panels.length) + (index < quantity % panels.length ? 1 : 0),
+}))
+
+const getAdjacentFixed = (panels: ProductionPanel[], door: ProductionPanel) => {
+  const index = panels.indexOf(door)
+  return [...panels.slice(0, index).reverse(), ...panels.slice(index + 1)].find((panel) => panel.role === 'fixed')
+}
+
+const applyMachiningPattern = (
+  pattern: MachiningPattern,
+  component: ResolvedComponent,
+  template: ShowerHardwareMachiningTemplate,
+  panels: ProductionPanel[],
+) => {
+  const fixedPanels = panels.filter((panel) => panel.role === 'fixed')
+  const doors = panels.filter((panel) => panel.role === 'door')
+  const sku = component.item.sku ?? template.skuPrefix
+
+  if (pattern === 'wall-hinge-fdp122') {
+    groupCountByPanel(doors, component.quantity).forEach(({ panel, count }) => {
+      const edge = hingeEdge(panels, panel)
+      spacedPositions(count, panel.heightMm).forEach((center, hingeIndex) => {
+        addHole(panel, component, template, `${sku}: петля ${hingeIndex + 1}, верхнее`, edgeX(panel, edge, 34), center + 25, 16)
+        addHole(panel, component, template, `${sku}: петля ${hingeIndex + 1}, нижнее`, edgeX(panel, edge, 34), center - 25, 16)
+      })
+    })
+    return
+  }
+
+  if (pattern === 'glass-hinge-fdp115') {
+    groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
+      const fixed = getAdjacentFixed(panels, door)
+      if (!fixed) return
+      const doorEdge = hingeEdge(panels, door)
+      const fixedEdge = oppositeEdge(doorEdge)
+      spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
+        for (const delta of [-22.5, 22.5]) {
+          addHole(door, component, template, `${sku}: петля ${hingeIndex + 1}`, edgeX(door, doorEdge, 32), center + delta, 14)
+          addHole(fixed, component, template, `${sku}: ответная часть ${hingeIndex + 1}`, edgeX(fixed, fixedEdge, 32), center + delta, 14)
+        }
+      })
+    })
+    return
+  }
+
+  if (pattern === 'corner-hinge-fdp184') {
+    groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
+      const fixed = getAdjacentFixed(panels, door)
+      if (!fixed) return
+      const doorEdge = hingeEdge(panels, door)
+      const fixedEdge = oppositeEdge(doorEdge)
+      spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
+        addEdgeCut(door, component, template, 'cutout', `${sku}: вырез петли ${hingeIndex + 1}, R15`, doorEdge, center, 40, 40)
+        addHole(fixed, component, template, `${sku}: ответная часть ${hingeIndex + 1}, верхнее`, edgeX(fixed, fixedEdge, 40), center + 15, 16)
+        addHole(fixed, component, template, `${sku}: ответная часть ${hingeIndex + 1}, нижнее`, edgeX(fixed, fixedEdge, 40), center - 15, 16)
+      })
+    })
+    return
+  }
+
+  if (pattern === 'wall-connector-fdk22' || pattern === 'wall-connector-fdk27') {
+    groupCountByPanel(fixedPanels, component.quantity).forEach(({ panel, count }, panelIndex) => {
+      const edge: Edge = panelIndex === 0 ? 'left' : 'right'
+      spacedPositions(count, panel.heightMm, 140).forEach((center, connectorIndex) => {
+        addEdgeCut(panel, component, template, 'notch', `${sku}: коннектор ${connectorIndex + 1}, R10`, edge, center, 22, 20)
+      })
+    })
+    return
+  }
+
+  if (pattern === 'corner-connector-fdk24') {
+    const pair = fixedPanels.length >= 2 ? fixedPanels.slice(0, 2) : panels.slice(0, 2)
+    if (pair.length < 2) return
+    spacedPositions(component.quantity, Math.min(pair[0].heightMm, pair[1].heightMm), 140).forEach((center, index) => {
+      addHole(pair[0], component, template, `${sku}: коннектор ${index + 1}, отверстие`, edgeX(pair[0], 'right', 32), center, 20)
+      addEdgeCut(pair[1], component, template, 'notch', `${sku}: коннектор ${index + 1}, ответный вырез R10`, 'left', center, 22, 20)
+    })
+    return
+  }
+
+  if (pattern === 'glass-connector-fdk28') {
+    const pairs: Array<readonly [ProductionPanel, ProductionPanel]> = doors.flatMap((door) => {
+      const fixed = getAdjacentFixed(panels, door)
+      return fixed ? [[fixed, door] as const] : []
+    })
+    if (pairs.length === 0 && panels.length >= 2) pairs.push([panels[0], panels[1]])
+    pairs.forEach((pair, pairIndex) => {
+      const count = Math.floor(component.quantity / pairs.length) + (pairIndex < component.quantity % pairs.length ? 1 : 0)
+      spacedPositions(count, Math.min(pair[0].heightMm, pair[1].heightMm), 140).forEach((center, index) => {
+        addEdgeCut(pair[0], component, template, 'notch', `${sku}: коннектор ${index + 1}, R10`, 'right', center, 22, 20)
+        addEdgeCut(pair[1], component, template, 'notch', `${sku}: ответный вырез ${index + 1}, R10`, 'left', center, 22, 20)
+      })
+    })
+    return
+  }
+
+  if (pattern === 'knob-fdr30') {
+    doors.forEach((door, index) => {
+      const edge = oppositeEdge(hingeEdge(panels, door))
+      addHole(door, component, template, `${sku}: ручка ${index + 1}`, edgeX(door, edge, 50), Math.min(1000, door.heightMm / 2), 10)
+    })
+    return
+  }
+
+  if (pattern === 'slider-fds1') {
+    doors.forEach((door) => {
+      const topOffset = 35
+      for (const xMm of [80, Math.max(80, door.widthMm - 80)]) {
+        addHole(door, component, template, `${sku}: ролик`, xMm, door.heightMm - topOffset, 16)
+        addHole(door, component, template, `${sku}: фиксатор`, xMm, door.heightMm - topOffset - 58, 10)
+      }
+      addHole(door, component, template, `${sku}: вырез под ручку`, 55, Math.min(1000, door.heightMm / 2), 48)
+    })
+    fixedPanels.forEach((panel) => {
+      const yMm = panel.heightMm - 67
+      for (const xMm of [100, Math.max(100, panel.widthMm - 100)]) {
+        addHole(panel, component, template, `${sku}: крепление трека`, xMm, yMm, 14)
+      }
+    })
+  }
+}
+
+const createTemplateCheck = (
+  component: ResolvedComponent,
+  glassThickness: 6 | 8,
+): { check: ProductionTemplateCheck; template?: ShowerHardwareMachiningTemplate } => {
+  const sku = component.item.sku ?? ''
+  const template = getShowerHardwareMachiningTemplate(sku)
+  if (template && !template.supportedThicknesses.includes(glassThickness)) {
+    return {
+      template,
+      check: {
+        id: crypto.randomUUID(),
+        hardwareItemId: component.item.id,
+        label: component.item.label,
+        sku,
+        quantity: component.quantity,
+        status: 'incompatible',
+        message: `Артикул не подтверждён для стекла ${glassThickness} мм`,
+        productUrl: component.item.sourceUrl,
+        drawingUrl: template.drawingUrl,
+      },
+    }
+  }
+  if (template) {
+    return {
+      template,
+      check: {
+        id: crypto.randomUUID(),
+        hardwareItemId: component.item.id,
+        label: component.item.label,
+        sku,
+        quantity: component.quantity,
+        status: template.pattern === 'none' ? 'not-required' : 'verified',
+        message: template.sourceNote,
+        productUrl: component.item.sourceUrl,
+        drawingUrl: template.drawingUrl,
+      },
+    }
+  }
+  if (hardwareSectionNeedsMachiningTemplate(component.item.sectionId)) {
+    return {
+      check: {
+        id: crypto.randomUUID(),
+        hardwareItemId: component.item.id,
+        label: component.item.label,
+        sku,
+        quantity: component.quantity,
+        status: 'missing',
+        message: 'На AV24 не найден подтверждённый монтажный чертёж',
+        productUrl: component.item.sourceUrl,
+      },
+    }
+  }
+  return {
+    check: {
+      id: crypto.randomUUID(),
+      hardwareItemId: component.item.id,
+      label: component.item.label,
+      sku,
+      quantity: component.quantity,
+      status: 'not-required',
+      message: 'Обработка стекла для этой позиции не требуется',
+      productUrl: component.item.sourceUrl,
+    },
+  }
+}
+
 export const createProductionPackage = (
   catalog: PricingCatalog,
   form: CalculatorForm,
@@ -181,6 +442,17 @@ export const createProductionPackage = (
   const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
   const glassThickness = glass.thickness ?? 8
   const components = getConstructionHardwareComponents(catalog, construction, glassThickness)
+  const panels = getPanelDefaults(catalog, form)
+  const resolvedChecks = components.map((component) => ({
+    component,
+    ...createTemplateCheck(component, glassThickness),
+  }))
+
+  resolvedChecks.forEach(({ component, template, check }) => {
+    if (!template || check.status !== 'verified') return
+    if (template.pattern !== 'none') applyMachiningPattern(template.pattern, component, template, panels)
+  })
+
   const purchases = components.map((component) => ({
     id: crypto.randomUUID(),
     hardwareItemId: component.item.id,
@@ -206,6 +478,10 @@ export const createProductionPackage = (
       sourceUrl: component.item.sourceUrl,
     }]
   })
+  const templateChecks = resolvedChecks.map(({ check }) => check)
+  const blockingIssues = templateChecks
+    .filter((check) => check.status === 'missing' || check.status === 'incompatible')
+    .map((check) => `${check.sku || check.label}: ${check.message}`)
 
   return {
     quoteNumber,
@@ -216,89 +492,32 @@ export const createProductionPackage = (
     glassThickness,
     hardwareColor: hardware.label,
     hardwareClass: hardwareClass.label,
-    referenceImageDataUrl: '',
-    referenceFileName: '',
-    analysisSummary: '',
-    confidence: null,
-    recognizedDimensions: [],
-    panels: getPanelDefaults(catalog, form),
+    panels,
     cuts,
     purchases,
+    templateChecks,
     warnings: [
-      'Размеры стекол перенесены из калькулятора без автоматических технологических вычетов.',
-      'Сверления и вырезы должны быть подтверждены по чертежам выбранной фурнитуры.',
+      'Координаты обработок построены автоматически по монтажным чертежам выбранных артикулов.',
+      'Высотное расположение петель и коннекторов выполнено по производственному стандарту калькулятора.',
     ],
+    blockingIssues,
     notes: '',
-    confirmed: false,
-  }
-}
-
-const normalizeLabel = (value: string) => value.toLocaleLowerCase('ru').replaceAll('ё', 'е').trim()
-
-export const applyProductionAnalysis = (
-  current: ProductionPackage,
-  analysis: ProductionPlanAnalysis,
-): ProductionPackage => {
-  const fallbackPanels = current.panels
-  const panels = (analysis.panels.length > 0 ? analysis.panels : fallbackPanels).map((panel, index) => {
-    const fallback = fallbackPanels[index] ?? fallbackPanels[0]
-    const label = panel.label || fallback?.label || `Стекло ${index + 1}`
-    const operations = analysis.operations
-      .filter((operation) => normalizeLabel(operation.panelLabel) === normalizeLabel(label))
-      .map((operation) => ({
-        id: crypto.randomUUID(),
-        kind: operation.kind,
-        label: operation.label,
-        xMm: positive(operation.xMm),
-        yMm: positive(operation.yMm),
-        widthMm: positive(operation.widthMm),
-        heightMm: positive(operation.heightMm),
-        diameterMm: positive(operation.diameterMm),
-        confirmed: Boolean(operation.confirmedFromSource),
-      }))
-    return {
-      id: fallback?.id ?? crypto.randomUUID(),
-      label,
-      shape: panel.shape ?? fallback?.shape ?? 'rectangle',
-      widthMm: positive(panel.widthMm, fallback?.widthMm),
-      heightMm: positive(panel.heightMm, fallback?.heightMm),
-      topWidthMm: positive(panel.topWidthMm, panel.widthMm || fallback?.topWidthMm),
-      quantity: Math.max(1, Math.round(positive(panel.quantity, fallback?.quantity ?? 1))),
-      notes: panel.notes || fallback?.notes || '',
-      operations,
-    }
-  })
-
-  return {
-    ...current,
-    analysisSummary: analysis.summary,
-    confidence: Math.min(1, Math.max(0, Number(analysis.confidence) || 0)),
-    recognizedDimensions: analysis.recognizedDimensions,
-    panels,
-    warnings: [...new Set([...current.warnings, ...analysis.warnings])],
-    confirmed: false,
+    confirmed: blockingIssues.length === 0,
   }
 }
 
 export const getProductionUnresolvedOperations = (draft: ProductionPackage) => draft.panels
   .flatMap((panel) => panel.operations.map((operation) => ({ panel, operation })))
-  .filter(({ operation }) => !operation.confirmed || (
-    operation.kind === 'template'
-    && operation.diameterMm <= 0
-    && operation.widthMm <= 0
-    && operation.heightMm <= 0
-  ))
+  .filter(({ operation }) => !operation.confirmed)
 
 export const getProductionValidationErrors = (draft: ProductionPackage) => {
-  const errors: string[] = []
-  if (!draft.referenceImageDataUrl) errors.push('Загрузите вид сверху.')
-  if (draft.panels.length === 0) errors.push('Добавьте хотя бы одно стекло.')
+  const errors: string[] = [...draft.blockingIssues]
+  if (draft.panels.length === 0) errors.push('В расчёте не найдено ни одного стекла.')
   if (draft.panels.some((panel) => panel.widthMm <= 0 || panel.heightMm <= 0 || panel.quantity <= 0)) {
     errors.push('У всех стекол должны быть заполнены размеры и количество.')
   }
   if (getProductionUnresolvedOperations(draft).length > 0) {
-    errors.push('Подтвердите размеры всех сверлений и вырезов.')
+    errors.push('Не все обработки подтверждены монтажными шаблонами.')
   }
-  if (!draft.confirmed) errors.push('Подтвердите проверку технологом.')
   return errors
 }

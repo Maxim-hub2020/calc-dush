@@ -65,7 +65,7 @@ const buildPanelSvg = (panel: ProductionPanel) => {
     }
     const opWidth = Math.max(12, operation.widthMm * scale)
     const opHeight = Math.max(12, operation.heightMm * scale)
-    return `<rect x="${px}" y="${py - opHeight}" width="${opWidth}" height="${opHeight}" fill="#fff7ed" stroke="#c2410c" stroke-width="2"/><text x="${px + opWidth + 5}" y="${py - 5}" font-size="11" fill="#9a3412">${index + 1}</text>`
+    return `<rect x="${px - opWidth / 2}" y="${py - opHeight / 2}" width="${opWidth}" height="${opHeight}" fill="#fff7ed" stroke="#c2410c" stroke-width="2"/><text x="${px + opWidth / 2 + 5}" y="${py - 5}" font-size="11" fill="#9a3412">${index + 1}</text>`
   }).join('')
 
   return `<svg width="520" height="320" viewBox="0 0 520 320" xmlns="http://www.w3.org/2000/svg">
@@ -133,7 +133,18 @@ const operationTable = (panel: ProductionPanel): Content => {
         ...panel.operations.map((operation, index) => [
           { text: String(index + 1), alignment: 'center' },
           operationKindLabel[operation.kind],
-          operation.label,
+          {
+            stack: [
+              { text: operation.label },
+              ...(operation.sourceSku ? [{
+                text: operation.sourceSku,
+                color: colors.accent,
+                fontSize: 7,
+                link: operation.sourceUrl,
+                decoration: operation.sourceUrl ? 'underline' as const : undefined,
+              }] : []),
+            ],
+          },
           { text: mm(operation.xMm), alignment: 'right' },
           { text: mm(operation.yMm), alignment: 'right' },
           { text: operationSize(operation), alignment: 'right' },
@@ -178,7 +189,7 @@ export const buildProductionPdfDefinition = (draft: ProductionPackage): TDocumen
       table: {
         widths: ['*'],
         body: [[{
-          text: 'РАЗМЕРЫ И ОБРАБОТКИ ПРОВЕРЕНЫ ТЕХНОЛОГОМ',
+          text: 'ОБРАБОТКИ ПОСТРОЕНЫ ПО ПРОВЕРЕННЫМ ЧЕРТЕЖАМ ФУРНИТУРЫ',
           bold: true,
           alignment: 'center',
           color: '#166534',
@@ -189,16 +200,14 @@ export const buildProductionPdfDefinition = (draft: ProductionPackage): TDocumen
       layout: 'noBorders',
       margin: [0, 12, 0, 10],
     },
-    { text: 'Исходная схема', style: 'sectionTitle', margin: [0, 5, 0, 6] },
-    ...(draft.referenceImageDataUrl ? [{ image: draft.referenceImageDataUrl, fit: [535, 285], alignment: 'center' } as Content] : []),
+    { text: 'Схема рассчитанной конструкции', style: 'sectionTitle', margin: [0, 5, 0, 6] },
     { svg: buildTopViewSvg(draft), fit: [535, 185], margin: [0, 10, 0, 0] },
-    ...(draft.analysisSummary ? [{ text: draft.analysisSummary, color: colors.text, margin: [0, 8, 0, 0] } as Content] : []),
     ...(draft.warnings.length > 0 ? [{
       table: {
         widths: ['*'],
         body: [[{
           stack: [
-            { text: 'Контрольные замечания', bold: true, color: colors.warning },
+            { text: 'Основание автоматического расчёта', bold: true, color: colors.warning },
             ...draft.warnings.map((warning) => ({ text: `• ${warning}`, color: colors.text, margin: [0, 3, 0, 0] })),
           ],
           fillColor: colors.warningSoft,
@@ -208,6 +217,33 @@ export const buildProductionPdfDefinition = (draft: ProductionPackage): TDocumen
       layout: 'noBorders',
       margin: [0, 10, 0, 0],
     } as Content] : []),
+    { text: 'Монтажные шаблоны фурнитуры', style: 'sectionTitle', margin: [0, 13, 0, 6] },
+    {
+      table: {
+        headerRows: 1,
+        widths: [25, 88, '*', 72],
+        body: [
+          [headerCell('Кол.'), headerCell('Артикул'), headerCell('Проверка'), headerCell('Источник')],
+          ...draft.templateChecks.map((check) => [
+            { text: String(check.quantity), alignment: 'center' },
+            check.sku || '—',
+            check.message,
+            check.drawingUrl ? {
+              text: 'Чертёж AV24',
+              link: check.drawingUrl,
+              decoration: 'underline',
+              color: colors.accent,
+              alignment: 'center',
+            } : {
+              text: check.status === 'not-required' ? 'Не требуется' : 'Нет',
+              color: colors.muted,
+              alignment: 'center',
+            },
+          ]),
+        ] as TableCell[][],
+      },
+      layout: tableLayout,
+    },
   ]
 
   draft.panels.forEach((panel, index) => {
@@ -215,7 +251,7 @@ export const buildProductionPdfDefinition = (draft: ProductionPackage): TDocumen
       { text: `${index + 1}. ${panel.label}`, style: 'title', pageBreak: 'before', margin: [0, 0, 0, 3] },
       { text: `${draft.glassLabel} · количество ${panel.quantity} шт.`, color: colors.muted },
       { svg: buildPanelSvg(panel), fit: [535, 330], margin: [0, 12, 0, 0] },
-      { text: 'Координаты обработок: X от левого края, Y от нижнего края.', alignment: 'center', color: colors.muted, fontSize: 7.5, margin: [0, 0, 0, 7] },
+      { text: 'Координаты обработок указаны до центра: X от левого края, Y от нижнего края.', alignment: 'center', color: colors.muted, fontSize: 7.5, margin: [0, 0, 0, 7] },
       {
         table: {
           widths: ['*', '*', '*', '*'],
