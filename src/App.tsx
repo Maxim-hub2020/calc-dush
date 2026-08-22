@@ -128,7 +128,6 @@ import {
   clearServerSession,
   deleteServerQuote,
   loadServerCatalogs,
-  loadServerQuotes,
   loadServerSession,
   loginToServer,
   saveServerCatalogs,
@@ -476,7 +475,7 @@ function App() {
 
     setQuoteSyncStatus('loading')
     setQuoteSyncMessage('')
-    void loadServerQuotes()
+    void syncServerQuotes(quotesRef.current)
       .then((remote) => {
         if (cancelled) return
         setQuotes(mergeQuoteArchives(remote.quotes, quotesRef.current, deletedQuoteIdsRef.current))
@@ -496,6 +495,62 @@ function App() {
       cancelled = true
     }
   }, [activeTab, serverSession])
+  useEffect(() => {
+    if (!serverSession) return undefined
+
+    let cancelled = false
+    let running = false
+    let timer: number | undefined
+
+    const synchronizeArchive = () => {
+      if (cancelled || running || !navigator.onLine) return
+      running = true
+      setQuoteSyncStatus('loading')
+      setQuoteSyncMessage('')
+      void syncServerQuotes(quotesRef.current)
+        .then((remote) => {
+          if (cancelled) return
+          setQuotes(mergeQuoteArchives(remote.quotes, quotesRef.current, deletedQuoteIdsRef.current))
+          setQuoteSyncStatus('synced')
+        })
+        .catch((error) => {
+          if (cancelled) return
+          if (error instanceof ServerSyncError && error.code === 'auth') {
+            clearServerSession()
+            setServerSession(null)
+          }
+          setQuoteSyncStatus('error')
+          setQuoteSyncMessage(error instanceof Error ? error.message : 'Не удалось синхронизировать архив КП')
+        })
+        .finally(() => {
+          running = false
+        })
+    }
+
+    const scheduleSynchronization = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(synchronizeArchive, 250)
+    }
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleSynchronization()
+    }
+
+    window.addEventListener('online', scheduleSynchronization)
+    window.addEventListener('focus', scheduleSynchronization)
+    document.addEventListener('visibilitychange', handleVisibility)
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') synchronizeArchive()
+    }, 60_000)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      window.clearInterval(interval)
+      window.removeEventListener('online', scheduleSynchronization)
+      window.removeEventListener('focus', scheduleSynchronization)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [serverSession])
   useEffect(() => {
     let cancelled = false
     if (!serverSession) {
