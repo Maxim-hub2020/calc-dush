@@ -100,6 +100,20 @@ const edgeCutPath = (
   drawHeight: number,
   scale: number,
 ) => {
+  if (operation.edge === 'top' || operation.edge === 'bottom') {
+    const centerX = panelX + operation.xMm * scale
+    const edgeY = operation.edge === 'top' ? panelY : panelY + drawHeight
+    const direction = operation.edge === 'top' ? 1 : -1
+    const depth = operation.widthMm * scale
+    const halfOpening = operation.heightMm * scale / 2
+    const radius = operation.radiusMm * scale
+    const straight = operation.straightDepthMm * scale
+    const sweep = operation.edge === 'top' ? 0 : 1
+    if (operation.profile === 'hinge-cutout') {
+      return `M ${centerX - halfOpening} ${edgeY} V ${edgeY + direction * straight} A ${radius} ${radius} 0 0 ${sweep} ${centerX - halfOpening + radius} ${edgeY + direction * depth} H ${centerX + halfOpening - radius} A ${radius} ${radius} 0 0 ${sweep} ${centerX + halfOpening} ${edgeY + direction * straight} V ${edgeY} Z`
+    }
+    return `M ${centerX - halfOpening} ${edgeY} V ${edgeY + direction * straight} A ${radius} ${radius} 0 0 ${sweep} ${centerX} ${edgeY + direction * depth} A ${radius} ${radius} 0 0 ${sweep} ${centerX + halfOpening} ${edgeY + direction * straight} V ${edgeY} Z`
+  }
   const edge = operation.edge ?? (operation.xMm < drawWidth / scale / 2 ? 'left' : 'right')
   const centerY = panelY + drawHeight - operation.yMm * scale
   const depth = operation.widthMm * scale
@@ -135,8 +149,9 @@ const buildDetailSvg = (
   const title = `${group.id} · ${operation.sourceSku || operationKindLabel[operation.kind]}`
   const cx = x + width / 2
   const cy = y + 48
-  const horizontalEdge = operation.edge
-    ?? (operation.xMm <= panelWidthMm / 2 ? 'left' : 'right')
+  const horizontalEdge = operation.edge === 'left' || operation.edge === 'right'
+    ? operation.edge
+    : operation.xMm <= panelWidthMm / 2 ? 'left' : 'right'
   const horizontalOffset = Math.round(horizontalEdge === 'left'
     ? operation.xMm
     : panelWidthMm - operation.xMm)
@@ -183,20 +198,79 @@ const buildDetailSvg = (
 
   const locationNotes = operation.profile === 'circle'
     ? `<text x="${x + 9}" y="${y + height - 25}" class="detail-note">${xml(horizontalText)}</text><text x="${x + 9}" y="${y + height - 15}" class="detail-note">${xml(verticalText)}</text>`
+    : operation.edge === 'top' || operation.edge === 'bottom'
+      ? `<text x="${x + 9}" y="${y + height - 15}" class="detail-note">${xml(horizontalText.replace('ось', 'центр'))}</text>`
     : `<text x="${x + 9}" y="${y + height - 15}" class="detail-note">${xml(verticalText.replace('оси', 'центры').replace('ось:', 'центр:'))}</text>`
   return `<g><rect x="${x}" y="${y}" width="${width}" height="${height}" rx="3" class="detail-box"/><text x="${x + 9}" y="${y + 17}" class="detail-title">${xml(title)}</text>${drawing}${locationNotes}<text x="${x + 9}" y="${y + height - 4}" class="detail-note">${xml(operationSize(operation))}</text></g>`
+}
+
+const extensionLine = (x1: number, y1: number, x2: number, y2: number) => (
+  `<line x1="${number(x1)}" y1="${number(y1)}" x2="${number(x2)}" y2="${number(y2)}" class="extension"/>`
+)
+
+const buildLocationDimensions = (
+  panel: ProductionPanel,
+  groups: ReturnType<typeof buildOperationGroups>,
+  x: number,
+  y: number,
+  drawW: number,
+  drawH: number,
+  scale: number,
+) => {
+  const verticalEntries = groups.flatMap((group) => {
+    if (group.operation.edge === 'top' || group.operation.edge === 'bottom') return []
+    return uniqueNumbers(group.operations.map((operation) => operation.yMm))
+      .sort((left, right) => left - right)
+      .map((value) => ({ groupId: group.id, value }))
+  })
+  const horizontalEntries = groups.flatMap((group) => {
+    const operation = group.operation
+    if (operation.profile !== 'circle' && operation.edge !== 'top' && operation.edge !== 'bottom') return []
+    return uniqueNumbers(group.operations.map((item) => item.xMm))
+      .sort((left, right) => left - right)
+      .map((value) => ({
+        groupId: group.id,
+        value,
+        edge: value <= panel.widthMm / 2 ? 'left' as const : 'right' as const,
+      }))
+  })
+
+  const vertical = verticalEntries.map((entry, index) => {
+    const dimX = x - 32 - index * 8
+    const panelEdgeX = x
+    const targetY = y + drawH - entry.value * scale
+    return [
+      extensionLine(panelEdgeX, targetY, dimX, targetY),
+      extensionLine(panelEdgeX, y + drawH, dimX, y + drawH),
+      dimensionLine(dimX, y + drawH, dimX, targetY, `${entry.groupId}: ${Math.round(entry.value)}`, true),
+    ].join('')
+  }).join('')
+
+  const horizontal = horizontalEntries.slice(0, 5).map((entry, index) => {
+    const dimY = y - 16 - index * 11
+    const targetX = x + entry.value * scale
+    const edgeX = entry.edge === 'left' ? x : x + drawW
+    const offset = entry.edge === 'left' ? entry.value : panel.widthMm - entry.value
+    return [
+      extensionLine(edgeX, y, edgeX, dimY),
+      extensionLine(targetX, y, targetX, dimY),
+      dimensionLine(edgeX, dimY, targetX, dimY, `${entry.groupId}: ${Math.round(offset)}`),
+    ].join('')
+  }).join('')
+
+  return vertical + horizontal
 }
 
 const buildPanelSvg = (panel: ProductionPanel) => {
   const width = Math.max(1, panel.widthMm)
   const height = Math.max(1, panel.heightMm)
-  const maxW = 285
-  const maxH = 400
+  const maxW = 210
+  const maxH = 340
   const scale = Math.min(maxW / width, maxH / height)
   const drawW = width * scale
   const drawH = height * scale
-  const x = 52 + (maxW - drawW) / 2
-  const y = 68 + (maxH - drawH) / 2
+  const x = 100 + (maxW - drawW) / 2
+  const y = 98 + (maxH - drawH) / 2
   const topWidth = Math.min(width, Math.max(1, panel.topWidthMm || width))
   const topInset = panel.shape === 'trapezoid' ? (width - topWidth) * scale / 2 : 0
   const panelPath = panel.shape === 'trapezoid'
@@ -231,12 +305,18 @@ const buildPanelSvg = (panel: ProductionPanel) => {
       return `<circle cx="${number(px + 10)}" cy="${number(py - 10)}" r="8" class="node-badge"/><text x="${number(px + 10)}" y="${number(py - 7)}" class="node-label" text-anchor="middle">${groupByOperation.get(operation.id)}</text>`
     })
   }).join('')
+  const locationDimensions = buildLocationDimensions(panel, groups, x, y, drawW, drawH, scale)
   const detailWidth = 176
   const detailHeight = Math.min(118, Math.max(96, 410 / Math.max(1, groups.length)))
   const details = groups.slice(0, 4).map((group, index) => buildDetailSvg(group, panel.widthMm, panel.heightMm, 350, 60 + index * (detailHeight + 7), detailWidth, detailHeight)).join('')
-  const clearanceSummary = panel.clearances.length > 0
-    ? `Проём ${Math.round(panel.openingWidthMm)} мм; ${panel.clearances.map((item) => `${item.widthAdjustmentMm > 0 ? '+' : ''}${Math.round(item.widthAdjustmentMm)} ${item.label}`).join('; ')}; стекло ${Math.round(panel.widthMm)} мм`
-    : `Проём и чистовой размер стекла: ${Math.round(panel.widthMm)} мм`
+  const clearanceTitle = `Расчётный участок проёма ${Math.round(panel.openingWidthMm)} × ${Math.round(panel.openingHeightMm)} мм; чистое стекло ${Math.round(panel.widthMm)} × ${Math.round(panel.heightMm)} мм`
+  const clearanceItems = panel.clearances.length > 0
+    ? panel.clearances.map((item) => {
+      const adjustment = item.widthAdjustmentMm || item.heightAdjustmentMm
+      return `${adjustment > 0 ? '+' : ''}${Math.round(adjustment)} ${item.label}`
+    })
+    : ['Без дополнительных вычетов']
+  const clearanceDetails = [clearanceItems.slice(0, 2).join(' · '), clearanceItems.slice(2).join(' · ')].filter(Boolean)
 
   return `<svg width="535" height="545" viewBox="0 0 535 545" xmlns="http://www.w3.org/2000/svg">
     <defs><marker id="dim-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M 0 5 L 10 0 L 10 10 Z" fill="#111827"/></marker></defs>
@@ -244,43 +324,107 @@ const buildPanelSvg = (panel: ProductionPanel) => {
     <rect width="535" height="545" fill="#ffffff"/>
     <text x="12" y="18" class="detail-title">КОНТУР СТЕКЛА И ПРИВЯЗКИ ОБРАБОТОК</text>
     <text x="523" y="18" class="detail-note" text-anchor="end">Все размеры в миллиметрах</text>
-    <text x="12" y="34" class="clearance-text">${xml(clearanceSummary)}</text>
+    <text x="12" y="34" class="clearance-text">${xml(clearanceTitle)}</text>
+    ${clearanceDetails.map((line, index) => `<text x="12" y="${46 + index * 10}" class="detail-note">${xml(line)}</text>`).join('')}
     <path d="${panelPath}" class="panel"/>
     ${operations}
     ${groupLabels}
+    ${locationDimensions}
     <line x1="${x}" y1="${y + drawH}" x2="${x}" y2="${y + drawH + 27}" class="extension"/><line x1="${x + drawW}" y1="${y + drawH}" x2="${x + drawW}" y2="${y + drawH + 27}" class="extension"/>
     ${dimensionLine(x, y + drawH + 22, x + drawW, y + drawH + 22, `${Math.round(width)}`)}
-    <line x1="${x}" y1="${y}" x2="${x - 30}" y2="${y}" class="extension"/><line x1="${x}" y1="${y + drawH}" x2="${x - 30}" y2="${y + drawH}" class="extension"/>
-    ${dimensionLine(x - 25, y, x - 25, y + drawH, `${Math.round(height)}`, true)}
+    <line x1="${x}" y1="${y}" x2="${x - 21}" y2="${y}" class="extension"/><line x1="${x}" y1="${y + drawH}" x2="${x - 21}" y2="${y + drawH}" class="extension"/>
+    ${dimensionLine(x - 17, y, x - 17, y + drawH, `${Math.round(height)}`, true)}
     ${panel.shape === 'trapezoid' ? `<text x="${x + drawW / 2}" y="${y - 8}" text-anchor="middle" class="dim-text">верх ${Math.round(topWidth)}</text>` : ''}
     ${details}
     <rect x="8" y="510" width="519" height="27" class="detail-box"/>
     <text x="17" y="522" class="detail-title">${xml(panel.label)} · ${panel.role === 'door' ? 'дверное стекло' : 'неподвижное стекло'} · ${Math.round(panel.widthMm)} × ${Math.round(panel.heightMm)} мм · ${panel.quantity} шт.</text>
-    <text x="17" y="532" class="detail-note">Обработка кромок: полировка. Стекло: закалённое. Привязки отверстий вынесены в узлы справа без пересечения размерных линий.</text>
+    <text x="17" y="532" class="detail-note">Обработка кромок: полировка. Стекло: закалённое. Все оси привязаны размерными линиями к кромкам стекла.</text>
   </svg>`
 }
 
 const buildTopViewSvg = (draft: ProductionPackage) => {
-  const line = (x1: number, y1: number, x2: number, y2: number, index: number) => (
-    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2563eb" stroke-width="7" stroke-linecap="round"/><circle cx="${(x1 + x2) / 2}" cy="${(y1 + y2) / 2 - 10}" r="9" fill="#ffffff" stroke="#2563eb"/><text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6.5}" text-anchor="middle" font-size="10" font-weight="700" fill="#1e3a8a">${index + 1}</text>`
-  )
-  let drawing = ''
+  const segment = (x1: number, y1: number, x2: number, y2: number, index: number) => {
+    const panel = draft.panels[index]
+    if (!panel) return ''
+    const middleX = (x1 + x2) / 2
+    const middleY = (y1 + y2) / 2
+    const length = Math.hypot(x2 - x1, y2 - y1) || 1
+    const normalX = -(y2 - y1) / length
+    const normalY = (x2 - x1) / length
+    const connectorPlacements = draft.connectorPlacements.filter((placement) => placement.panelIndex === index)
+    const verticalConnectors = connectorPlacements.reduce((total, placement) => total + placement.verticalCount, 0)
+    const horizontalConnectors = connectorPlacements.reduce((total, placement) => total + placement.horizontalCount, 0)
+    const magnetic = draft.magneticPlacements.find((placement) => placement.panelIndex === index)
+    const hardwareLabel = [
+      connectorPlacements.length > 0 ? `К ${verticalConnectors}+${horizontalConnectors}` : '',
+      magnetic ? `М ${Math.round(magnetic.gapMm)} мм` : '',
+    ].filter(Boolean).join(' · ')
+    return [
+      `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${panel.role === 'door' ? '#f59e0b' : '#2563eb'}" stroke-width="7" stroke-linecap="round"/>`,
+      hardwareLabel ? `<text x="${middleX - normalX * 14}" y="${middleY - normalY * 14 + 2}" text-anchor="middle" font-size="6.8" font-weight="700" fill="#1d4ed8">${xml(hardwareLabel)}</text>` : '',
+      `<circle cx="${middleX}" cy="${middleY}" r="9" fill="#ffffff" stroke="#0f172a"/><text x="${middleX}" y="${middleY + 3.5}" text-anchor="middle" font-size="9" font-weight="700" fill="#0f172a">${index + 1}</text>`,
+    ].join('')
+  }
+  const coordinates: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
   if (['corner', 'corner-plus', 'double-corner', 'slider-corner', 'slider-double'].includes(draft.constructionSketch)) {
-    drawing = line(70, 95, 250, 95, 0) + line(250, 95, 250, 25, 1)
-    if (draft.panels[2]) drawing += line(250, 25, 360, 25, 2)
-    if (draft.panels[3]) drawing += line(360, 25, 445, 25, 3)
+    const firstCount = Math.max(1, draft.openingSegments[0]?.panelIndexes.length ?? 1)
+    const secondCount = draft.openingSegments[1]?.panelIndexes.length ?? Math.max(0, draft.panels.length - firstCount)
+    for (let index = 0; index < firstCount; index += 1) {
+      coordinates.push({ x1: 55 + index * (220 / firstCount), y1: 82, x2: 55 + (index + 1) * (220 / firstCount), y2: 82 })
+    }
+    for (let index = 0; index < secondCount; index += 1) {
+      coordinates.push({ x1: 275, y1: 82 + index * (65 / Math.max(1, secondCount)), x2: 275, y2: 82 + (index + 1) * (65 / Math.max(1, secondCount)) })
+    }
   } else if (draft.constructionSketch === 'trapezoid') {
-    drawing = line(70, 95, 175, 30, 0) + line(175, 30, 345, 30, 1) + line(345, 30, 450, 95, 2)
+    coordinates.push({ x1: 55, y1: 105, x2: 155, y2: 38 }, { x1: 155, y1: 38, x2: 365, y2: 38 }, { x1: 365, y1: 38, x2: 465, y2: 105 })
   } else {
     const segmentWidth = 360 / Math.max(1, draft.panels.length)
-    drawing = draft.panels.map((_, index) => line(80 + index * segmentWidth, 65, 80 + (index + 1) * segmentWidth, 65, index)).join('')
+    draft.panels.forEach((_, index) => coordinates.push({ x1: 80 + index * segmentWidth, y1: 65, x2: 80 + (index + 1) * segmentWidth, y2: 65 }))
   }
+  const drawing = coordinates.map((item, index) => segment(item.x1, item.y1, item.x2, item.y2, index)).join('')
+  const openingDimensions = draft.openingSegments.flatMap((opening, openingIndex) => {
+    const first = coordinates[opening.panelIndexes[0]]
+    const last = coordinates[opening.panelIndexes[opening.panelIndexes.length - 1]]
+    if (!first || !last) return []
+    const x1 = first.x1
+    const y1 = first.y1
+    const x2 = last.x2
+    const y2 = last.y2
+    const length = Math.hypot(x2 - x1, y2 - y1) || 1
+    const normalX = -(y2 - y1) / length
+    const normalY = (x2 - x1) / length
+    const offset = draft.constructionSketch === 'trapezoid' ? 21 : 19 + openingIndex * 3
+    const dimX1 = x1 + normalX * offset
+    const dimY1 = y1 + normalY * offset
+    const dimX2 = x2 + normalX * offset
+    const dimY2 = y2 + normalY * offset
+    const labelX = (dimX1 + dimX2) / 2 + normalX * 10
+    const labelY = (dimY1 + dimY2) / 2 + normalY * 10 + 3
+    return [`<line x1="${x1}" y1="${y1}" x2="${dimX1}" y2="${dimY1}" class="plan-extension"/><line x1="${x2}" y1="${y2}" x2="${dimX2}" y2="${dimY2}" class="plan-extension"/><line x1="${dimX1}" y1="${dimY1}" x2="${dimX2}" y2="${dimY2}" class="plan-dim" marker-start="url(#plan-arrow)" marker-end="url(#plan-arrow)"/><text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="7.2" font-weight="700" fill="#111827">${xml(opening.label)} ${Math.round(opening.lengthMm)}</text>`]
+  }).join('')
+  const doorSwings = draft.doorPlacements.flatMap((door) => {
+    const item = coordinates[door.panelIndex]
+    if (!item) return []
+    const hingeX = door.hingeEdge === 'left' ? item.x1 : item.x2
+    const hingeY = door.hingeEdge === 'left' ? item.y1 : item.y2
+    const vx = door.hingeEdge === 'left' ? item.x2 - item.x1 : item.x1 - item.x2
+    const vy = door.hingeEdge === 'left' ? item.y2 - item.y1 : item.y1 - item.y2
+    const length = Math.hypot(vx, vy) || 1
+    const radius = Math.min(52, length * .68)
+    const direction = door.swingDirection === 'outward' ? 1 : -1
+    const swingX = hingeX - direction * vy / length * radius
+    const swingY = hingeY + direction * vx / length * radius
+    return [`<line x1="${hingeX}" y1="${hingeY}" x2="${swingX}" y2="${swingY}" stroke="#d97706" stroke-width="1.2" stroke-dasharray="4 3"/><circle cx="${hingeX}" cy="${hingeY}" r="3.5" fill="#fff" stroke="#d97706"/><text x="${swingX + 4}" y="${swingY + 2}" font-size="6.5" font-weight="700" fill="#92400e">${door.swingDirection === 'outward' ? 'наружу' : 'внутрь'}</text>`]
+  }).join('')
   const legend = draft.panels.map((panel, index) => {
     const column = index % 2
     const row = Math.floor(index / 2)
-    return `<text x="${42 + column * 245}" y="${127 + row * 15}" font-size="9" fill="#334155">${index + 1}. ${xml(panel.label)} · ${Math.round(panel.widthMm)} мм</text>`
+    const x = 32 + column * 250
+    const y = 132 + row * 18
+    return `<text x="${x}" y="${y}" font-size="7.5" font-weight="700" fill="#334155">${index + 1}. ${xml(panel.label)} · расчётный участок ${Math.round(panel.openingWidthMm)} × ${Math.round(panel.openingHeightMm)}</text><text x="${x + 11}" y="${y + 9}" font-size="7" fill="#64748b">чистое стекло ${Math.round(panel.widthMm)} × ${Math.round(panel.heightMm)} мм</text>`
   }).join('')
-  return `<svg width="520" height="180" viewBox="0 0 520 180" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="180" fill="#f8fafc"/>${drawing}${legend}<path d="M40 163 H480" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6 5"/><text x="260" y="175" text-anchor="middle" font-size="9" fill="#64748b">Схема расположения стекол, вид сверху</text></svg>`
+  const openingSummary = draft.openingSegments.map((opening) => `${xml(opening.label)} ${Math.round(opening.lengthMm)}`).join(' · ')
+  return `<svg width="520" height="190" viewBox="0 0 520 190" xmlns="http://www.w3.org/2000/svg"><defs><marker id="plan-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 5 L10 0 L10 10 Z" fill="#111827"/></marker></defs><style>.plan-extension{stroke:#94a3b8;stroke-width:.55}.plan-dim{stroke:#111827;stroke-width:.65}</style><rect width="520" height="190" fill="#f8fafc"/><text x="32" y="15" font-size="8.2" font-weight="700" fill="#111827">${openingSummary} · высота ${Math.round(draft.openingHeightMm)} мм</text>${drawing}${openingDimensions}${doorSwings}${legend}<path d="M30 173 H490" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6 5"/><text x="260" y="186" text-anchor="middle" font-size="9" fill="#64748b">Схема расположения стекол, вид сверху</text></svg>`
 }
 
 const headerCell = (text: string): TableCell => ({
@@ -402,12 +546,15 @@ export const buildProductionPdfDefinition = (draft: ProductionPackage): TDocumen
         table: {
           widths: [74, 92, '*', 82, 56],
           body: [
-            [headerCell('Форма'), headerCell('Проём'), headerCell('Учтённые зазоры'), headerCell('Стекло'), headerCell('Толщина')],
+            [headerCell('Форма'), headerCell('Участок проёма'), headerCell('Учтённые зазоры'), headerCell('Стекло'), headerCell('Толщина')],
             [
               panel.shape === 'trapezoid' ? 'Трапеция' : 'Прямоугольник',
               { text: `${mm(panel.openingWidthMm)} × ${mm(panel.openingHeightMm)}`, alignment: 'center' },
               panel.clearances.length > 0
-                ? panel.clearances.map((item) => `${item.widthAdjustmentMm > 0 ? '+' : ''}${Math.round(item.widthAdjustmentMm)} мм - ${item.label} (${item.sourceSku})`).join('\n')
+                ? panel.clearances.map((item) => {
+                  const adjustment = item.widthAdjustmentMm || item.heightAdjustmentMm
+                  return `${adjustment > 0 ? '+' : ''}${Math.round(adjustment)} мм - ${item.label} (${item.sourceSku})`
+                }).join('\n')
                 : 'Не требуются',
               { text: `${mm(panel.widthMm)} × ${mm(panel.heightMm)}`, alignment: 'center', bold: true },
               { text: mm(draft.glassThickness), alignment: 'center', bold: true },

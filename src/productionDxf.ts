@@ -79,15 +79,45 @@ const edgeGeometry = (
   return { bottom, top, tangent, normal, pointAtY }
 }
 
+const horizontalEdgeGeometry = (
+  panel: ProductionPanel,
+  edge: Extract<ProductionOperationEdge, 'top' | 'bottom'>,
+  originX: number,
+) => {
+  const inset = panel.shape === 'trapezoid'
+    ? Math.max(0, (panel.widthMm - panel.topWidthMm) / 2)
+    : 0
+  const left: Point = {
+    x: originX + (edge === 'top' ? inset : 0),
+    y: edge === 'top' ? panel.heightMm : 0,
+  }
+  const right: Point = {
+    x: originX + (edge === 'top' ? panel.widthMm - inset : panel.widthMm),
+    y: edge === 'top' ? panel.heightMm : 0,
+  }
+  const length = Math.max(1, right.x - left.x)
+  const tangent = { x: 1, y: 0 }
+  const normal = edge === 'bottom' ? { x: 0, y: 1 } : { x: 0, y: -1 }
+  const pointAtX = (xMm: number): Point => ({
+    x: left.x + Math.max(0, Math.min(length, xMm - (edge === 'top' ? inset : 0))),
+    y: left.y,
+  })
+  return { left, right, tangent, normal, pointAtX }
+}
+
 const edgeCutEntities = (
   operation: ProductionOperation,
   panel: ProductionPanel,
   originX: number,
   layer: string,
 ) => {
-  const edge = operation.edge === 'right' ? 'right' : 'left'
-  const geometry = edgeGeometry(panel, edge, originX)
-  const center = geometry.pointAtY(operation.yMm)
+  const edge = operation.edge ?? (operation.xMm <= panel.widthMm / 2 ? 'left' : 'right')
+  const geometry = edge === 'top' || edge === 'bottom'
+    ? horizontalEdgeGeometry(panel, edge, originX)
+    : edgeGeometry(panel, edge, originX)
+  const center = edge === 'top' || edge === 'bottom'
+    ? (geometry as ReturnType<typeof horizontalEdgeGeometry>).pointAtX(operation.xMm)
+    : (geometry as ReturnType<typeof edgeGeometry>).pointAtY(operation.yMm)
   const halfOpening = operation.heightMm / 2
   const edgeTop = add(center, geometry.tangent, halfOpening)
   const edgeBottom = add(center, geometry.tangent, -halfOpening)
@@ -149,14 +179,41 @@ const perimeterEdgeEntities = (
   return entities
 }
 
+const perimeterHorizontalEntities = (
+  panel: ProductionPanel,
+  edge: Extract<ProductionOperationEdge, 'top' | 'bottom'>,
+  originX: number,
+  layer: string,
+) => {
+  const geometry = horizontalEdgeGeometry(panel, edge, originX)
+  const inset = panel.shape === 'trapezoid' && edge === 'top'
+    ? Math.max(0, (panel.widthMm - panel.topWidthMm) / 2)
+    : 0
+  const edgeLength = edge === 'top' ? panel.topWidthMm : panel.widthMm
+  const openings = panel.operations
+    .filter((operation) => operation.kind !== 'hole' && operation.edge === edge)
+    .map((operation) => ({
+      left: Math.max(0, operation.xMm - inset - operation.heightMm / 2),
+      right: Math.min(edgeLength, operation.xMm - inset + operation.heightMm / 2),
+    }))
+    .sort((left, right) => left.left - right.left)
+  const pointAtDistance = (distance: number) => add(geometry.left, geometry.tangent, distance)
+  const entities: string[] = []
+  let cursor = 0
+  openings.forEach((opening) => {
+    if (opening.left > cursor) entities.push(line(layer, pointAtDistance(cursor), pointAtDistance(opening.left)))
+    cursor = Math.max(cursor, opening.right)
+  })
+  if (cursor < edgeLength) entities.push(line(layer, pointAtDistance(cursor), pointAtDistance(edgeLength)))
+  return entities
+}
+
 const panelEntities = (panel: ProductionPanel, panelIndex: number, originX: number) => {
   const glassLayer = `GLASS_${panelIndex + 1}`
   const machiningLayer = `CUT_${panelIndex + 1}`
-  const left = edgeGeometry(panel, 'left', originX)
-  const right = edgeGeometry(panel, 'right', originX)
   const entities = [
-    line(glassLayer, left.bottom, right.bottom),
-    line(glassLayer, left.top, right.top),
+    ...perimeterHorizontalEntities(panel, 'bottom', originX, glassLayer),
+    ...perimeterHorizontalEntities(panel, 'top', originX, glassLayer),
     ...perimeterEdgeEntities(panel, 'left', originX, glassLayer),
     ...perimeterEdgeEntities(panel, 'right', originX, glassLayer),
   ]

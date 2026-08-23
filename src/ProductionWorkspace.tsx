@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
   ExternalLink,
   FileDown,
   LoaderCircle,
+  Minus,
   PackageCheck,
+  Plus,
   Ruler,
   Scissors,
   ShieldCheck,
@@ -16,6 +18,10 @@ import type { PricingCatalog } from './pricing'
 import {
   createProductionPackage,
   getProductionValidationErrors,
+  type ProductionConnectorPlacement,
+  type ProductionDesignOverrides,
+  type ProductionDoorPlacement,
+  type ProductionMagneticPlacement,
   type ProductionOperation,
   type ProductionPanel,
   type ProductionTemplateStatus,
@@ -47,6 +53,9 @@ const operationKindLabels: Record<ProductionOperation['kind'], string> = {
 }
 
 const formatMm = (value: number) => `${Math.round(value)} мм`
+const formatSignedMm = (value: number) => `${value > 0 ? '+' : ''}${Math.round(value)} мм`
+
+const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, Math.round(value) || minimum))
 
 const miniatureEdgeCutPath = (
   operation: ProductionOperation,
@@ -56,6 +65,20 @@ const miniatureEdgeCutPath = (
   drawHeight: number,
   scale: number,
 ) => {
+  if (operation.edge === 'top' || operation.edge === 'bottom') {
+    const centerX = left + operation.xMm * scale
+    const edgeY = operation.edge === 'top' ? top : top + drawHeight
+    const direction = operation.edge === 'top' ? 1 : -1
+    const depth = operation.widthMm * scale
+    const halfOpening = operation.heightMm * scale / 2
+    const radius = operation.radiusMm * scale
+    const straight = operation.straightDepthMm * scale
+    const sweep = operation.edge === 'top' ? 0 : 1
+    if (operation.profile === 'hinge-cutout') {
+      return `M ${centerX - halfOpening} ${edgeY} V ${edgeY + direction * straight} A ${radius} ${radius} 0 0 ${sweep} ${centerX - halfOpening + radius} ${edgeY + direction * depth} H ${centerX + halfOpening - radius} A ${radius} ${radius} 0 0 ${sweep} ${centerX + halfOpening} ${edgeY + direction * straight} V ${edgeY} Z`
+    }
+    return `M ${centerX - halfOpening} ${edgeY} V ${edgeY + direction * straight} A ${radius} ${radius} 0 0 ${sweep} ${centerX} ${edgeY + direction * depth} A ${radius} ${radius} 0 0 ${sweep} ${centerX + halfOpening} ${edgeY + direction * straight} V ${edgeY} Z`
+  }
   const centerY = top + drawHeight - operation.yMm * scale
   const depth = operation.widthMm * scale
   const halfOpening = operation.heightMm * scale / 2
@@ -100,16 +123,249 @@ function PanelMiniature({ panel }: { panel: ProductionPanel }) {
           />
         )
       })}
-      <text fill="#64748b" fontSize="9" textAnchor="middle" x={viewWidth / 2} y={viewHeight - 3}>{Math.round(width)} × {Math.round(height)}</text>
+      <text fill="#64748b" fontSize="8.5" textAnchor="middle" x={viewWidth / 2} y={viewHeight - 12}>Стекло {Math.round(width)} × {Math.round(height)}</text>
+      <text fill="#2563eb" fontSize="8.5" fontWeight="700" textAnchor="middle" x={viewWidth / 2} y={viewHeight - 2}>Участок {Math.round(panel.openingWidthMm)} × {Math.round(panel.openingHeightMm)}</text>
     </svg>
   )
 }
 
+type CountStepperProps = {
+  label: string
+  maximum: number
+  value: number
+  onChange: (value: number) => void
+}
+
+function CountStepper({ label, maximum, value, onChange }: CountStepperProps) {
+  return (
+    <div className="production-count-stepper">
+      <span>{label}</span>
+      <div>
+        <button aria-label={`Уменьшить: ${label}`} disabled={value <= 0} title="Уменьшить" type="button" onClick={() => onChange(Math.max(0, value - 1))}><Minus size={15} /></button>
+        <strong>{value}</strong>
+        <button aria-label={`Увеличить: ${label}`} disabled={value >= maximum} title="Увеличить" type="button" onClick={() => onChange(Math.min(maximum, value + 1))}><Plus size={15} /></button>
+      </div>
+    </div>
+  )
+}
+
+const planSegments = (draft: ReturnType<typeof createProductionPackage>) => {
+  const count = Math.max(1, draft.panels.length)
+  if (draft.constructionSketch === 'trapezoid') {
+    return [
+      { x1: 80, y1: 190, x2: 190, y2: 70 },
+      { x1: 190, y1: 70, x2: 430, y2: 70 },
+      { x1: 430, y1: 70, x2: 540, y2: 190 },
+    ].slice(0, count)
+  }
+  if (['corner', 'corner-plus', 'double-corner', 'slider-corner', 'slider-double'].includes(draft.constructionSketch)) {
+    const firstCount = Math.max(1, draft.openingSegments[0]?.panelIndexes.length ?? 1)
+    const secondCount = draft.openingSegments[1]?.panelIndexes.length ?? Math.max(0, count - firstCount)
+    const horizontal = Array.from({ length: firstCount }, (_, index) => ({
+      x1: 70 + index * (250 / firstCount),
+      y1: 190,
+      x2: 70 + (index + 1) * (250 / firstCount),
+      y2: 190,
+    }))
+    const vertical = Array.from({ length: secondCount }, (_, index) => ({
+      x1: 320,
+      y1: 190 - index * (120 / Math.max(1, secondCount)),
+      x2: 320,
+      y2: 190 - (index + 1) * (120 / Math.max(1, secondCount)),
+    }))
+    return [...horizontal, ...vertical]
+  }
+  return Array.from({ length: count }, (_, index) => ({
+    x1: 70 + index * (470 / count),
+    y1: 125,
+    x2: 70 + (index + 1) * (470 / count),
+    y2: 125,
+  }))
+}
+
+function ProductionPlanView({ draft }: { draft: ReturnType<typeof createProductionPackage> }) {
+  const segments = planSegments(draft)
+  const connectorByPanel = new Map<number, { verticalCount: number; horizontalCount: number }>()
+  draft.connectorPlacements.forEach((placement) => {
+    const current = connectorByPanel.get(placement.panelIndex) ?? { verticalCount: 0, horizontalCount: 0 }
+    connectorByPanel.set(placement.panelIndex, {
+      verticalCount: current.verticalCount + placement.verticalCount,
+      horizontalCount: current.horizontalCount + placement.horizontalCount,
+    })
+  })
+  const magneticByPanel = new Map(draft.magneticPlacements.map((placement) => [placement.panelIndex, placement]))
+  const openingDimensions = draft.openingSegments.flatMap((opening, openingIndex) => {
+    const first = segments[opening.panelIndexes[0]]
+    const last = segments[opening.panelIndexes.at(-1) ?? -1]
+    if (!first || !last) return []
+    const x1 = first.x1
+    const y1 = first.y1
+    const x2 = last.x2
+    const y2 = last.y2
+    const length = Math.hypot(x2 - x1, y2 - y1) || 1
+    const normalX = -(y2 - y1) / length
+    const normalY = (x2 - x1) / length
+    const offset = draft.constructionSketch === 'trapezoid' ? 34 : 31 + openingIndex * 5
+    return [{ ...opening, x1, y1, x2, y2, normalX, normalY, offset }]
+  })
+  return (
+    <svg aria-label="Схема душевой сверху" className="production-plan-svg" viewBox="0 0 610 260">
+      <rect fill="#f8fafc" height="260" width="610" />
+      <path d="M35 225 H575" fill="none" stroke="#cbd5e1" strokeDasharray="7 6" strokeWidth="2" />
+      <text fill="#64748b" fontSize="11" textAnchor="middle" x="305" y="246">Поддон и чистый проём · вид сверху</text>
+      {segments.map((segment, index) => {
+        const panel = draft.panels[index]
+        if (!panel) return null
+        const middleX = (segment.x1 + segment.x2) / 2
+        const middleY = (segment.y1 + segment.y2) / 2
+        const connector = connectorByPanel.get(index)
+        const magnetic = magneticByPanel.get(index)
+        const length = Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1) || 1
+        const normalX = -(segment.y2 - segment.y1) / length
+        const normalY = (segment.x2 - segment.x1) / length
+        const hardwareX = middleX - normalX * 20
+        const hardwareY = middleY - normalY * 20
+        return (
+          <g key={panel.id}>
+            <line stroke={panel.role === 'door' ? '#f59e0b' : '#2563eb'} strokeLinecap="round" strokeWidth="9" x1={segment.x1} x2={segment.x2} y1={segment.y1} y2={segment.y2} />
+            <circle cx={middleX} cy={middleY} fill="#fff" r="12" stroke="#0f172a" strokeWidth="1.2" />
+            <text fill="#0f172a" fontSize="11" fontWeight="800" textAnchor="middle" x={middleX} y={middleY + 4}>{index + 1}</text>
+            {connector ? <text fill="#2563eb" fontSize="9.5" fontWeight="800" textAnchor="middle" x={hardwareX} y={hardwareY + 3}>К {connector.verticalCount}+{connector.horizontalCount}</text> : null}
+            {magnetic ? <text fill="#be123c" fontSize="9.5" fontWeight="800" textAnchor="middle" x={hardwareX} y={hardwareY + 3}>М {Math.round(magnetic.gapMm)} мм</text> : null}
+          </g>
+        )
+      })}
+      {openingDimensions.map((opening) => {
+        const dx1 = opening.x1 + opening.normalX * opening.offset
+        const dy1 = opening.y1 + opening.normalY * opening.offset
+        const dx2 = opening.x2 + opening.normalX * opening.offset
+        const dy2 = opening.y2 + opening.normalY * opening.offset
+        return (
+          <g key={opening.id}>
+            <line stroke="#94a3b8" strokeWidth="1" x1={opening.x1} x2={dx1} y1={opening.y1} y2={dy1} />
+            <line stroke="#94a3b8" strokeWidth="1" x1={opening.x2} x2={dx2} y1={opening.y2} y2={dy2} />
+            <line markerEnd="url(#production-plan-arrow)" markerStart="url(#production-plan-arrow)" stroke="#0f172a" strokeWidth="1" x1={dx1} x2={dx2} y1={dy1} y2={dy2} />
+            <text fill="#0f172a" fontSize="10.5" fontWeight="800" textAnchor="middle" x={(dx1 + dx2) / 2 + opening.normalX * 13} y={(dy1 + dy2) / 2 + opening.normalY * 13 + 4}>{opening.label}: {Math.round(opening.lengthMm)} мм</text>
+          </g>
+        )
+      })}
+      {draft.doorPlacements.map((door) => {
+        const segment = segments[door.panelIndex]
+        if (!segment) return null
+        const hingeX = door.hingeEdge === 'left' ? segment.x1 : segment.x2
+        const hingeY = door.hingeEdge === 'left' ? segment.y1 : segment.y2
+        const vx = door.hingeEdge === 'left' ? segment.x2 - segment.x1 : segment.x1 - segment.x2
+        const vy = door.hingeEdge === 'left' ? segment.y2 - segment.y1 : segment.y1 - segment.y2
+        const length = Math.hypot(vx, vy) || 1
+        const radius = Math.min(75, length * 0.72)
+        const direction = door.swingDirection === 'outward' ? 1 : -1
+        const swingX = hingeX - direction * vy / length * radius
+        const swingY = hingeY + direction * vx / length * radius
+        return (
+          <g key={door.id}>
+            <line stroke="#d97706" strokeDasharray="5 4" strokeWidth="2" x1={hingeX} x2={swingX} y1={hingeY} y2={swingY} />
+            <circle cx={hingeX} cy={hingeY} fill="#fff" r="5" stroke="#d97706" strokeWidth="2" />
+            <text fill="#92400e" fontSize="9" fontWeight="700" x={swingX + 5} y={swingY + 3}>{door.swingDirection === 'outward' ? 'наружу' : 'внутрь'}</text>
+          </g>
+        )
+      })}
+      <defs><marker id="production-plan-arrow" markerHeight="5" markerWidth="5" orient="auto-start-reverse" refX="3" refY="3" viewBox="0 0 6 6"><path d="M0 3 L6 0 L6 6 Z" fill="#0f172a" /></marker></defs>
+      <g transform="translate(40 22)">
+        <line stroke="#2563eb" strokeWidth="7" x1="0" x2="24" y1="0" y2="0" /><text fill="#475569" fontSize="10" x="31" y="4">неподвижное стекло</text>
+        <line stroke="#f59e0b" strokeWidth="7" x1="145" x2="169" y1="0" y2="0" /><text fill="#475569" fontSize="10" x="176" y="4">дверь</text>
+      </g>
+    </svg>
+  )
+}
+
+type ConstructorProps = {
+  draft: ReturnType<typeof createProductionPackage>
+  onOpeningHeight: (value: number) => void
+  onOpeningSegment: (segmentId: string, value: number) => void
+  onDoor: (placement: ProductionDoorPlacement, patch: Partial<ProductionDoorPlacement>) => void
+  onConnector: (placement: ProductionConnectorPlacement, patch: Partial<ProductionConnectorPlacement>) => void
+  onMagnetic: (placement: ProductionMagneticPlacement, patch: Partial<ProductionMagneticPlacement>) => void
+}
+
+function ProductionConstructor({ draft, onOpeningHeight, onOpeningSegment, onDoor, onConnector, onMagnetic }: ConstructorProps) {
+  return (
+    <section className="production-constructor">
+      <div className="production-section-head">
+        <div><span>1</span><div><h3>Схема проёма и фурнитуры</h3><p>Проверьте поддон, притвор и крепления до выпуска стекла</p></div></div>
+        <Ruler size={20} aria-hidden="true" />
+      </div>
+      <div className="production-constructor-layout">
+        <ProductionPlanView draft={draft} />
+        <div className="production-opening-list">
+          <article>
+            <header><strong>Замеры проёма / поддона</strong><span>Исходные размеры</span></header>
+            <div className="production-opening-inputs">
+              <label><span>Высота проёма</span><input inputMode="numeric" min="1" step="1" type="number" value={Math.round(draft.openingHeightMm)} onChange={(event) => onOpeningHeight(clamp(Number(event.target.value), 1, 3500))} /></label>
+              {draft.openingSegments.map((segment) => (
+                <label key={segment.id}><span>{segment.label}</span><input inputMode="numeric" min="1" step="1" type="number" value={Math.round(segment.lengthMm)} onChange={(event) => onOpeningSegment(segment.id, clamp(Number(event.target.value), 1, 6000))} /></label>
+              ))}
+            </div>
+            <p>Это размеры чистого проёма или сторон поддона. Размеры стекол рассчитываются автоматически.</p>
+          </article>
+          <article>
+            <header><strong>Рассчитанные стекла</strong><span>Автоматически</span></header>
+            <div className="production-opening-results">
+              {draft.panels.map((panel, panelIndex) => <p key={panel.id}><span>{panelIndex + 1}. {panel.label}</span><strong>{Math.round(panel.widthMm)} × {Math.round(panel.heightMm)} мм</strong></p>)}
+            </div>
+          </article>
+        </div>
+      </div>
+
+      {draft.doorPlacements.length > 0 || draft.connectorPlacements.length > 0 || draft.magneticPlacements.length > 0 ? (
+        <div className="production-placement-grid">
+          {draft.doorPlacements.map((placement) => (
+            <article className="production-placement-card is-door" key={placement.id}>
+              <header><div><strong>Открывание двери</strong><span>{placement.panelLabel}</span></div></header>
+              <div className="production-select-row">
+                <label><span>Сторона петель</span><select value={placement.hingeEdge} onChange={(event) => onDoor(placement, { hingeEdge: event.target.value as 'left' | 'right' })}><option value="left">Слева</option><option value="right">Справа</option></select></label>
+                <label><span>Открывание</span><select value={placement.swingDirection} onChange={(event) => onDoor(placement, { swingDirection: event.target.value as 'inward' | 'outward' })}><option value="outward">Наружу</option><option value="inward">Внутрь</option></select></label>
+              </div>
+              <p>Положение петель меняет вырезы двери и ответные отверстия.</p>
+            </article>
+          ))}
+          {draft.connectorPlacements.map((placement) => (
+            <article className="production-placement-card" key={placement.id}>
+              <header><div><strong>{placement.sku}</strong><span>{placement.panelLabel}</span></div><a aria-label={`Чертёж ${placement.sku}`} href={placement.sourceUrl} rel="noreferrer" target="_blank"><ExternalLink size={15} /></a></header>
+              <div className="production-placement-controls">
+                <CountStepper label="По вертикали" maximum={3} value={placement.verticalCount} onChange={(value) => onConnector(placement, { verticalCount: value })} />
+                <CountStepper label="По горизонтали" maximum={2} value={placement.horizontalCount} onChange={(value) => onConnector(placement, { horizontalCount: value })} />
+              </div>
+              <div className="production-select-row">
+                <label><span>Вертикальная кромка</span><select value={placement.verticalEdge} onChange={(event) => onConnector(placement, { verticalEdge: event.target.value as 'left' | 'right' })}><option value="left">Левая</option><option value="right">Правая</option></select></label>
+                <label><span>Горизонтальная кромка</span><select value={placement.horizontalEdge} onChange={(event) => onConnector(placement, { horizontalEdge: event.target.value as 'top' | 'bottom' })}><option value="bottom">Нижняя</option><option value="top">Верхняя</option></select></label>
+              </div>
+            </article>
+          ))}
+          {draft.magneticPlacements.map((placement) => (
+            <article className="production-placement-card is-magnetic" key={placement.id}>
+              <header><div><strong>Магнитный притвор</strong><span>{placement.sku} · {placement.panelLabel}</span></div>{placement.sourceUrl ? <a aria-label={`Чертёж ${placement.sku}`} href={placement.sourceUrl} rel="noreferrer" target="_blank"><ExternalLink size={15} /></a> : null}</header>
+              <div className="production-select-row">
+                <label><span>Кромка двери</span><select value={placement.edge} onChange={(event) => onMagnetic(placement, { edge: event.target.value as 'left' | 'right' })}><option value="left">Левая</option><option value="right">Правая</option></select></label>
+                <label><span>Чистый зазор, мм</span><input inputMode="numeric" min="0" step="1" type="number" value={Math.round(placement.gapMm)} onChange={(event) => onMagnetic(placement, { gapMm: clamp(Number(event.target.value), 0, 100) })} /></label>
+              </div>
+              <p>{draft.glassThickness === 6 && /FDPP-50[12]\.6/i.test(placement.sku) ? 'По чертежу AV24 для 6-мм притвора: 22 мм.' : 'Значение можно уточнить по чертежу выбранного профиля.'}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onClose, onPreview }: ProductionWorkspaceProps) {
-  const [draft, setDraft] = useState(() => createProductionPackage(catalog, form, quoteNumber, itemIndex))
+  const [designOverrides, setDesignOverrides] = useState<ProductionDesignOverrides>({})
+  const [notes, setNotes] = useState('')
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
-  const autoStarted = useRef(false)
+  const draft = useMemo(() => ({
+    ...createProductionPackage(catalog, form, quoteNumber, itemIndex, designOverrides),
+    notes,
+  }), [catalog, designOverrides, form, itemIndex, notes, quoteNumber])
   const validationErrors = useMemo(() => getProductionValidationErrors(draft), [draft])
   const verifiedCount = draft.templateChecks.filter((check) => check.status === 'verified' || check.status === 'not-required').length
   const operationCount = draft.panels.reduce((total, panel) => total + panel.operations.length, 0)
@@ -133,11 +389,58 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
     }
   }, [draft, generating, onClose, onPreview])
 
-  useEffect(() => {
-    if (autoStarted.current || validationErrors.length > 0) return
-    autoStarted.current = true
-    void generatePdf()
-  }, [generatePdf, validationErrors.length])
+  const updateOpeningHeight = useCallback((heightMm: number) => {
+    setDesignOverrides((current) => ({
+      ...current,
+      opening: {
+        ...current.opening,
+        heightMm,
+      },
+    }))
+  }, [])
+
+  const updateOpeningSegment = useCallback((segmentId: string, value: number) => {
+    setDesignOverrides((current) => ({
+      ...current,
+      opening: {
+        ...current.opening,
+        segments: {
+          ...current.opening?.segments,
+          [segmentId]: value,
+        },
+      },
+    }))
+  }, [])
+
+  const updateDoor = useCallback((placement: ProductionDoorPlacement, patch: Partial<ProductionDoorPlacement>) => {
+    setDesignOverrides((current) => ({
+      ...current,
+      doors: {
+        ...current.doors,
+        [placement.id]: { ...current.doors?.[placement.id], ...patch },
+      },
+    }))
+  }, [])
+
+  const updateConnector = useCallback((placement: ProductionConnectorPlacement, patch: Partial<ProductionConnectorPlacement>) => {
+    setDesignOverrides((current) => ({
+      ...current,
+      connectors: {
+        ...current.connectors,
+        [placement.id]: { ...current.connectors?.[placement.id], ...patch },
+      },
+    }))
+  }, [])
+
+  const updateMagnetic = useCallback((placement: ProductionMagneticPlacement, patch: Partial<ProductionMagneticPlacement>) => {
+    setDesignOverrides((current) => ({
+      ...current,
+      magnetic: {
+        ...current.magnetic,
+        [placement.id]: { ...current.magnetic?.[placement.id], ...patch },
+      },
+    }))
+  }, [])
 
   return (
     <div className="production-backdrop">
@@ -162,7 +465,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
                 {generating
                   ? 'Стекла, зазоры, отверстия, вырезы, карта напила и закупка уже рассчитаны.'
                   : validationErrors.length === 0
-                    ? 'PDF и DXF в масштабе 1:1 создаются автоматически по текущему расчёту.'
+                    ? 'Проверьте схему, размеры и количество креплений, затем выпустите PDF и DXF 1:1.'
                     : 'Система не выпускает в производство неподтверждённые размеры.'}
               </p>
             </div>
@@ -182,9 +485,18 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
             </section>
           ) : null}
 
+          <ProductionConstructor
+            draft={draft}
+            onConnector={updateConnector}
+            onDoor={updateDoor}
+            onMagnetic={updateMagnetic}
+            onOpeningHeight={updateOpeningHeight}
+            onOpeningSegment={updateOpeningSegment}
+          />
+
           <section>
             <div className="production-section-head">
-              <div><span>1</span><div><h3>Стекла и обработки</h3><p>Построены из размеров рассчитанной душевой</p></div></div>
+              <div><span>2</span><div><h3>Стекла и обработки</h3><p>Построены из подтверждённой схемы проёма</p></div></div>
               <Scissors size={20} aria-hidden="true" />
             </div>
             <div className="production-glass-grid">
@@ -197,7 +509,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
                     <strong>{formatMm(panel.widthMm)} × {formatMm(panel.heightMm)} × {draft.glassThickness} мм</strong>
                     {panel.clearances.length > 0 ? (
                       <p>
-                        Проём {formatMm(panel.openingWidthMm)}. {panel.clearances.map((item) => `${item.widthAdjustmentMm > 0 ? '+' : ''}${formatMm(item.widthAdjustmentMm)}: ${item.label}`).join('; ')}.
+                        Расчётный участок проёма {formatMm(panel.openingWidthMm)} × {formatMm(panel.openingHeightMm)}. {panel.clearances.map((item) => `${formatSignedMm(item.widthAdjustmentMm || item.heightAdjustmentMm)}: ${item.label}`).join('; ')}.
                       </p>
                     ) : null}
                     {panel.operations.length > 0 ? (
@@ -219,7 +531,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
 
           <section>
             <div className="production-section-head">
-              <div><span>2</span><div><h3>Проверка фурнитуры</h3><p>Каждый артикул сопоставлен с заводским чертежом</p></div></div>
+              <div><span>3</span><div><h3>Проверка фурнитуры</h3><p>Каждый артикул сопоставлен с заводским чертежом</p></div></div>
               <strong>{verifiedCount} из {draft.templateChecks.length}</strong>
             </div>
             <div className="production-template-list">
@@ -238,7 +550,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
           <section className="production-two-columns">
             <div>
               <div className="production-section-head">
-                <div><span>3</span><div><h3>Карта напила</h3><p>Профили, трубы и треки</p></div></div>
+                <div><span>4</span><div><h3>Карта напила</h3><p>Профили, трубы и треки</p></div></div>
                 <Ruler size={20} aria-hidden="true" />
               </div>
               {draft.cuts.length > 0 ? (
@@ -254,7 +566,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
             </div>
             <div>
               <div className="production-section-head">
-                <div><span>4</span><div><h3>Закупка</h3><p>Состав рассчитанной душевой</p></div></div>
+                <div><span>5</span><div><h3>Закупка</h3><p>Состав рассчитанной душевой</p></div></div>
                 <PackageCheck size={20} aria-hidden="true" />
               </div>
               <div className="production-compact-list">
@@ -271,7 +583,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
           <section>
             <label className="production-notes-field">
               <span>Примечание для производства</span>
-              <textarea rows={3} value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} />
+              <textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
             </label>
           </section>
         </div>
@@ -285,7 +597,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
           <button type="button" onClick={onClose}>Закрыть</button>
           <button className="production-primary" disabled={generating || validationErrors.length > 0} type="button" onClick={() => void generatePdf()}>
             {generating ? <LoaderCircle className="is-spinning" size={18} /> : <FileDown size={18} />}
-            {generating ? 'Формируем...' : 'Создать PDF'}
+            {generating ? 'Формируем...' : 'Создать PDF и DXF'}
           </button>
         </footer>
       </section>

@@ -23,8 +23,60 @@ export type ProductionClearance = {
   edge: ProductionOperationEdge
   valueMm: number
   widthAdjustmentMm: number
+  heightAdjustmentMm: number
   sourceSku: string
   sourceUrl?: string
+}
+
+export type ProductionConnectorPlacement = {
+  id: string
+  hardwareItemId: string
+  panelIndex: number
+  panelLabel: string
+  label: string
+  sku: string
+  verticalCount: number
+  horizontalCount: number
+  verticalEdge: Extract<ProductionOperationEdge, 'left' | 'right'>
+  horizontalEdge: Extract<ProductionOperationEdge, 'top' | 'bottom'>
+  sourceUrl?: string
+}
+
+export type ProductionMagneticPlacement = {
+  id: string
+  hardwareItemId: string
+  panelIndex: number
+  panelLabel: string
+  label: string
+  sku: string
+  edge: Extract<ProductionOperationEdge, 'left' | 'right'>
+  gapMm: number
+  sourceUrl?: string
+}
+
+export type ProductionDoorPlacement = {
+  id: string
+  panelIndex: number
+  panelLabel: string
+  hingeEdge: Extract<ProductionOperationEdge, 'left' | 'right'>
+  swingDirection: 'inward' | 'outward'
+}
+
+export type ProductionOpeningSegment = {
+  id: string
+  label: string
+  lengthMm: number
+  panelIndexes: number[]
+}
+
+export type ProductionDesignOverrides = {
+  opening?: {
+    heightMm?: number
+    segments?: Record<string, number>
+  }
+  doors?: Record<string, Partial<Pick<ProductionDoorPlacement, 'hingeEdge' | 'swingDirection'>>>
+  connectors?: Record<string, Partial<Pick<ProductionConnectorPlacement, 'verticalCount' | 'horizontalCount' | 'verticalEdge' | 'horizontalEdge'>>>
+  magnetic?: Record<string, Partial<Pick<ProductionMagneticPlacement, 'edge' | 'gapMm'>>>
 }
 
 export type ProductionOperation = {
@@ -105,7 +157,12 @@ export type ProductionPackage = {
   glassThickness: 6 | 8
   hardwareColor: string
   hardwareClass: string
+  openingHeightMm: number
+  openingSegments: ProductionOpeningSegment[]
   panels: ProductionPanel[]
+  doorPlacements: ProductionDoorPlacement[]
+  connectorPlacements: ProductionConnectorPlacement[]
+  magneticPlacements: ProductionMagneticPlacement[]
   cuts: ProductionCutItem[]
   purchases: ProductionPurchaseItem[]
   templateChecks: ProductionTemplateCheck[]
@@ -140,32 +197,103 @@ const panelRolesBySketch: Record<ProductionPackage['constructionSketch'], Produc
   trapezoid: ['fixed', 'door', 'fixed'],
 }
 
-const getPanelDefaults = (catalog: PricingCatalog, form: CalculatorForm): ProductionPanel[] => {
+const getOpeningPanelGroups = (
+  sketch: ProductionPackage['constructionSketch'],
+  panelCount: number,
+): number[][] => {
+  if (sketch === 'trapezoid') {
+    return Array.from({ length: panelCount }, (_, index) => [index])
+  }
+  if (sketch === 'corner') return [[0], [1]].filter((group) => group[0] < panelCount)
+  if (sketch === 'corner-plus') return [[0], [1, 2]].map((group) => group.filter((index) => index < panelCount)).filter((group) => group.length > 0)
+  if (sketch === 'double-corner' || sketch === 'slider-double') return [[0, 1], [2, 3]].map((group) => group.filter((index) => index < panelCount)).filter((group) => group.length > 0)
+  if (sketch === 'slider-corner') return [[0, 1], [2]].map((group) => group.filter((index) => index < panelCount)).filter((group) => group.length > 0)
+  return [Array.from({ length: panelCount }, (_, index) => index)]
+}
+
+const getOpeningSegmentLabel = (
+  sketch: ProductionPackage['constructionSketch'],
+  segmentIndex: number,
+  segmentCount: number,
+) => {
+  if (sketch === 'trapezoid') {
+    return ['Левая сторона поддона', 'Фасад поддона', 'Правая сторона поддона'][segmentIndex]
+      ?? `Сторона поддона ${segmentIndex + 1}`
+  }
+  if (segmentCount > 1) return `Сторона поддона ${String.fromCharCode(65 + segmentIndex)}`
+  return 'Ширина чистого проёма'
+}
+
+const distributeOpeningLength = (
+  targetLength: number,
+  panelIndexes: number[],
+  originalWidths: number[],
+  roles: ProductionPanelRole[],
+) => {
+  const result = new Map<number, number>()
+  const total = panelIndexes.reduce((sum, index) => sum + originalWidths[index], 0)
+  const doorIndexes = panelIndexes.filter((index) => roles[index] === 'door')
+  const fixedIndexes = panelIndexes.filter((index) => roles[index] !== 'door')
+  const doorTotal = doorIndexes.reduce((sum, index) => sum + originalWidths[index], 0)
+
+  if (doorIndexes.length > 0 && fixedIndexes.length > 0 && targetLength > doorTotal + fixedIndexes.length) {
+    doorIndexes.forEach((index) => result.set(index, originalWidths[index]))
+    const fixedTarget = targetLength - doorTotal
+    const fixedTotal = fixedIndexes.reduce((sum, index) => sum + originalWidths[index], 0)
+    fixedIndexes.forEach((index) => result.set(index, fixedTarget * originalWidths[index] / Math.max(1, fixedTotal)))
+    return result
+  }
+
+  panelIndexes.forEach((index) => result.set(index, targetLength * originalWidths[index] / Math.max(1, total)))
+  return result
+}
+
+const getPanelDefaults = (
+  catalog: PricingCatalog,
+  form: CalculatorForm,
+  overrides?: ProductionDesignOverrides['opening'],
+): { panels: ProductionPanel[]; openingHeightMm: number; openingSegments: ProductionOpeningSegment[] } => {
   const construction = getConstruction(catalog, form.constructionId)
   const heightField = construction.fields.find((field) => field.key.startsWith('HEIGHT'))
-  const height = positive(heightField ? form.dimensions[heightField.key] : 0, 2000)
+  const defaultHeight = positive(heightField ? form.dimensions[heightField.key] : 0, 2000)
+  const openingHeightMm = positive(overrides?.heightMm, defaultHeight)
   const roles = panelRolesBySketch[construction.sketch]
-  return construction.fields
-    .filter((field) => field.key.startsWith('WIDTH'))
-    .map((field, index) => {
-      const width = positive(form.dimensions[field.key], field.defaultValue)
+  const widthFields = construction.fields.filter((field) => field.key.startsWith('WIDTH'))
+  const originalWidths = widthFields.map((field) => positive(form.dimensions[field.key], field.defaultValue))
+  const groups = getOpeningPanelGroups(construction.sketch, widthFields.length)
+  const allocatedWidths = new Map<number, number>()
+  const openingSegments = groups.map((panelIndexes, segmentIndex) => {
+    const id = `opening-segment-${segmentIndex + 1}`
+    const defaultLength = panelIndexes.reduce((sum, index) => sum + originalWidths[index], 0)
+    const lengthMm = positive(overrides?.segments?.[id], defaultLength)
+    distributeOpeningLength(lengthMm, panelIndexes, originalWidths, roles).forEach((value, index) => allocatedWidths.set(index, value))
+    return {
+      id,
+      label: getOpeningSegmentLabel(construction.sketch, segmentIndex, groups.length),
+      lengthMm,
+      panelIndexes,
+    }
+  })
+  const panels = widthFields.map((field, index) => {
+      const openingWidth = allocatedWidths.get(index) ?? originalWidths[index]
       const role = roles[index] ?? (/двер/i.test(field.label) ? 'door' : 'fixed')
       return {
-        id: crypto.randomUUID(),
+        id: `panel-${index + 1}`,
         label: panelLabel(field.label, index),
         role,
         shape: construction.sketch === 'trapezoid' && role === 'fixed' ? 'trapezoid' as const : 'rectangle' as const,
-        openingWidthMm: width,
-        openingHeightMm: height,
-        widthMm: width,
-        heightMm: height,
-        topWidthMm: width,
+        openingWidthMm: openingWidth,
+        openingHeightMm,
+        widthMm: openingWidth,
+        heightMm: openingHeightMm,
+        topWidthMm: openingWidth,
         quantity: 1,
         notes: role === 'door' ? 'Дверное стекло' : 'Неподвижное стекло',
         clearances: [],
         operations: [],
       }
     })
+  return { panels, openingHeightMm, openingSegments }
 }
 
 const inferStockLengthMm = (label: string) => {
@@ -183,16 +311,24 @@ const getPlanWidth = (form: CalculatorForm) => Object.entries(form.dimensions)
   .filter(([key]) => key.startsWith('WIDTH'))
   .reduce((total, [, value]) => total + positive(value), 0)
 
-const getCutLengthMm = (label: string, form: CalculatorForm) => {
+const getCutLengthMm = (
+  label: string,
+  form: CalculatorForm,
+  openingSegments?: ProductionOpeningSegment[],
+  openingHeightMm?: number,
+) => {
   const normalized = label.toLocaleLowerCase('ru').replaceAll('ё', 'е')
-  const height = Object.entries(form.dimensions)
+  const height = openingHeightMm ?? Object.entries(form.dimensions)
     .find(([key]) => key.startsWith('HEIGHT'))?.[1] ?? 2000
-  const width = Math.max(1, getPlanWidth(form))
+  const segmentLengths = openingSegments?.map((segment) => segment.lengthMm) ?? []
+  const width = Math.max(1, segmentLengths.length > 0 ? segmentLengths.reduce((sum, value) => sum + value, 0) : getPlanWidth(form))
   if (/трек|порог|направляющ|нижн|горизонт/.test(normalized)) return width
   if (/стен|вертик|магнит/.test(normalized)) return positive(height, 2000)
-  if (/труб|штанг/.test(normalized)) return Math.max(...Object.entries(form.dimensions)
-    .filter(([key]) => key.startsWith('WIDTH'))
-    .map(([, value]) => positive(value)), width)
+  if (/труб|штанг/.test(normalized)) return segmentLengths.length > 0
+    ? Math.max(...segmentLengths)
+    : Math.max(...Object.entries(form.dimensions)
+      .filter(([key]) => key.startsWith('WIDTH'))
+      .map(([, value]) => positive(value)), width)
   return positive(height, 2000)
 }
 
@@ -218,6 +354,26 @@ const hingeEdge = (panels: ProductionPanel[], door: ProductionPanel): Edge => {
   return fixedIndex > doorIndex ? 'right' : 'left'
 }
 const oppositeEdge = (edge: Edge): Edge => edge === 'left' ? 'right' : 'left'
+const createDoorPlacements = (
+  panels: ProductionPanel[],
+  overrides?: ProductionDesignOverrides['doors'],
+) => panels.flatMap((panel, panelIndex) => {
+  if (panel.role !== 'door') return []
+  const id = `door:${panelIndex}`
+  const override = overrides?.[id]
+  return [{
+    id,
+    panelIndex,
+    panelLabel: panel.label,
+    hingeEdge: override?.hingeEdge ?? hingeEdge(panels, panel),
+    swingDirection: override?.swingDirection ?? 'outward',
+  } satisfies ProductionDoorPlacement]
+})
+const getDoorHingeEdge = (
+  panels: ProductionPanel[],
+  door: ProductionPanel,
+  doorPlacements: ProductionDoorPlacement[],
+) => doorPlacements.find((placement) => placement.panelIndex === panels.indexOf(door))?.hingeEdge ?? hingeEdge(panels, door)
 const edgeX = (panel: ProductionPanel, edge: Edge, offset: number) => edge === 'left' ? offset : panel.widthMm - offset
 
 const addWidthClearance = (
@@ -237,11 +393,36 @@ const addWidthClearance = (
     edge,
     valueMm,
     widthAdjustmentMm,
+    heightAdjustmentMm: 0,
     sourceSku,
     sourceUrl,
   })
   panel.widthMm = Math.max(1, panel.widthMm + widthAdjustmentMm)
   panel.topWidthMm = Math.max(1, panel.topWidthMm + widthAdjustmentMm)
+}
+
+const addHeightClearance = (
+  panel: ProductionPanel,
+  label: string,
+  edge: Extract<ProductionOperationEdge, 'top' | 'bottom'>,
+  valueMm: number,
+  heightAdjustmentMm: number,
+  sourceSku: string,
+  sourceUrl?: string,
+) => {
+  const key = `${sourceSku}|${label}|${edge}`
+  if (panel.clearances.some((item) => `${item.sourceSku}|${item.label}|${item.edge}` === key)) return
+  panel.clearances.push({
+    id: crypto.randomUUID(),
+    label,
+    edge,
+    valueMm,
+    widthAdjustmentMm: 0,
+    heightAdjustmentMm,
+    sourceSku,
+    sourceUrl,
+  })
+  panel.heightMm = Math.max(1, panel.heightMm + heightAdjustmentMm)
 }
 
 const addHole = (
@@ -275,30 +456,35 @@ const addEdgeCut = (
   template: ShowerHardwareMachiningTemplate,
   kind: 'notch' | 'cutout',
   label: string,
-  edge: Edge,
-  yMm: number,
+  edge: ProductionOperationEdge,
+  positionMm: number,
   depthMm: number,
   openingMm: number,
   radiusMm: number,
   profile: Extract<ProductionOperationProfile, 'round-slot' | 'hinge-cutout'>,
   straightDepthMm = Math.max(0, depthMm - radiusMm),
-) => panel.operations.push({
-  id: crypto.randomUUID(),
-  kind,
-  label,
-  xMm: edgeX(panel, edge, depthMm / 2),
-  yMm,
-  widthMm: depthMm,
-  heightMm: openingMm,
-  diameterMm: 0,
-  radiusMm,
-  straightDepthMm,
-  edge,
-  profile,
-  confirmed: true,
-  sourceSku: component.item.sku ?? '',
-  sourceUrl: template.drawingUrl,
-})
+) => {
+  const horizontalEdge = edge === 'top' || edge === 'bottom'
+  panel.operations.push({
+    id: crypto.randomUUID(),
+    kind,
+    label,
+    xMm: horizontalEdge ? positionMm : edgeX(panel, edge, depthMm / 2),
+    yMm: horizontalEdge
+      ? edge === 'bottom' ? depthMm / 2 : panel.heightMm - depthMm / 2
+      : positionMm,
+    widthMm: depthMm,
+    heightMm: openingMm,
+    diameterMm: 0,
+    radiusMm,
+    straightDepthMm,
+    edge,
+    profile,
+    confirmed: true,
+    sourceSku: component.item.sku ?? '',
+    sourceUrl: template.drawingUrl,
+  })
+}
 
 const groupCountByPanel = (panels: ProductionPanel[], quantity: number) => panels.map((panel, index) => ({
   panel,
@@ -310,6 +496,96 @@ const getAdjacentFixed = (panels: ProductionPanel[], door: ProductionPanel) => {
   return [...panels.slice(0, index).reverse(), ...panels.slice(index + 1)].find((panel) => panel.role === 'fixed')
 }
 
+const getFixedOnDoorSide = (panels: ProductionPanel[], door: ProductionPanel, edge: Edge) => {
+  const index = panels.indexOf(door)
+  const candidates = edge === 'left'
+    ? panels.slice(0, index).reverse()
+    : panels.slice(index + 1)
+  return candidates.find((panel) => panel.role === 'fixed')
+}
+
+const clampCount = (value: unknown, maximum: number) => Math.min(maximum, Math.max(0, Math.round(Number(value) || 0)))
+
+const createConnectorPlacements = (
+  resolvedChecks: Array<{
+    component: ResolvedComponent
+    template?: ShowerHardwareMachiningTemplate
+    check: ProductionTemplateCheck
+  }>,
+  panels: ProductionPanel[],
+  overrides?: ProductionDesignOverrides['connectors'],
+) => resolvedChecks.flatMap(({ component, template, check }) => {
+  if (!template || check.status !== 'verified' || !['wall-connector-fdk22', 'wall-connector-fdk27'].includes(template.pattern)) return []
+  const fixedPanels = panels.map((panel, panelIndex) => ({ panel, panelIndex })).filter(({ panel }) => panel.role === 'fixed')
+  return groupCountByPanel(fixedPanels.map(({ panel }) => panel), component.quantity).map(({ panel, count }) => {
+    const panelIndex = panels.indexOf(panel)
+    const id = `${component.item.id}:${panelIndex}`
+    const override = overrides?.[id]
+    const verticalCount = clampCount(override?.verticalCount ?? Math.min(3, count), 3)
+    const horizontalCount = clampCount(override?.horizontalCount ?? Math.max(0, count - verticalCount), 2)
+    return {
+      id,
+      hardwareItemId: component.item.id,
+      panelIndex,
+      panelLabel: panel.label,
+      label: component.item.label,
+      sku: component.item.sku ?? template.skuPrefix,
+      verticalCount,
+      horizontalCount,
+      verticalEdge: override?.verticalEdge ?? (panelIndex === 0 ? 'left' : 'right'),
+      horizontalEdge: override?.horizontalEdge ?? 'bottom',
+      sourceUrl: template.drawingUrl,
+    } satisfies ProductionConnectorPlacement
+  })
+})
+
+const magneticDrawingUrl = (sku: string) => {
+  if (/FDPP-50[12]\.6/i.test(sku)) return 'https://av24.su/wa-data/public/site/drawings/FDPP-501.6.pdf'
+  if (/FDPP-(?:202|212|502|512|522)\.8/i.test(sku)) {
+    return 'https://av24.su/wa-data/public/site/drawings/FDPP-202.8%2C212.8%2C502.8%2C512.8%2C522.8.pdf'
+  }
+  return undefined
+}
+
+const verifiedMagneticGapMm = (sku: string, glassThickness: 6 | 8) => (
+  glassThickness === 6 && /FDPP-50[12]\.6/i.test(sku) ? 22 : 6
+)
+
+const createMagneticPlacements = (
+  resolvedChecks: Array<{
+    component: ResolvedComponent
+    template?: ShowerHardwareMachiningTemplate
+    check: ProductionTemplateCheck
+  }>,
+  panels: ProductionPanel[],
+  glassThickness: 6 | 8,
+  doorPlacements: ProductionDoorPlacement[],
+  overrides?: ProductionDesignOverrides['magnetic'],
+) => {
+  const magneticSeal = resolvedChecks.find(({ component }) => (
+    /магнит/i.test(component.item.label)
+    && /FDPP-|уплотнител/i.test(component.item.sku ?? component.item.label)
+  ))?.component
+  if (!magneticSeal) return []
+  const sku = magneticSeal.item.sku ?? magneticSeal.item.label
+  return panels.flatMap((panel, panelIndex) => {
+    if (panel.role !== 'door') return []
+    const id = `${magneticSeal.item.id}:${panelIndex}`
+    const override = overrides?.[id]
+    return [{
+      id,
+      hardwareItemId: magneticSeal.item.id,
+      panelIndex,
+      panelLabel: panel.label,
+      label: magneticSeal.item.label,
+      sku,
+      edge: override?.edge ?? oppositeEdge(getDoorHingeEdge(panels, panel, doorPlacements)),
+      gapMm: Math.max(0, Number(override?.gapMm ?? verifiedMagneticGapMm(sku, glassThickness)) || 0),
+      sourceUrl: magneticDrawingUrl(sku) ?? magneticSeal.item.sourceUrl,
+    } satisfies ProductionMagneticPlacement]
+  })
+}
+
 const applyVerifiedClearances = (
   resolvedChecks: Array<{
     component: ResolvedComponent
@@ -317,6 +593,8 @@ const applyVerifiedClearances = (
     check: ProductionTemplateCheck
   }>,
   panels: ProductionPanel[],
+  magneticPlacements: ProductionMagneticPlacement[],
+  doorPlacements: ProductionDoorPlacement[],
 ) => {
   const doors = panels.filter((panel) => panel.role === 'door')
 
@@ -327,7 +605,7 @@ const applyVerifiedClearances = (
       doors.forEach((door) => addWidthClearance(
         door,
         'Зазор стекло-стена по петле',
-        hingeEdge(panels, door),
+        getDoorHingeEdge(panels, door, doorPlacements),
         6,
         -6,
         sku,
@@ -337,7 +615,7 @@ const applyVerifiedClearances = (
       doors.forEach((door) => addWidthClearance(
         door,
         'Зазор стекло-стекло по петле',
-        hingeEdge(panels, door),
+        getDoorHingeEdge(panels, door, doorPlacements),
         8,
         -8,
         sku,
@@ -347,7 +625,7 @@ const applyVerifiedClearances = (
       doors.forEach((door) => addWidthClearance(
         door,
         'Угловой зазор стекло-стекло по петле',
-        hingeEdge(panels, door),
+        getDoorHingeEdge(panels, door, doorPlacements),
         6,
         -6,
         sku,
@@ -357,7 +635,7 @@ const applyVerifiedClearances = (
       doors.forEach((door) => addWidthClearance(
         door,
         'Перехлёст раздвижной створки',
-        oppositeEdge(hingeEdge(panels, door)),
+        oppositeEdge(getDoorHingeEdge(panels, door, doorPlacements)),
         50,
         50,
         sku,
@@ -366,22 +644,28 @@ const applyVerifiedClearances = (
     }
   })
 
-  const magneticSeal = resolvedChecks.find(({ component }) => (
-    /магнит/i.test(component.item.label)
-    && /FDPP-|уплотнител/i.test(component.item.sku ?? component.item.label)
-  ))?.component
-  if (magneticSeal) {
-    const sku = magneticSeal.item.sku ?? magneticSeal.item.label
-    doors.forEach((door) => addWidthClearance(
+  magneticPlacements.forEach((placement) => {
+    const door = panels[placement.panelIndex]
+    if (!door || door.role !== 'door' || placement.gapMm <= 0) return
+    addWidthClearance(
       door,
       'Зазор притвора под магнитный уплотнитель',
-      oppositeEdge(hingeEdge(panels, door)),
-      6,
-      -6,
-      sku,
-      magneticSeal.item.sourceUrl,
-    ))
-  }
+      placement.edge,
+      placement.gapMm,
+      -placement.gapMm,
+      placement.sku,
+      placement.sourceUrl,
+    )
+  })
+
+  doors.forEach((door) => addHeightClearance(
+    door,
+    'Нижний зазор двери под уплотнитель',
+    'bottom',
+    10,
+    -10,
+    'СТАНДАРТ АМАЛЬГАМА',
+  ))
 }
 
 const applyMachiningPattern = (
@@ -390,6 +674,8 @@ const applyMachiningPattern = (
   template: ShowerHardwareMachiningTemplate,
   panels: ProductionPanel[],
   placementIssues: string[],
+  connectorPlacements: ProductionConnectorPlacement[],
+  doorPlacements: ProductionDoorPlacement[],
 ) => {
   const fixedPanels = panels.filter((panel) => panel.role === 'fixed')
   const doors = panels.filter((panel) => panel.role === 'door')
@@ -398,7 +684,7 @@ const applyMachiningPattern = (
   if (pattern === 'wall-hinge-fdp122') {
     if (doors.length === 0) placementIssues.push(`${sku}: в конструкции нет дверного стекла для установки петли`)
     groupCountByPanel(doors, component.quantity).forEach(({ panel, count }) => {
-      const edge = hingeEdge(panels, panel)
+      const edge = getDoorHingeEdge(panels, panel, doorPlacements)
       spacedPositions(count, panel.heightMm).forEach((center, hingeIndex) => {
         addHole(panel, component, template, `${sku}: петля ${hingeIndex + 1}, верхнее`, edgeX(panel, edge, 34), center + 25, 16)
         addHole(panel, component, template, `${sku}: петля ${hingeIndex + 1}, нижнее`, edgeX(panel, edge, 34), center - 25, 16)
@@ -409,12 +695,12 @@ const applyMachiningPattern = (
 
   if (pattern === 'glass-hinge-fdp115') {
     groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
-      const fixed = getAdjacentFixed(panels, door)
+      const doorEdge = getDoorHingeEdge(panels, door, doorPlacements)
+      const fixed = getFixedOnDoorSide(panels, door, doorEdge)
       if (!fixed) {
-        placementIssues.push(`${sku}: не найдено неподвижное стекло для ответных отверстий петли`)
+        placementIssues.push(`${sku}: со стороны петель нет неподвижного стекла для ответных отверстий`)
         return
       }
-      const doorEdge = hingeEdge(panels, door)
       const fixedEdge = oppositeEdge(doorEdge)
       spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
         for (const delta of [-22.5, 22.5]) {
@@ -428,12 +714,12 @@ const applyMachiningPattern = (
 
   if (pattern === 'corner-hinge-fdp184') {
     groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
-      const fixed = getAdjacentFixed(panels, door)
+      const doorEdge = getDoorHingeEdge(panels, door, doorPlacements)
+      const fixed = getFixedOnDoorSide(panels, door, doorEdge)
       if (!fixed) {
-        placementIssues.push(`${sku}: не найдено неподвижное стекло для ответной части угловой петли`)
+        placementIssues.push(`${sku}: со стороны петель нет неподвижного стекла для ответной части`)
         return
       }
-      const doorEdge = hingeEdge(panels, door)
       const fixedEdge = oppositeEdge(doorEdge)
       spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
         addEdgeCut(door, component, template, 'cutout', `${sku}: вырез петли ${hingeIndex + 1}, R15`, doorEdge, center, 40, 40, 15, 'hinge-cutout', 25)
@@ -445,10 +731,15 @@ const applyMachiningPattern = (
   }
 
   if (pattern === 'wall-connector-fdk22' || pattern === 'wall-connector-fdk27') {
-    groupCountByPanel(fixedPanels, component.quantity).forEach(({ panel, count }, panelIndex) => {
-      const edge: Edge = panelIndex === 0 ? 'left' : 'right'
-      spacedPositions(count, panel.heightMm, 140).forEach((center, connectorIndex) => {
-        addEdgeCut(panel, component, template, 'notch', `${sku}: коннектор ${connectorIndex + 1}, R10`, edge, center, 32, 20, 10, 'round-slot', 22)
+    const placements = connectorPlacements.filter((placement) => placement.hardwareItemId === component.item.id)
+    placements.forEach((placement) => {
+      const panel = panels[placement.panelIndex]
+      if (!panel || panel.role !== 'fixed') return
+      spacedPositions(placement.verticalCount, panel.heightMm, 140).forEach((center, connectorIndex) => {
+        addEdgeCut(panel, component, template, 'notch', `${sku}: вертикальный коннектор ${connectorIndex + 1}, R10`, placement.verticalEdge, center, 32, 20, 10, 'round-slot', 22)
+      })
+      spacedPositions(placement.horizontalCount, panel.widthMm, 140).forEach((center, connectorIndex) => {
+        addEdgeCut(panel, component, template, 'notch', `${sku}: горизонтальный коннектор ${connectorIndex + 1}, R10`, placement.horizontalEdge, center, 32, 20, 10, 'round-slot', 22)
       })
     })
     return
@@ -489,7 +780,7 @@ const applyMachiningPattern = (
 
   if (pattern === 'knob-fdr30') {
     doors.forEach((door, index) => {
-      const edge = oppositeEdge(hingeEdge(panels, door))
+      const edge = oppositeEdge(getDoorHingeEdge(panels, door, doorPlacements))
       addHole(door, component, template, `${sku}: ручка ${index + 1}`, edgeX(door, edge, 50), Math.min(1000, door.heightMm / 2), 10)
     })
     return
@@ -584,6 +875,7 @@ export const createProductionPackage = (
   form: CalculatorForm,
   quoteNumber: string,
   itemIndex: number,
+  designOverrides?: ProductionDesignOverrides,
 ): ProductionPackage => {
   const construction = getConstruction(catalog, form.constructionId)
   const glass = getOption(catalog.glass, form.glassId)
@@ -591,18 +883,21 @@ export const createProductionPackage = (
   const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
   const glassThickness = glass.thickness ?? 8
   const components = getConstructionHardwareComponents(catalog, construction, glassThickness)
-  const panels = getPanelDefaults(catalog, form)
+  const { panels, openingHeightMm, openingSegments } = getPanelDefaults(catalog, form, designOverrides?.opening)
   const resolvedChecks = components.map((component) => ({
     component,
     ...createTemplateCheck(component, glassThickness),
   }))
   const placementIssues: string[] = []
+  const doorPlacements = createDoorPlacements(panels, designOverrides?.doors)
+  const connectorPlacements = createConnectorPlacements(resolvedChecks, panels, designOverrides?.connectors)
+  const magneticPlacements = createMagneticPlacements(resolvedChecks, panels, glassThickness, doorPlacements, designOverrides?.magnetic)
 
-  applyVerifiedClearances(resolvedChecks, panels)
+  applyVerifiedClearances(resolvedChecks, panels, magneticPlacements, doorPlacements)
 
   resolvedChecks.forEach(({ component, template, check }) => {
     if (!template || check.status !== 'verified') return
-    if (template.pattern !== 'none') applyMachiningPattern(template.pattern, component, template, panels, placementIssues)
+    if (template.pattern !== 'none') applyMachiningPattern(template.pattern, component, template, panels, placementIssues, connectorPlacements, doorPlacements)
   })
 
   const purchases = components.map((component) => ({
@@ -610,12 +905,16 @@ export const createProductionPackage = (
     hardwareItemId: component.item.id,
     label: component.item.label,
     sku: component.item.sku ?? '',
-    quantity: component.quantity,
+    quantity: connectorPlacements.some((placement) => placement.hardwareItemId === component.item.id)
+      ? connectorPlacements
+        .filter((placement) => placement.hardwareItemId === component.item.id)
+        .reduce((total, placement) => total + placement.verticalCount + placement.horizontalCount, 0)
+      : component.quantity,
     sourceUrl: component.item.sourceUrl,
   }))
   const cuts = components.flatMap((component) => {
     if (!isCutMaterial(component.item.label, component.item.sectionId)) return []
-    const cutLengthMm = getCutLengthMm(component.item.label, form)
+    const cutLengthMm = getCutLengthMm(component.item.label, form, openingSegments, openingHeightMm)
     const stockLengthMm = inferStockLengthMm(component.item.label)
     const stockPieces = Math.max(component.quantity, Math.ceil(component.quantity * cutLengthMm / stockLengthMm))
     return [{
@@ -630,7 +929,14 @@ export const createProductionPackage = (
       sourceUrl: component.item.sourceUrl,
     }]
   })
-  const templateChecks = resolvedChecks.map(({ check }) => check)
+  const templateChecks = resolvedChecks.map(({ check }) => {
+    const placements = connectorPlacements.filter((placement) => placement.hardwareItemId === check.hardwareItemId)
+    if (placements.length === 0) return check
+    return {
+      ...check,
+      quantity: placements.reduce((total, placement) => total + placement.verticalCount + placement.horizontalCount, 0),
+    }
+  })
   const blockingIssues = templateChecks
     .filter((check) => check.status === 'missing' || check.status === 'incompatible')
     .map((check) => `${check.sku || check.label}: ${check.message}`)
@@ -645,7 +951,12 @@ export const createProductionPackage = (
     glassThickness,
     hardwareColor: hardware.label,
     hardwareClass: hardwareClass.label,
+    openingHeightMm,
+    openingSegments,
     panels,
+    doorPlacements,
+    connectorPlacements,
+    magneticPlacements,
     cuts,
     purchases,
     templateChecks,
