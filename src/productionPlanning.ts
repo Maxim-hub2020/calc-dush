@@ -67,6 +67,7 @@ export type ProductionDoorPlacement = {
   id: string
   panelIndex: number
   panelLabel: string
+  motionType: 'hinged' | 'sliding'
   hingeEdge: Extract<ProductionOperationEdge, 'left' | 'right'>
   swingDirection: 'inward' | 'outward'
 }
@@ -323,7 +324,15 @@ const getPanelDefaults = (
     const id = `opening-segment-${segmentIndex + 1}`
     const defaultLength = panelIndexes.reduce((sum, index) => sum + originalWidths[index], 0)
     const lengthMm = positive(overrides?.segments?.[id], defaultLength)
-    distributeOpeningLength(lengthMm, panelIndexes, originalWidths, roles).forEach((value, index) => allocatedWidths.set(index, value))
+    const isSlidingPair = ['slider', 'slider-corner', 'slider-double'].includes(construction.sketch)
+      && panelIndexes.length === 2
+      && panelIndexes.some((index) => roles[index] === 'door')
+      && panelIndexes.some((index) => roles[index] === 'fixed')
+    if (isSlidingPair) {
+      panelIndexes.forEach((index) => allocatedWidths.set(index, lengthMm / 2))
+    } else {
+      distributeOpeningLength(lengthMm, panelIndexes, originalWidths, roles).forEach((value, index) => allocatedWidths.set(index, value))
+    }
     return {
       id,
       label: getOpeningSegmentLabel(construction.sketch, segmentIndex, groups.length),
@@ -436,10 +445,12 @@ const createDoorPlacements = (
     !getPanelConnection(constructionSketch, openingSegments, panelIndex, edge)
   ))
   const usesWallHinge = resolvedChecks.some(({ template }) => template?.pattern === 'wall-hinge-fdp122')
+  const usesSlider = resolvedChecks.some(({ template }) => template?.pattern === 'slider-fds1')
   return [{
     id,
     panelIndex,
     panelLabel: panel.label,
+    motionType: usesSlider ? 'sliding' : 'hinged',
     hingeEdge: override?.hingeEdge ?? (usesWallHinge ? wallHingeEdge ?? inferredHingeEdge : inferredHingeEdge),
     swingDirection: override?.swingDirection ?? 'outward',
   } satisfies ProductionDoorPlacement]
@@ -785,7 +796,7 @@ const applyVerifiedClearances = (
       doors.forEach((door) => addWidthClearance(
         door,
         'Перехлёст раздвижной створки',
-        oppositeEdge(getDoorHingeEdge(panels, door, doorPlacements)),
+        getDoorHingeEdge(panels, door, doorPlacements),
         50,
         50,
         sku,
@@ -827,13 +838,19 @@ const applyVerifiedClearances = (
     }
   })
 
+  const sliderTemplate = resolvedChecks.find(({ template, check }) => (
+    template?.pattern === 'slider-fds1' && check.status === 'verified'
+  ))
   doors.forEach((door) => addHeightClearance(
     door,
-    'Нижний зазор двери под уплотнитель',
+    sliderTemplate
+      ? 'Подвижное стекло: зазор под нижнюю направляющую'
+      : 'Нижний зазор двери под уплотнитель',
     'bottom',
     10,
     -10,
-    'СТАНДАРТ АМАЛЬГАМА',
+    sliderTemplate?.component.item.sku ?? 'СТАНДАРТ АМАЛЬГАМА',
+    sliderTemplate?.template?.drawingUrl,
   ))
 }
 

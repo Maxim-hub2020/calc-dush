@@ -307,6 +307,38 @@ function ProductionPlanView({ catalog, draft, onConnector, onDoor, onMagnetic }:
         {draft.doorPlacements.map((door) => {
           const segment = segments[door.panelIndex]
           if (!segment) return null
+          if (door.motionType === 'sliding') {
+            const dx = segment.x2 - segment.x1
+            const dy = segment.y2 - segment.y1
+            const length = Math.hypot(dx, dy) || 1
+            const centerX = (segment.x1 + segment.x2) / 2
+            const centerY = (segment.y1 + segment.y2) / 2
+            const direction = door.hingeEdge === 'left' ? -1 : 1
+            const slideX = centerX + direction * dx / length * Math.min(58, length * 0.34)
+            const slideY = centerY + direction * dy / length * Math.min(58, length * 0.34)
+            return (
+              <g key={door.id}>
+                <line markerEnd="url(#production-swing-arrow)" pointerEvents="none" stroke="#d97706" strokeDasharray="5 4" strokeWidth="3" x1={centerX} x2={slideX} y1={centerY} y2={slideY} />
+                {(['left', 'right'] as const).map((edge) => {
+                  const x = edge === 'left' ? segment.x1 : segment.x2
+                  const y = edge === 'left' ? segment.y1 : segment.y2
+                  const normalX = -(segment.y2 - segment.y1) / length
+                  const normalY = (segment.x2 - segment.x1) / length
+                  const controlX = x - normalX * 13
+                  const controlY = y - normalY * 13
+                  const selected = edge === door.hingeEdge
+                  return (
+                    <g aria-label={`${door.panelLabel}: нахлёст ${edge === 'left' ? 'слева' : 'справа'}`} className="production-plan-control" key={edge} role="button" tabIndex={0} onClick={() => onDoor(door, { hingeEdge: edge })} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onDoor(door, { hingeEdge: edge }) }}>
+                      <title>Расположить нахлёст {edge === 'left' ? 'слева' : 'справа'}</title>
+                      <line pointerEvents="none" stroke="#d97706" strokeWidth="1" x1={x} x2={controlX} y1={y} y2={controlY} />
+                      <circle cx={controlX} cy={controlY} fill={selected ? '#d97706' : '#fff'} r={selected ? 11 : 6} stroke="#d97706" strokeWidth="2" />
+                      {selected ? <text fill="#fff" fontSize="7" fontWeight="900" pointerEvents="none" textAnchor="middle" x={controlX} y={controlY + 2.5}>+50</text> : null}
+                    </g>
+                  )
+                })}
+              </g>
+            )
+          }
           const hingeX = door.hingeEdge === 'left' ? segment.x1 : segment.x2
           const hingeY = door.hingeEdge === 'left' ? segment.y1 : segment.y2
           const vx = door.hingeEdge === 'left' ? segment.x2 - segment.x1 : segment.x1 - segment.x2
