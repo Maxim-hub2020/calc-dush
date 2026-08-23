@@ -109,7 +109,7 @@ const thicknessComponents = (
 ]
 
 export const defaultCatalog: PricingCatalog = {
-  revision: 6,
+  revision: 8,
   constructions: [
     {
       id: '6663',
@@ -154,6 +154,7 @@ export const defaultCatalog: PricingCatalog = {
         ...thicknessComponents('6744-bottom-seal', 'av24-bottom-seal-6', 'av24-bottom-seal-8'),
         ...thicknessComponents('6744-side-seal', 'av24-chi-seal-6', 'av24-chi-seal-8'),
         ...thicknessComponents('6744-magnetic-seal', 'av24-magnetic-180-6', 'av24-magnetic-180-8'),
+        hardwareComponent('6744-wall-strike', 'av24-wall-strike-fdpa58', 1),
       ],
     },
     {
@@ -194,6 +195,7 @@ export const defaultCatalog: PricingCatalog = {
         ...thicknessComponents('6745-bottom-seal', 'av24-bottom-seal-6', 'av24-bottom-seal-8'),
         ...thicknessComponents('6745-side-seal', 'av24-chi-seal-6', 'av24-chi-seal-8'),
         ...thicknessComponents('6745-magnetic-seal', 'av24-magnetic-90-6', 'av24-magnetic-90-8'),
+        hardwareComponent('6745-wall-strike', 'av24-wall-strike-fdpa58', 1),
       ],
     },
     {
@@ -220,6 +222,7 @@ export const defaultCatalog: PricingCatalog = {
         ...thicknessComponents('6746-bottom-seal', 'av24-bottom-seal-6', 'av24-bottom-seal-8'),
         ...thicknessComponents('6746-side-seal', 'av24-chi-seal-6', 'av24-chi-seal-8'),
         ...thicknessComponents('6746-magnetic-seal', 'av24-magnetic-90-6', 'av24-magnetic-90-8'),
+        hardwareComponent('6746-wall-strike', 'av24-wall-strike-fdpa58', 1),
       ],
     },
     {
@@ -238,7 +241,6 @@ export const defaultCatalog: PricingCatalog = {
       hardwareComponents: [
         hardwareComponent('6748-wall-hinge', 'av24-fdp122', 2),
         hardwareComponent('6748-wall-connector', 'av24-fdk22', 4),
-        hardwareComponent('6748-corner-connector', 'av24-fdk24', 2),
         hardwareComponent('6748-knob', 'av24-fdr30', 1),
         hardwareComponent('6748-tube', 'av24-fdt151', 1),
         hardwareComponent('6748-wall-mount', 'av24-fdc14', 1),
@@ -275,6 +277,7 @@ export const defaultCatalog: PricingCatalog = {
         ...thicknessComponents('6749-bottom-seal', 'av24-bottom-seal-6', 'av24-bottom-seal-8'),
         ...thicknessComponents('6749-side-seal', 'av24-chi-seal-6', 'av24-chi-seal-8'),
         ...thicknessComponents('6749-magnetic-seal', 'av24-magnetic-90-6', 'av24-magnetic-90-8'),
+        hardwareComponent('6749-wall-strike', 'av24-wall-strike-fdpa58', 1),
       ],
     },
     {
@@ -295,7 +298,6 @@ export const defaultCatalog: PricingCatalog = {
       hardwareComponents: [
         hardwareComponent('6750-corner-hinge', 'av24-fdp184', 4),
         hardwareComponent('6750-wall-connector', 'av24-fdk22', 4),
-        hardwareComponent('6750-corner-connector', 'av24-fdk24', 2),
         hardwareComponent('6750-knob', 'av24-fdr30', 2),
         hardwareComponent('6750-tube', 'av24-fdt151', 1),
         hardwareComponent('6750-wall-mount', 'av24-fdc14', 2),

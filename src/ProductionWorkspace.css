@@ -225,13 +225,12 @@
 .production-plan-control:focus circle { filter: drop-shadow(0 2px 4px rgb(37 99 235 / 28%)); }
 .production-plan-control:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .production-plan-popover {
-  position: absolute;
+  position: relative;
   z-index: 3;
-  top: 10px;
-  right: 10px;
-  width: min(330px, calc(100% - 20px));
+  width: 100%;
   display: grid;
   gap: 9px;
+  margin-top: 8px;
   padding: 11px;
   border: 1px solid #93c5fd;
   border-radius: 7px;
@@ -261,6 +260,7 @@
   color: #64748b;
 }
 .production-plan-popover > label { min-width: 0; display: grid; gap: 4px; }
+.production-plan-popover > p { margin: 0; color: #be123c; font-size: 11px; font-weight: 700; line-height: 1.45; }
 .production-plan-popover > label > span { color: #64748b; font-size: 10px; font-weight: 750; }
 .production-plan-popover input,
 .production-plan-popover select {
@@ -534,7 +534,7 @@
   .production-opening-inputs,
   .production-select-row,
   .production-placement-controls { grid-template-columns: 1fr; }
-  .production-plan-popover { position: fixed; top: auto; right: 8px; bottom: calc(78px + env(safe-area-inset-bottom)); left: 8px; width: auto; }
+  .production-plan-popover { position: fixed; top: auto; right: 8px; bottom: calc(78px + env(safe-area-inset-bottom)); left: 8px; width: auto; margin-top: 0; }
   .production-dialog-footer { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
 }
 

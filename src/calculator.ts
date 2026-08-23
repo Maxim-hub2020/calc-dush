@@ -51,6 +51,7 @@ export type ShowerProductionDesign = {
   magnetic?: Record<string, {
     edge?: 'left' | 'right'
     gapMm?: number
+    strikeWidthMm?: number
   }>
 }
 

@@ -56,7 +56,10 @@ export type ProductionMagneticPlacement = {
   pairedPanelIndex?: number
   pairedPanelLabel?: string
   pairedEdge?: Extract<ProductionOperationEdge, 'left' | 'right'>
+  jointType: 'corner-90' | 'corner-135' | 'inline-180' | 'wall-strike' | 'invalid'
   gapMm: number
+  strikeWidthMm: number
+  strikeProfilePresent: boolean
   sourceUrl?: string
 }
 
@@ -209,6 +212,62 @@ const getOpeningPanelGroups = (
   return [Array.from({ length: panelCount }, (_, index) => index)]
 }
 
+type PanelConnection = {
+  panelIndex: number
+  edge: Edge
+  angle: 90 | 135 | 180
+}
+
+const getPanelConnection = (
+  sketch: ProductionPackage['constructionSketch'],
+  openingSegments: ProductionOpeningSegment[],
+  panelIndex: number,
+  edge: Edge,
+): PanelConnection | undefined => {
+  const segmentIndex = openingSegments.findIndex((segment) => segment.panelIndexes.includes(panelIndex))
+  const segment = openingSegments[segmentIndex]
+  if (!segment) return undefined
+  const position = segment.panelIndexes.indexOf(panelIndex)
+  const neighborIndex = edge === 'left' ? position - 1 : position + 1
+  if (neighborIndex >= 0 && neighborIndex < segment.panelIndexes.length) {
+    return {
+      panelIndex: segment.panelIndexes[neighborIndex],
+      edge: edge === 'left' ? 'right' : 'left',
+      angle: 180,
+    }
+  }
+
+  const crossConnections: Array<{
+    firstSegment: number
+    firstEdge: Edge
+    secondSegment: number
+    secondEdge: Edge
+    angle: 90 | 135
+  }> = sketch === 'trapezoid'
+    ? [
+        { firstSegment: 0, firstEdge: 'right', secondSegment: 1, secondEdge: 'left', angle: 135 },
+        { firstSegment: 1, firstEdge: 'right', secondSegment: 2, secondEdge: 'left', angle: 135 },
+      ]
+    : ['corner', 'corner-plus', 'double-corner', 'slider-corner', 'slider-double'].includes(sketch)
+      ? [{ firstSegment: 0, firstEdge: 'right', secondSegment: 1, secondEdge: 'left', angle: 90 }]
+      : []
+
+  for (const connection of crossConnections) {
+    const first = openingSegments[connection.firstSegment]?.panelIndexes
+    const second = openingSegments[connection.secondSegment]?.panelIndexes
+    if (!first?.length || !second?.length) continue
+    const firstPanelIndex = connection.firstEdge === 'right' ? first.at(-1) : first[0]
+    const secondPanelIndex = connection.secondEdge === 'left' ? second[0] : second.at(-1)
+    if (segmentIndex === connection.firstSegment && panelIndex === firstPanelIndex && edge === connection.firstEdge) {
+      return { panelIndex: secondPanelIndex!, edge: connection.secondEdge, angle: connection.angle }
+    }
+    if (segmentIndex === connection.secondSegment && panelIndex === secondPanelIndex && edge === connection.secondEdge) {
+      return { panelIndex: firstPanelIndex!, edge: connection.firstEdge, angle: connection.angle }
+    }
+  }
+  return undefined
+}
+
 const getOpeningSegmentLabel = (
   sketch: ProductionPackage['constructionSketch'],
   segmentIndex: number,
@@ -330,13 +389,11 @@ const getCutLengthMm = (
   return positive(height, 2000)
 }
 
-const isCutMaterial = (label: string, sectionId: string) => (
-  !/креплен|держател|коннектор|заглуш|уголок|кронштейн/i.test(label)
-  && (
-    /профил|трек|^.*труба|штанг|порог|направляющ/i.test(label)
-    || ['support-profiles', 'magnetic-profiles'].includes(sectionId)
-  )
-)
+const isCutMaterial = (label: string, sectionId: string) => {
+  if (['support-profiles', 'magnetic-profiles'].includes(sectionId)) return true
+  return !/креплен|держател|коннектор|заглуш|уголок|кронштейн/i.test(label)
+    && /профил|трек|^.*труба|штанг|порог|направляющ/i.test(label)
+}
 
 const spacedPositions = (count: number, height: number, margin = 250) => {
   if (count <= 0) return []
@@ -367,16 +424,23 @@ const oppositeEdge = (edge: Edge): Edge => edge === 'left' ? 'right' : 'left'
 const createDoorPlacements = (
   panels: ProductionPanel[],
   openingSegments: ProductionOpeningSegment[],
+  constructionSketch: ProductionPackage['constructionSketch'],
+  resolvedChecks: Array<{ template?: ShowerHardwareMachiningTemplate }>,
   overrides?: ProductionDesignOverrides['doors'],
 ) => panels.flatMap((panel, panelIndex) => {
   if (panel.role !== 'door') return []
   const id = `door:${panelIndex}`
   const override = overrides?.[id]
+  const inferredHingeEdge = hingeEdge(panels, panel, openingSegments)
+  const wallHingeEdge = (['left', 'right'] as const).find((edge) => (
+    !getPanelConnection(constructionSketch, openingSegments, panelIndex, edge)
+  ))
+  const usesWallHinge = resolvedChecks.some(({ template }) => template?.pattern === 'wall-hinge-fdp122')
   return [{
     id,
     panelIndex,
     panelLabel: panel.label,
-    hingeEdge: override?.hingeEdge ?? hingeEdge(panels, panel, openingSegments),
+    hingeEdge: override?.hingeEdge ?? (usesWallHinge ? wallHingeEdge ?? inferredHingeEdge : inferredHingeEdge),
     swingDirection: override?.swingDirection ?? 'outward',
   } satisfies ProductionDoorPlacement]
 })
@@ -574,9 +638,19 @@ const magneticDrawingUrl = (sku: string) => {
   return undefined
 }
 
-const verifiedMagneticGapMm = (sku: string, glassThickness: 6 | 8) => (
-  glassThickness === 6 && /FDPP-50[12]\.6/i.test(sku) ? 22 : 6
-)
+const verifiedMagneticGapMm = (
+  jointType: ProductionMagneticPlacement['jointType'],
+) => {
+  if (jointType === 'corner-90' || jointType === 'corner-135') return 6
+  if (jointType === 'inline-180' || jointType === 'wall-strike') return 22
+  return 0
+}
+
+const magneticJointType = (angle: PanelConnection['angle']): ProductionMagneticPlacement['jointType'] => {
+  if (angle === 90) return 'corner-90'
+  if (angle === 135) return 'corner-135'
+  return 'inline-180'
+}
 
 const createMagneticPlacements = (
   resolvedChecks: Array<{
@@ -585,8 +659,10 @@ const createMagneticPlacements = (
     check: ProductionTemplateCheck
   }>,
   panels: ProductionPanel[],
-  glassThickness: 6 | 8,
   doorPlacements: ProductionDoorPlacement[],
+  constructionSketch: ProductionPackage['constructionSketch'],
+  openingSegments: ProductionOpeningSegment[],
+  placementIssues: string[],
   overrides?: ProductionDesignOverrides['magnetic'],
 ) => {
   const magneticSeal = resolvedChecks.find(({ component }) => (
@@ -596,10 +672,20 @@ const createMagneticPlacements = (
   if (!magneticSeal) return []
   const sku = magneticSeal.item.sku ?? magneticSeal.item.label
   const doors = panels.map((panel, panelIndex) => ({ panel, panelIndex })).filter(({ panel }) => panel.role === 'door')
+  const wallStrike = resolvedChecks.find(({ component }) => component.item.sectionId === 'magnetic-profiles')?.component
   if (doors.length >= 2) {
     const [first, second] = doors
     const id = `${magneticSeal.item.id}:joint:${first.panelIndex}:${second.panelIndex}`
     const override = overrides?.[id]
+    const firstEdge = oppositeEdge(getDoorHingeEdge(panels, first.panel, doorPlacements))
+    const secondEdge = oppositeEdge(getDoorHingeEdge(panels, second.panel, doorPlacements))
+    const connection = getPanelConnection(constructionSketch, openingSegments, first.panelIndex, firstEdge)
+    const jointType = connection?.panelIndex === second.panelIndex && connection.edge === secondEdge
+      ? magneticJointType(connection.angle)
+      : 'invalid'
+    if (jointType === 'invalid') {
+      placementIssues.push(`${sku}: магнитные кромки дверей не сходятся; магнит должен быть напротив петель на обеих створках`)
+    }
     return [{
       id,
       hardwareItemId: magneticSeal.item.id,
@@ -607,17 +693,27 @@ const createMagneticPlacements = (
       panelLabel: first.panel.label,
       label: magneticSeal.item.label,
       sku,
-      edge: override?.edge ?? oppositeEdge(getDoorHingeEdge(panels, first.panel, doorPlacements)),
+      edge: firstEdge,
       pairedPanelIndex: second.panelIndex,
       pairedPanelLabel: second.panel.label,
-      pairedEdge: oppositeEdge(getDoorHingeEdge(panels, second.panel, doorPlacements)),
-      gapMm: Math.max(0, Number(override?.gapMm ?? verifiedMagneticGapMm(sku, glassThickness)) || 0),
+      pairedEdge: secondEdge,
+      jointType,
+      gapMm: Math.max(0, Number(override?.gapMm ?? verifiedMagneticGapMm(jointType)) || 0),
+      strikeWidthMm: 0,
+      strikeProfilePresent: true,
       sourceUrl: magneticDrawingUrl(sku) ?? magneticSeal.item.sourceUrl,
     } satisfies ProductionMagneticPlacement]
   }
   return doors.map(({ panel, panelIndex }) => {
     const id = `${magneticSeal.item.id}:${panelIndex}`
     const override = overrides?.[id]
+    const edge = oppositeEdge(getDoorHingeEdge(panels, panel, doorPlacements))
+    const connection = getPanelConnection(constructionSketch, openingSegments, panelIndex, edge)
+    const pairedPanel = connection ? panels[connection.panelIndex] : undefined
+    const jointType = connection ? magneticJointType(connection.angle) : 'wall-strike'
+    if (jointType === 'wall-strike' && !wallStrike) {
+      placementIssues.push(`${sku}: для притвора к стене добавьте в состав профиль-притвор`)
+    }
     return {
       id,
       hardwareItemId: magneticSeal.item.id,
@@ -625,8 +721,16 @@ const createMagneticPlacements = (
       panelLabel: panel.label,
       label: magneticSeal.item.label,
       sku,
-      edge: override?.edge ?? oppositeEdge(getDoorHingeEdge(panels, panel, doorPlacements)),
-      gapMm: Math.max(0, Number(override?.gapMm ?? verifiedMagneticGapMm(sku, glassThickness)) || 0),
+      edge,
+      pairedPanelIndex: connection?.panelIndex,
+      pairedPanelLabel: pairedPanel?.label,
+      pairedEdge: connection?.edge,
+      jointType,
+      gapMm: Math.max(0, Number(override?.gapMm ?? verifiedMagneticGapMm(jointType)) || 0),
+      strikeWidthMm: jointType === 'wall-strike'
+        ? Math.max(0, Number(override?.strikeWidthMm ?? 10) || 0)
+        : 0,
+      strikeProfilePresent: jointType !== 'wall-strike' || Boolean(wallStrike),
       sourceUrl: magneticDrawingUrl(sku) ?? magneticSeal.item.sourceUrl,
     } satisfies ProductionMagneticPlacement
   })
@@ -692,27 +796,35 @@ const applyVerifiedClearances = (
 
   magneticPlacements.forEach((placement) => {
     const door = panels[placement.panelIndex]
-    if (!door || door.role !== 'door' || placement.gapMm <= 0) return
-    const pairedDoor = placement.pairedPanelIndex === undefined ? undefined : panels[placement.pairedPanelIndex]
-    const primaryGap = pairedDoor ? placement.gapMm / 2 : placement.gapMm
+    if (!door || door.role !== 'door' || placement.jointType === 'invalid') return
+    const pairedPanel = placement.pairedPanelIndex === undefined ? undefined : panels[placement.pairedPanelIndex]
+    const isCornerJoint = placement.jointType === 'corner-90' || placement.jointType === 'corner-135'
+    const primaryGap = placement.jointType === 'wall-strike'
+      ? placement.gapMm + placement.strikeWidthMm
+      : pairedPanel && !isCornerJoint ? placement.gapMm / 2 : placement.gapMm
     addWidthClearance(
       door,
-      'Зазор притвора под магнитный уплотнитель',
+      placement.jointType === 'wall-strike'
+        ? `Притвор к стене: магнит ${placement.gapMm} мм + профиль ${placement.strikeWidthMm} мм`
+        : isCornerJoint ? `Угловой магнитный притвор ${placement.jointType === 'corner-90' ? '90°' : '135°'}` : 'Зазор магнитного притвора 180°',
       placement.edge,
       primaryGap,
       -primaryGap,
       placement.sku,
       placement.sourceUrl,
     )
-    if (pairedDoor?.role === 'door') addWidthClearance(
-      pairedDoor,
-      'Зазор центрального магнитного притвора',
-      placement.pairedEdge ?? oppositeEdge(getDoorHingeEdge(panels, pairedDoor, doorPlacements)),
-      placement.gapMm - primaryGap,
-      -(placement.gapMm - primaryGap),
+    if (pairedPanel) {
+      const pairedGap = isCornerJoint ? placement.gapMm : placement.gapMm - primaryGap
+      addWidthClearance(
+      pairedPanel,
+      isCornerJoint ? `Ответная часть магнитного притвора ${placement.jointType === 'corner-90' ? '90°' : '135°'}` : 'Ответная часть магнитного притвора 180°',
+      placement.pairedEdge ?? 'left',
+      pairedGap,
+      -pairedGap,
       placement.sku,
       placement.sourceUrl,
-    )
+      )
+    }
   })
 
   doors.forEach((door) => addHeightClearance(
@@ -743,6 +855,16 @@ const applyMachiningPattern = (
     if (doors.length === 0) placementIssues.push(`${sku}: в конструкции нет дверного стекла для установки петли`)
     groupCountByPanel(doors, component.quantity).forEach(({ panel, count }) => {
       const edge = getDoorHingeEdge(panels, panel, doorPlacements)
+      const panelIndex = panels.indexOf(panel)
+      if (getPanelConnection(
+        panel.shape === 'trapezoid' ? 'trapezoid' : openingSegments.length > 1 ? 'corner' : 'niche',
+        openingSegments,
+        panelIndex,
+        edge,
+      )) {
+        placementIssues.push(`${sku}: выбранная сторона петли примыкает к стеклу, а петля рассчитана на крепление к стене`)
+        return
+      }
       spacedPositions(count, panel.heightMm).forEach((center, hingeIndex) => {
         addHole(panel, component, template, `${sku}: петля ${hingeIndex + 1}, верхнее`, edgeX(panel, edge, 34), center + 25, 16)
         addHole(panel, component, template, `${sku}: петля ${hingeIndex + 1}, нижнее`, edgeX(panel, edge, 34), center - 25, 16)
@@ -948,9 +1070,17 @@ export const createProductionPackage = (
     ...createTemplateCheck(component, glassThickness),
   }))
   const placementIssues: string[] = []
-  const doorPlacements = createDoorPlacements(panels, openingSegments, designOverrides?.doors)
+  const doorPlacements = createDoorPlacements(panels, openingSegments, construction.sketch, resolvedChecks, designOverrides?.doors)
   const connectorPlacements = createConnectorPlacements(resolvedChecks, panels, designOverrides?.connectors)
-  const magneticPlacements = createMagneticPlacements(resolvedChecks, panels, glassThickness, doorPlacements, designOverrides?.magnetic)
+  const magneticPlacements = createMagneticPlacements(
+    resolvedChecks,
+    panels,
+    doorPlacements,
+    construction.sketch,
+    openingSegments,
+    placementIssues,
+    designOverrides?.magnetic,
+  )
 
   applyVerifiedClearances(resolvedChecks, panels, magneticPlacements, doorPlacements)
 

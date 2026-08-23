@@ -94,6 +94,7 @@ export type Av24ShowerHardwareItem = {
 
 export const av24ShowerHardwareItems = (() => {
   const items: Av24ShowerHardwareItem[] = []
+  items.push({"id":"av24-wall-strike-fdpa58","label":"Профиль-притвор FDPA-58.25 для крепления магнитного уплотнителя к стене, 2,5 м, алюминий/анодированный","price":1440,"sectionId":"magnetic-profiles","sku":"FDPA-58.25 AL/AN","sourceUrl":"https://av24.su/profil-fdpa-58-25-alan/","sourceProductId":"fdpa-58-25"})
   items.push({"id":"av24-8291","label":"Вставка FDSA-33.10 для FDS-33 для стекла 10 мм","price":40,"sectionId":"sliding","sku":"FDSA-33.10","sourceUrl":"https://av24.su/vstavki-dlya-fds-33-dlya-stekla-10-mm-fdsa-33-10/","sourceProductId":"8291"})
   items.push({"id":"av24-8292","label":"Вставка FDSA-33.8 для FDS-33 для стекла 8 мм","price":40,"sectionId":"sliding","sku":"FDSA-33.8","sourceUrl":"https://av24.su/vstavki-dlya-fds-33-dlya-stekla-8-mm-fdsa-33-8/","sourceProductId":"8292"})
   items.push({"id":"av24-2921","label":"Ключ FDA-60 для каретки и точечного крепления","price":250,"sectionId":"sliding","sku":"FDA-60","sourceUrl":"https://av24.su/klyuch-fda-60/","sourceProductId":"2921"})

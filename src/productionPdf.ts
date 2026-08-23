@@ -425,14 +425,14 @@ const buildTopViewSvg = (draft: ProductionPackage) => {
     const first = coordinates[magnetic.panelIndex]
     if (!first) return []
     const second = magnetic.pairedPanelIndex === undefined ? undefined : coordinates[magnetic.pairedPanelIndex]
-    const firstPoints = [{ x: first.x1, y: first.y1 }, { x: first.x2, y: first.y2 }]
-    const secondPoints = second ? [{ x: second.x1, y: second.y1 }, { x: second.x2, y: second.y2 }] : []
-    const point = secondPoints.length > 0
-      ? firstPoints.flatMap((left) => secondPoints.map((right) => ({ left, right, distance: Math.hypot(left.x - right.x, left.y - right.y) }))).sort((left, right) => left.distance - right.distance)[0]
+    const firstPoint = magnetic.edge === 'left' ? { x: first.x1, y: first.y1 } : { x: first.x2, y: first.y2 }
+    const secondPoint = second && magnetic.pairedEdge
+      ? magnetic.pairedEdge === 'left' ? { x: second.x1, y: second.y1 } : { x: second.x2, y: second.y2 }
       : undefined
-    const x = point ? (point.left.x + point.right.x) / 2 : first.x2
-    const y = point ? (point.left.y + point.right.y) / 2 : first.y2
-    return [`<circle cx="${x}" cy="${y}" r="7" fill="#fff" stroke="#e11d48" stroke-width="1.4"/><text x="${x}" y="${y + 2.3}" text-anchor="middle" font-size="5.8" font-weight="800" fill="#be123c">М</text>`]
+    const points = secondPoint && Math.hypot(firstPoint.x - secondPoint.x, firstPoint.y - secondPoint.y) > 12
+      ? [firstPoint, secondPoint]
+      : [{ x: secondPoint ? (firstPoint.x + secondPoint.x) / 2 : firstPoint.x, y: secondPoint ? (firstPoint.y + secondPoint.y) / 2 : firstPoint.y }]
+    return points.map(({ x, y }) => `<circle cx="${x}" cy="${y}" r="7" fill="#fff" stroke="#e11d48" stroke-width="1.4"/><text x="${x}" y="${y + 2.3}" text-anchor="middle" font-size="5.8" font-weight="800" fill="#be123c">М</text>`)
   }).join('')
   const legend = draft.panels.map((panel, index) => {
     const column = index % 2

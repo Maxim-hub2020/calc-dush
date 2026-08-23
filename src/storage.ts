@@ -38,6 +38,16 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
     : 5000
   const constructions = mergeItems(defaultCatalog.constructions, saved.constructions).map((item) => {
     const currentDefault = defaultCatalog.constructions.find((entry) => entry.id === item.id)
+    const obsoleteComponentIds = savedRevision < 8
+      ? new Set(['6748-corner-connector', '6750-corner-connector'])
+      : new Set<string>()
+    const savedComponents = (item.hardwareComponents ?? []).filter((component) => !obsoleteComponentIds.has(component.id))
+    const migrationComponents = savedRevision < 8
+      ? (currentDefault?.hardwareComponents ?? []).filter((component) => (
+          component.id.endsWith('-wall-strike')
+          && !savedComponents.some((savedComponent) => savedComponent.id === component.id)
+        ))
+      : []
     return {
       ...item,
       imageUrl: currentDefault?.imageUrl ?? defaultCatalog.constructions[0].imageUrl,
@@ -45,7 +55,7 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
       installationPrice: Number.isFinite(item.installationPrice) ? item.installationPrice : legacyInstallationPrice,
       hardwareComponents: savedRevision < 2 && currentDefault
         ? currentDefault.hardwareComponents
-        : item.hardwareComponents,
+        : [...savedComponents, ...migrationComponents],
     }
   })
   const services = { ...defaultCatalog.services, ...savedServices }
@@ -62,7 +72,7 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
   }))
   const defaultHardwareItemIds = new Set(defaultCatalog.hardwareItems.map((item) => item.id))
   const savedHardwareItemsById = new Map(normalizedSavedHardwareItems.map((item) => [item.id, item]))
-  const hardwareItems = (savedRevision < 5
+  const hardwareItems = (savedRevision < 8
     ? [
         ...defaultCatalog.hardwareItems.map((item) => {
           const savedItem = savedHardwareItemsById.get(item.id)

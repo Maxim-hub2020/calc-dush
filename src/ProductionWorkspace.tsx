@@ -205,20 +205,17 @@ type ProductionPlanViewProps = {
   onMagnetic: (placement: ProductionMagneticPlacement, patch: Partial<ProductionMagneticPlacement>) => void
 }
 
-const closestSegmentEndpoints = (
-  first: { x1: number; y1: number; x2: number; y2: number },
-  second?: { x1: number; y1: number; x2: number; y2: number },
-) => {
-  const firstPoints = [{ x: first.x1, y: first.y1 }, { x: first.x2, y: first.y2 }]
-  if (!second) return firstPoints[1]
-  const secondPoints = [{ x: second.x1, y: second.y1 }, { x: second.x2, y: second.y2 }]
-  const pairs = firstPoints.flatMap((left) => secondPoints.map((right) => ({
-    left,
-    right,
-    distance: Math.hypot(left.x - right.x, left.y - right.y),
-  })))
-  const closest = pairs.sort((a, b) => a.distance - b.distance)[0]
-  return { x: (closest.left.x + closest.right.x) / 2, y: (closest.left.y + closest.right.y) / 2 }
+const segmentEndpoint = (
+  segment: { x1: number; y1: number; x2: number; y2: number },
+  edge: 'left' | 'right',
+) => edge === 'left' ? { x: segment.x1, y: segment.y1 } : { x: segment.x2, y: segment.y2 }
+
+const magneticJointLabel = (placement: ProductionMagneticPlacement) => {
+  if (placement.jointType === 'corner-90') return 'Угловой стык 90°'
+  if (placement.jointType === 'corner-135') return 'Угловой стык 135°'
+  if (placement.jointType === 'inline-180') return 'Прямой стык 180°'
+  if (placement.jointType === 'wall-strike') return 'Притвор к стене'
+  return 'Кромки не сходятся'
 }
 
 function ProductionPlanView({ catalog, draft, onConnector, onDoor, onMagnetic }: ProductionPlanViewProps) {
@@ -357,12 +354,21 @@ function ProductionPlanView({ catalog, draft, onConnector, onDoor, onMagnetic }:
           )
         })}
         {draft.magneticPlacements.map((magnetic) => {
-          const point = closestSegmentEndpoints(segments[magnetic.panelIndex], magnetic.pairedPanelIndex === undefined ? undefined : segments[magnetic.pairedPanelIndex])
+          const firstSegment = segments[magnetic.panelIndex]
+          const secondSegment = magnetic.pairedPanelIndex === undefined ? undefined : segments[magnetic.pairedPanelIndex]
+          if (!firstSegment) return null
+          const firstPoint = segmentEndpoint(firstSegment, magnetic.edge)
+          const secondPoint = secondSegment && magnetic.pairedEdge ? segmentEndpoint(secondSegment, magnetic.pairedEdge) : undefined
+          const points = secondPoint && Math.hypot(firstPoint.x - secondPoint.x, firstPoint.y - secondPoint.y) > 18
+            ? [firstPoint, secondPoint]
+            : [{ x: secondPoint ? (firstPoint.x + secondPoint.x) / 2 : firstPoint.x, y: secondPoint ? (firstPoint.y + secondPoint.y) / 2 : firstPoint.y }]
           return (
             <g aria-label="Изменить магнитный притвор" className="production-plan-control" key={magnetic.id} role="button" tabIndex={0} onClick={() => setEditor({ kind: 'magnetic', id: magnetic.id })}>
-              <title>Один магнитный притвор между дверями. Нажмите для изменения.</title>
-              <circle cx={point.x} cy={point.y} fill="#fff" r="10" stroke="#e11d48" strokeWidth="2" />
-              <text fill="#be123c" fontSize="8.5" fontWeight="900" pointerEvents="none" textAnchor="middle" x={point.x} y={point.y + 3}>М</text>
+              <title>{magneticJointLabel(magnetic)}. Магнит всегда расположен напротив петель.</title>
+              {points.map((point, index) => <g key={index}>
+                <circle cx={point.x} cy={point.y} fill="#fff" r="10" stroke="#e11d48" strokeWidth="2" />
+                <text fill="#be123c" fontSize="8.5" fontWeight="900" pointerEvents="none" textAnchor="middle" x={point.x} y={point.y + 3}>М</text>
+              </g>)}
             </g>
           )
         })}
@@ -400,8 +406,11 @@ function ProductionPlanView({ catalog, draft, onConnector, onDoor, onMagnetic }:
 
       {activeMagnetic ? (
         <div className="production-plan-popover is-magnetic">
-          <header><div><strong>Магнитный притвор</strong><span>{activeMagnetic.pairedPanelLabel ? `${activeMagnetic.panelLabel} + ${activeMagnetic.pairedPanelLabel}` : activeMagnetic.panelLabel}</span></div><button aria-label="Закрыть настройку" type="button" onClick={() => setEditor(null)}><X size={15} /></button></header>
-          <label><span>Общий зазор, мм</span><input inputMode="numeric" min="0" step="1" type="number" value={Math.round(activeMagnetic.gapMm)} onChange={(event) => onMagnetic(activeMagnetic, { gapMm: clamp(Number(event.target.value), 0, 100) })} /></label>
+          <header><div><strong>{magneticJointLabel(activeMagnetic)}</strong><span>{activeMagnetic.pairedPanelLabel ? `${activeMagnetic.panelLabel} + ${activeMagnetic.pairedPanelLabel}` : activeMagnetic.panelLabel}</span></div><button aria-label="Закрыть настройку" type="button" onClick={() => setEditor(null)}><X size={15} /></button></header>
+          {activeMagnetic.jointType === 'invalid' ? <p>Перенесите петли: магнитные кромки обеих дверей должны встретиться в одной точке.</p> : <>
+            <label><span>{activeMagnetic.jointType === 'corner-90' || activeMagnetic.jointType === 'corner-135' ? 'Отступ каждого стекла, мм' : activeMagnetic.jointType === 'wall-strike' ? 'Магнитная часть, мм' : 'Между стеклами, мм'}</span><input inputMode="numeric" min="0" step="1" type="number" value={Math.round(activeMagnetic.gapMm)} onChange={(event) => onMagnetic(activeMagnetic, { gapMm: clamp(Number(event.target.value), 0, 100) })} /></label>
+            {activeMagnetic.jointType === 'wall-strike' ? <label><span>Профиль-притвор, мм</span><input inputMode="numeric" min="0" step="1" type="number" value={Math.round(activeMagnetic.strikeWidthMm)} onChange={(event) => onMagnetic(activeMagnetic, { strikeWidthMm: clamp(Number(event.target.value), 0, 100) })} /></label> : null}
+          </>}
         </div>
       ) : null}
     </div>
