@@ -452,6 +452,11 @@ function App() {
   useEffect(() => saveMirrorCatalog(mirrorCatalog), [mirrorCatalog])
   useEffect(() => saveQuotes(quotes), [quotes])
   useEffect(() => {
+    if (!notice) return undefined
+    const timer = window.setTimeout(() => setNotice(''), 4_000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+  useEffect(() => {
     let cancelled = false
     if (!serverSession) {
       setQuoteSyncStatus('local')
@@ -1206,8 +1211,8 @@ function App() {
           <details className="mobile-more">
             <summary aria-label="Другие разделы" title="Другие разделы"><MoreHorizontal size={21} /></summary>
             <div>
-              <button type="button" onClick={() => navigateToTab('archive')}><Archive size={17} /> Архив</button>
-              <button type="button" onClick={() => navigateToTab('prices')}><Settings2 size={17} /> Цены</button>
+              <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); navigateToTab('archive') }}><Archive size={17} /> Архив</button>
+              <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); navigateToTab('prices') }}><Settings2 size={17} /> Цены</button>
             </div>
           </details>
         </nav>
@@ -2950,7 +2955,15 @@ function ArchiveWorkspace({
                       <td><span>{items.length} поз.</span><small>{items.slice(0, 2).map(getQuoteItemTitle).join(', ')}</small></td>
                       <td>{formatDate(quote.createdAt)}</td>
                       <td><strong>{money(getQuoteTotal(quote))}</strong></td>
-                      <td><button aria-label={`Открыть ${quote.number}`} title="Открыть" type="button" onClick={(event) => { event.stopPropagation(); onLoad(quote) }}><ChevronRight size={18} /></button></td>
+                      <td className="archive-row-actions">
+                        <button className="archive-desktop-open" aria-label={`Открыть ${quote.number}`} title="Открыть" type="button" onClick={(event) => { event.stopPropagation(); onLoad(quote) }}><ChevronRight size={18} /></button>
+                        <div className="archive-mobile-row-actions">
+                          <button type="button" onClick={(event) => { event.stopPropagation(); onLoad(quote) }}><Pencil size={15} /> Открыть</button>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); setManualQuote(quote) }}><Settings2 size={15} /> Изменить</button>
+                          <button disabled={pdfQuoteId === quote.id} type="button" onClick={(event) => { event.stopPropagation(); onPdf(quote) }}><FileDown size={15} /> {pdfQuoteId === quote.id ? 'Готовим...' : 'PDF'}</button>
+                          <button className="danger" type="button" onClick={(event) => { event.stopPropagation(); onDelete(quote.id) }}><Trash2 size={15} /> Удалить</button>
+                        </div>
+                      </td>
                     </tr>
                   )
                 })}

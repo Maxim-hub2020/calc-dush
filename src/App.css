@@ -5339,6 +5339,7 @@ body { padding: 0; background: #f7f7f4; }
 .archive-table td strong { display: block; color: #1f2937; font-size: 13px; }
 .archive-table td small { display: block; max-width: 230px; margin-top: 3px; overflow: hidden; color: #64748b; text-overflow: ellipsis; white-space: nowrap; }
 .archive-table td button { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid #e2e8f0; border-radius: 8px; background: white; color: #2563eb; }
+.archive-mobile-row-actions { display: none; }
 .archive-detail { position: sticky; top: 96px; padding: 18px; border: 1px solid #e2e8f0; border-radius: 14px; background: white; box-shadow: 0 10px 30px rgba(15,23,42,.04); }
 .archive-detail > header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 .archive-detail > header span { color: #2563eb; font-size: 12px; font-weight: 800; }
@@ -5506,7 +5507,13 @@ body { padding: 0; background: #f7f7f4; }
   .archive-table td:nth-child(2), .archive-table td:nth-child(3) { grid-column: 1; }
   .archive-table td:nth-child(4) { grid-column: 2; grid-row: 1; color: #64748b; font-size: 11px; }
   .archive-table td:nth-child(5) { grid-column: 2; grid-row: 2; text-align: right; }
-  .archive-table td:last-child { display: none; }
+  .archive-table td.archive-row-actions { display: block; grid-column: 1 / -1; margin-top: 3px; }
+  .archive-row-actions > .archive-desktop-open { display: none; }
+  .archive-mobile-row-actions { display: none; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
+  .archive-table tr.is-selected .archive-mobile-row-actions { display: grid; }
+  .archive-table td .archive-mobile-row-actions button { width: 100%; height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: #475569; font-size: 12px; font-weight: 750; }
+  .archive-table td .archive-mobile-row-actions button:first-child { border-color: #2563eb; background: #2563eb; color: white; }
+  .archive-table td .archive-mobile-row-actions button.danger { color: #be123c; }
   .archive-detail { display: none; }
   .price-category-tabs { position: sticky; top: 72px; z-index: 12; grid-template-columns: repeat(4,minmax(0,1fr)); }
   .price-category-tabs button { padding-inline: 4px; font-size: 11px; }
