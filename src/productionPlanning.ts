@@ -75,7 +75,10 @@ export type ProductionDoorPlacement = {
 export type ProductionOpeningSegment = {
   id: string
   label: string
+  trayLengthMm: number
   lengthMm: number
+  startInsetMm: number
+  endInsetMm: number
   panelIndexes: number[]
 }
 
@@ -160,6 +163,7 @@ export type ProductionPackage = {
   hardwareColor: string
   hardwareClass: string
   openingHeightMm: number
+  trayCurbWidthMm: number
   openingSegments: ProductionOpeningSegment[]
   panels: ProductionPanel[]
   doorPlacements: ProductionDoorPlacement[]
@@ -279,7 +283,30 @@ const getOpeningSegmentLabel = (
       ?? `Сторона поддона ${segmentIndex + 1}`
   }
   if (segmentCount > 1) return `Сторона поддона ${String.fromCharCode(65 + segmentIndex)}`
-  return 'Ширина чистого проёма'
+  return 'Габарит поддона'
+}
+
+const getTrayCenterlineInsets = (
+  sketch: ProductionPackage['constructionSketch'],
+  segmentIndex: number,
+  segmentCount: number,
+  curbWidthMm: number,
+) => {
+  const centerOffset = curbWidthMm / 2
+  if (['corner', 'corner-plus', 'double-corner', 'slider-corner', 'slider-double'].includes(sketch) && segmentCount >= 2) {
+    return {
+      startInsetMm: segmentIndex === 1 ? centerOffset : 0,
+      endInsetMm: segmentIndex === 0 ? centerOffset : 0,
+    }
+  }
+  if (sketch === 'trapezoid') {
+    const miterInset = centerOffset * Math.tan(Math.PI / 8)
+    return {
+      startInsetMm: segmentIndex > 0 ? miterInset : 0,
+      endInsetMm: segmentIndex < segmentCount - 1 ? miterInset : 0,
+    }
+  }
+  return { startInsetMm: 0, endInsetMm: 0 }
 }
 
 const distributeOpeningLength = (
@@ -310,11 +337,12 @@ const getPanelDefaults = (
   catalog: PricingCatalog,
   form: CalculatorForm,
   overrides?: ProductionDesignOverrides['opening'],
-): { panels: ProductionPanel[]; openingHeightMm: number; openingSegments: ProductionOpeningSegment[] } => {
+): { panels: ProductionPanel[]; openingHeightMm: number; trayCurbWidthMm: number; openingSegments: ProductionOpeningSegment[] } => {
   const construction = getConstruction(catalog, form.constructionId)
   const heightField = construction.fields.find((field) => field.key.startsWith('HEIGHT'))
   const defaultHeight = positive(heightField ? form.dimensions[heightField.key] : 0, 2000)
   const openingHeightMm = positive(overrides?.heightMm, defaultHeight)
+  const trayCurbWidthMm = positive(overrides?.curbWidthMm, 100)
   const roles = panelRolesBySketch[construction.sketch]
   const widthFields = construction.fields.filter((field) => field.key.startsWith('WIDTH'))
   const originalWidths = widthFields.map((field) => positive(form.dimensions[field.key], field.defaultValue))
@@ -323,7 +351,14 @@ const getPanelDefaults = (
   const openingSegments = groups.map((panelIndexes, segmentIndex) => {
     const id = `opening-segment-${segmentIndex + 1}`
     const defaultLength = panelIndexes.reduce((sum, index) => sum + originalWidths[index], 0)
-    const lengthMm = positive(overrides?.segments?.[id], defaultLength)
+    const trayLengthMm = positive(overrides?.segments?.[id], defaultLength)
+    const { startInsetMm, endInsetMm } = getTrayCenterlineInsets(
+      construction.sketch,
+      segmentIndex,
+      groups.length,
+      trayCurbWidthMm,
+    )
+    const lengthMm = Math.max(1, trayLengthMm - startInsetMm - endInsetMm)
     const isSlidingPair = ['slider', 'slider-corner', 'slider-double'].includes(construction.sketch)
       && panelIndexes.length === 2
       && panelIndexes.some((index) => roles[index] === 'door')
@@ -336,7 +371,10 @@ const getPanelDefaults = (
     return {
       id,
       label: getOpeningSegmentLabel(construction.sketch, segmentIndex, groups.length),
+      trayLengthMm,
       lengthMm,
+      startInsetMm,
+      endInsetMm,
       panelIndexes,
     }
   })
@@ -359,7 +397,7 @@ const getPanelDefaults = (
         operations: [],
       }
     })
-  return { panels, openingHeightMm, openingSegments }
+  return { panels, openingHeightMm, trayCurbWidthMm, openingSegments }
 }
 
 const inferStockLengthMm = (label: string) => {
@@ -1081,7 +1119,7 @@ export const createProductionPackage = (
   const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
   const glassThickness = glass.thickness ?? 8
   const components = getConstructionHardwareComponents(catalog, construction, glassThickness)
-  const { panels, openingHeightMm, openingSegments } = getPanelDefaults(catalog, form, designOverrides?.opening)
+  const { panels, openingHeightMm, trayCurbWidthMm, openingSegments } = getPanelDefaults(catalog, form, designOverrides?.opening)
   const resolvedChecks = components.map((component) => ({
     component,
     ...createTemplateCheck(component, glassThickness),
@@ -1203,6 +1241,7 @@ export const createProductionPackage = (
     hardwareColor: hardware.label,
     hardwareClass: hardwareClass.label,
     openingHeightMm,
+    trayCurbWidthMm,
     openingSegments,
     panels,
     doorPlacements,
@@ -1213,7 +1252,8 @@ export const createProductionPackage = (
     templateChecks,
     warnings: [
       'Контуры отверстий и вырезов построены автоматически по монтажным чертежам выбранных артикулов.',
-      'Чистовые размеры стекол рассчитаны из размеров проёма с учётом подтверждённых зазоров и перехлёстов.',
+      `Ось стекла размещена по центру порожка шириной ${Math.round(trayCurbWidthMm)} мм.`,
+      'Чистовые размеры стекол рассчитаны из габаритов поддона с учётом осевого смещения, подтверждённых зазоров и перехлёстов.',
       'Высотное расположение петель и коннекторов выполнено по производственному стандарту калькулятора.',
     ],
     blockingIssues,

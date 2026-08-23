@@ -252,6 +252,12 @@ function ProductionPlanView({ catalog, draft, onConnector, onDoor, onMagnetic }:
       <svg aria-label="Интерактивная схема душевой сверху" className="production-plan-svg" viewBox="0 0 610 260">
         <rect fill="#f8fafc" height="260" width="610" />
         <path d="M35 225 H575" fill="none" stroke="#cbd5e1" strokeDasharray="7 6" strokeWidth="2" />
+        {segments.map((segment, index) => (
+          <g key={`curb-${draft.panels[index]?.id ?? index}`}>
+            <line stroke="#cbd5e1" strokeLinecap="round" strokeWidth="25" x1={segment.x1} x2={segment.x2} y1={segment.y1} y2={segment.y2} />
+            <line stroke="#f8fafc" strokeLinecap="round" strokeWidth="21" x1={segment.x1} x2={segment.x2} y1={segment.y1} y2={segment.y2} />
+          </g>
+        ))}
         {segments.map((segment, index) => {
           const panel = draft.panels[index]
           if (!panel) return null
@@ -411,6 +417,7 @@ function ProductionPlanView({ catalog, draft, onConnector, onDoor, onMagnetic }:
         <g transform="translate(40 22)">
           <line stroke="#2563eb" strokeWidth="7" x1="0" x2="24" y1="0" y2="0" /><text fill="#475569" fontSize="10" x="31" y="4">неподвижное стекло</text>
           <line stroke="#f59e0b" strokeWidth="7" x1="145" x2="169" y1="0" y2="0" /><text fill="#475569" fontSize="10" x="176" y="4">дверь</text>
+          <line stroke="#cbd5e1" strokeWidth="12" x1="257" x2="281" y1="0" y2="0" /><line stroke="#f8fafc" strokeWidth="8" x1="257" x2="281" y1="0" y2="0" /><text fill="#475569" fontSize="10" x="288" y="4">порожек</text>
         </g>
       </svg>
 
@@ -453,13 +460,14 @@ type ConstructorProps = {
   catalog: PricingCatalog
   draft: ReturnType<typeof createProductionPackage>
   onOpeningHeight: (value: number) => void
+  onCurbWidth: (value: number) => void
   onOpeningSegment: (segmentId: string, value: number) => void
   onDoor: (placement: ProductionDoorPlacement, patch: Partial<ProductionDoorPlacement>) => void
   onConnector: (placement: ProductionConnectorPlacement, patch: Partial<ProductionConnectorPlacement>) => void
   onMagnetic: (placement: ProductionMagneticPlacement, patch: Partial<ProductionMagneticPlacement>) => void
 }
 
-function ProductionConstructor({ catalog, draft, onOpeningHeight, onOpeningSegment, onDoor, onConnector, onMagnetic }: ConstructorProps) {
+function ProductionConstructor({ catalog, draft, onOpeningHeight, onCurbWidth, onOpeningSegment, onDoor, onConnector, onMagnetic }: ConstructorProps) {
   return (
     <section className="production-constructor">
       <div className="production-section-head">
@@ -473,15 +481,17 @@ function ProductionConstructor({ catalog, draft, onOpeningHeight, onOpeningSegme
             <header><strong>Замеры проёма / поддона</strong><span>Исходные размеры</span></header>
             <div className="production-opening-inputs">
               <label><span>Высота проёма</span><input inputMode="numeric" min="1" step="1" type="number" value={Math.round(draft.openingHeightMm)} onChange={(event) => onOpeningHeight(clamp(Number(event.target.value), 1, 3500))} /></label>
+              <label><span>Ширина порожка</span><input inputMode="numeric" min="20" step="1" type="number" value={Math.round(draft.trayCurbWidthMm)} onChange={(event) => onCurbWidth(clamp(Number(event.target.value), 20, 300))} /></label>
               {draft.openingSegments.map((segment) => (
-                <label key={segment.id}><span>{segment.label}</span><input inputMode="numeric" min="1" step="1" type="number" value={Math.round(segment.lengthMm)} onChange={(event) => onOpeningSegment(segment.id, clamp(Number(event.target.value), 1, 6000))} /></label>
+                <label key={segment.id}><span>{segment.label}</span><input inputMode="numeric" min="100" step="1" type="number" value={Math.round(segment.trayLengthMm)} onChange={(event) => onOpeningSegment(segment.id, clamp(Number(event.target.value), 100, 6000))} /></label>
               ))}
             </div>
-            <p>Это размеры чистого проёма или сторон поддона. Размеры стекол рассчитываются автоматически.</p>
+            <p>Габариты вводятся по внешнему краю. Стекло устанавливается по центру порожка.</p>
           </article>
           <article>
-            <header><strong>Рассчитанные стекла</strong><span>Автоматически</span></header>
+            <header><strong>Ось установки и стекла</strong><span>Автоматически</span></header>
             <div className="production-opening-results">
+              {draft.openingSegments.map((segment) => <p className="is-axis" key={`axis-${segment.id}`}><span>Ось · {segment.label}</span><strong>{Math.round(segment.lengthMm)} мм</strong></p>)}
               {draft.panels.map((panel, panelIndex) => <p key={panel.id}><span>{panelIndex + 1}. {panel.label}</span><strong>{Math.round(panel.widthMm)} × {Math.round(panel.heightMm)} мм</strong></p>)}
             </div>
           </article>
@@ -513,6 +523,15 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
   const commitDesign = useCallback((nextDesign: ProductionDesignOverrides) => {
     const currentForm = workingFormRef.current
     const nextDraft = createProductionPackage(catalog, currentForm, quoteNumber, itemIndex, nextDesign)
+    const normalizedDesign: ProductionDesignOverrides = {
+      ...nextDesign,
+      opening: {
+        ...nextDesign.opening,
+        heightMm: nextDraft.openingHeightMm,
+        curbWidthMm: nextDraft.trayCurbWidthMm,
+        segments: Object.fromEntries(nextDraft.openingSegments.map((segment) => [segment.id, segment.trayLengthMm])),
+      },
+    }
     const construction = getConstruction(catalog, currentForm.constructionId)
     const nextDimensions = { ...currentForm.dimensions }
     const heightField = construction.fields.find((field) => field.key.startsWith('HEIGHT'))
@@ -531,12 +550,12 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
     const nextForm: CalculatorForm = {
       ...currentForm,
       dimensions: nextDimensions,
-      productionDesign: nextDesign,
+      productionDesign: normalizedDesign,
       productionPriceAdjustment: productionHardwarePrice - baseHardwarePrice,
     }
-    designOverridesRef.current = nextDesign
+    designOverridesRef.current = normalizedDesign
     workingFormRef.current = nextForm
-    setDesignOverrides(nextDesign)
+    setDesignOverrides(normalizedDesign)
     setWorkingForm(nextForm)
     onFormChange(nextForm)
   }, [catalog, itemIndex, onFormChange, quoteNumber])
@@ -567,6 +586,17 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
       opening: {
         ...current.opening,
         heightMm,
+      },
+    })
+  }, [commitDesign])
+
+  const updateCurbWidth = useCallback((curbWidthMm: number) => {
+    const current = designOverridesRef.current
+    commitDesign({
+      ...current,
+      opening: {
+        ...current.opening,
+        curbWidthMm,
       },
     })
   }, [commitDesign])
@@ -668,6 +698,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
             onConnector={updateConnector}
             onDoor={updateDoor}
             onMagnetic={updateMagnetic}
+            onCurbWidth={updateCurbWidth}
             onOpeningHeight={updateOpeningHeight}
             onOpeningSegment={updateOpeningSegment}
           />

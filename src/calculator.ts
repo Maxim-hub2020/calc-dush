@@ -34,6 +34,7 @@ export type QuoteCustomer = {
 export type ShowerProductionDesign = {
   opening?: {
     heightMm?: number
+    curbWidthMm?: number
     segments?: Record<string, number>
   }
   doors?: Record<string, {

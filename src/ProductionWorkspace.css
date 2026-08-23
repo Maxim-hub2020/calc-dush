@@ -346,6 +346,11 @@
   font-size: 11px;
 }
 .production-opening-results strong { color: #172033; white-space: nowrap; }
+.production-opening-results p.is-axis {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
 .production-placement-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
