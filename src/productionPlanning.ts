@@ -3,6 +3,7 @@ import {
   getConstructionHardwareComponents,
   getOption,
   type CalculatorForm,
+  type ShowerProductionDesign,
 } from './calculator'
 import type { PricingCatalog } from './pricing'
 import {
@@ -39,6 +40,8 @@ export type ProductionConnectorPlacement = {
   horizontalCount: number
   verticalEdge: Extract<ProductionOperationEdge, 'left' | 'right'>
   horizontalEdge: Extract<ProductionOperationEdge, 'top' | 'bottom'>
+  mountType: 'connectors' | 'profile'
+  profileHardwareItemId?: string
   sourceUrl?: string
 }
 
@@ -50,6 +53,9 @@ export type ProductionMagneticPlacement = {
   label: string
   sku: string
   edge: Extract<ProductionOperationEdge, 'left' | 'right'>
+  pairedPanelIndex?: number
+  pairedPanelLabel?: string
+  pairedEdge?: Extract<ProductionOperationEdge, 'left' | 'right'>
   gapMm: number
   sourceUrl?: string
 }
@@ -69,15 +75,7 @@ export type ProductionOpeningSegment = {
   panelIndexes: number[]
 }
 
-export type ProductionDesignOverrides = {
-  opening?: {
-    heightMm?: number
-    segments?: Record<string, number>
-  }
-  doors?: Record<string, Partial<Pick<ProductionDoorPlacement, 'hingeEdge' | 'swingDirection'>>>
-  connectors?: Record<string, Partial<Pick<ProductionConnectorPlacement, 'verticalCount' | 'horizontalCount' | 'verticalEdge' | 'horizontalEdge'>>>
-  magnetic?: Record<string, Partial<Pick<ProductionMagneticPlacement, 'edge' | 'gapMm'>>>
-}
+export type ProductionDesignOverrides = ShowerProductionDesign
 
 export type ProductionOperation = {
   id: string
@@ -206,7 +204,7 @@ const getOpeningPanelGroups = (
   }
   if (sketch === 'corner') return [[0], [1]].filter((group) => group[0] < panelCount)
   if (sketch === 'corner-plus') return [[0], [1, 2]].map((group) => group.filter((index) => index < panelCount)).filter((group) => group.length > 0)
-  if (sketch === 'double-corner' || sketch === 'slider-double') return [[0, 1], [2, 3]].map((group) => group.filter((index) => index < panelCount)).filter((group) => group.length > 0)
+  if (sketch === 'double-corner' || sketch === 'slider-double') return [[0, 1], [3, 2]].map((group) => group.filter((index) => index < panelCount)).filter((group) => group.length > 0)
   if (sketch === 'slider-corner') return [[0, 1], [2]].map((group) => group.filter((index) => index < panelCount)).filter((group) => group.length > 0)
   return [Array.from({ length: panelCount }, (_, index) => index)]
 }
@@ -348,14 +346,27 @@ const spacedPositions = (count: number, height: number, margin = 250) => {
   return Array.from({ length: count }, (_, index) => safeMargin + span * index / (count - 1))
 }
 
-const hingeEdge = (panels: ProductionPanel[], door: ProductionPanel): Edge => {
+const hingeEdge = (
+  panels: ProductionPanel[],
+  door: ProductionPanel,
+  openingSegments?: ProductionOpeningSegment[],
+): Edge => {
   const doorIndex = panels.indexOf(door)
+  const group = openingSegments?.find((segment) => segment.panelIndexes.includes(doorIndex))?.panelIndexes
+  if (group) {
+    const position = group.indexOf(doorIndex)
+    const fixedBefore = group.slice(0, position).reverse().find((index) => panels[index]?.role === 'fixed')
+    const fixedAfter = group.slice(position + 1).find((index) => panels[index]?.role === 'fixed')
+    if (fixedBefore !== undefined) return 'left'
+    if (fixedAfter !== undefined) return 'right'
+  }
   const fixedIndex = panels.indexOf(getAdjacentFixed(panels, door) ?? door)
   return fixedIndex > doorIndex ? 'right' : 'left'
 }
 const oppositeEdge = (edge: Edge): Edge => edge === 'left' ? 'right' : 'left'
 const createDoorPlacements = (
   panels: ProductionPanel[],
+  openingSegments: ProductionOpeningSegment[],
   overrides?: ProductionDesignOverrides['doors'],
 ) => panels.flatMap((panel, panelIndex) => {
   if (panel.role !== 'door') return []
@@ -365,7 +376,7 @@ const createDoorPlacements = (
     id,
     panelIndex,
     panelLabel: panel.label,
-    hingeEdge: override?.hingeEdge ?? hingeEdge(panels, panel),
+    hingeEdge: override?.hingeEdge ?? hingeEdge(panels, panel, openingSegments),
     swingDirection: override?.swingDirection ?? 'outward',
   } satisfies ProductionDoorPlacement]
 })
@@ -496,8 +507,22 @@ const getAdjacentFixed = (panels: ProductionPanel[], door: ProductionPanel) => {
   return [...panels.slice(0, index).reverse(), ...panels.slice(index + 1)].find((panel) => panel.role === 'fixed')
 }
 
-const getFixedOnDoorSide = (panels: ProductionPanel[], door: ProductionPanel, edge: Edge) => {
+const getFixedOnDoorSide = (
+  panels: ProductionPanel[],
+  door: ProductionPanel,
+  edge: Edge,
+  openingSegments?: ProductionOpeningSegment[],
+) => {
   const index = panels.indexOf(door)
+  const group = openingSegments?.find((segment) => segment.panelIndexes.includes(index))?.panelIndexes
+  if (group) {
+    const position = group.indexOf(index)
+    const candidateIndexes = edge === 'left'
+      ? group.slice(0, position).reverse()
+      : group.slice(position + 1)
+    const fixedIndex = candidateIndexes.find((panelIndex) => panels[panelIndex]?.role === 'fixed')
+    if (fixedIndex !== undefined) return panels[fixedIndex]
+  }
   const candidates = edge === 'left'
     ? panels.slice(0, index).reverse()
     : panels.slice(index + 1)
@@ -534,6 +559,8 @@ const createConnectorPlacements = (
       horizontalCount,
       verticalEdge: override?.verticalEdge ?? (panelIndex === 0 ? 'left' : 'right'),
       horizontalEdge: override?.horizontalEdge ?? 'bottom',
+      mountType: override?.mountType ?? 'connectors',
+      profileHardwareItemId: override?.profileHardwareItemId,
       sourceUrl: template.drawingUrl,
     } satisfies ProductionConnectorPlacement
   })
@@ -568,11 +595,30 @@ const createMagneticPlacements = (
   ))?.component
   if (!magneticSeal) return []
   const sku = magneticSeal.item.sku ?? magneticSeal.item.label
-  return panels.flatMap((panel, panelIndex) => {
-    if (panel.role !== 'door') return []
-    const id = `${magneticSeal.item.id}:${panelIndex}`
+  const doors = panels.map((panel, panelIndex) => ({ panel, panelIndex })).filter(({ panel }) => panel.role === 'door')
+  if (doors.length >= 2) {
+    const [first, second] = doors
+    const id = `${magneticSeal.item.id}:joint:${first.panelIndex}:${second.panelIndex}`
     const override = overrides?.[id]
     return [{
+      id,
+      hardwareItemId: magneticSeal.item.id,
+      panelIndex: first.panelIndex,
+      panelLabel: first.panel.label,
+      label: magneticSeal.item.label,
+      sku,
+      edge: override?.edge ?? oppositeEdge(getDoorHingeEdge(panels, first.panel, doorPlacements)),
+      pairedPanelIndex: second.panelIndex,
+      pairedPanelLabel: second.panel.label,
+      pairedEdge: oppositeEdge(getDoorHingeEdge(panels, second.panel, doorPlacements)),
+      gapMm: Math.max(0, Number(override?.gapMm ?? verifiedMagneticGapMm(sku, glassThickness)) || 0),
+      sourceUrl: magneticDrawingUrl(sku) ?? magneticSeal.item.sourceUrl,
+    } satisfies ProductionMagneticPlacement]
+  }
+  return doors.map(({ panel, panelIndex }) => {
+    const id = `${magneticSeal.item.id}:${panelIndex}`
+    const override = overrides?.[id]
+    return {
       id,
       hardwareItemId: magneticSeal.item.id,
       panelIndex,
@@ -582,7 +628,7 @@ const createMagneticPlacements = (
       edge: override?.edge ?? oppositeEdge(getDoorHingeEdge(panels, panel, doorPlacements)),
       gapMm: Math.max(0, Number(override?.gapMm ?? verifiedMagneticGapMm(sku, glassThickness)) || 0),
       sourceUrl: magneticDrawingUrl(sku) ?? magneticSeal.item.sourceUrl,
-    } satisfies ProductionMagneticPlacement]
+    } satisfies ProductionMagneticPlacement
   })
 }
 
@@ -647,12 +693,23 @@ const applyVerifiedClearances = (
   magneticPlacements.forEach((placement) => {
     const door = panels[placement.panelIndex]
     if (!door || door.role !== 'door' || placement.gapMm <= 0) return
+    const pairedDoor = placement.pairedPanelIndex === undefined ? undefined : panels[placement.pairedPanelIndex]
+    const primaryGap = pairedDoor ? placement.gapMm / 2 : placement.gapMm
     addWidthClearance(
       door,
       'Зазор притвора под магнитный уплотнитель',
       placement.edge,
-      placement.gapMm,
-      -placement.gapMm,
+      primaryGap,
+      -primaryGap,
+      placement.sku,
+      placement.sourceUrl,
+    )
+    if (pairedDoor?.role === 'door') addWidthClearance(
+      pairedDoor,
+      'Зазор центрального магнитного притвора',
+      placement.pairedEdge ?? oppositeEdge(getDoorHingeEdge(panels, pairedDoor, doorPlacements)),
+      placement.gapMm - primaryGap,
+      -(placement.gapMm - primaryGap),
       placement.sku,
       placement.sourceUrl,
     )
@@ -676,6 +733,7 @@ const applyMachiningPattern = (
   placementIssues: string[],
   connectorPlacements: ProductionConnectorPlacement[],
   doorPlacements: ProductionDoorPlacement[],
+  openingSegments: ProductionOpeningSegment[],
 ) => {
   const fixedPanels = panels.filter((panel) => panel.role === 'fixed')
   const doors = panels.filter((panel) => panel.role === 'door')
@@ -696,7 +754,7 @@ const applyMachiningPattern = (
   if (pattern === 'glass-hinge-fdp115') {
     groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
       const doorEdge = getDoorHingeEdge(panels, door, doorPlacements)
-      const fixed = getFixedOnDoorSide(panels, door, doorEdge)
+      const fixed = getFixedOnDoorSide(panels, door, doorEdge, openingSegments)
       if (!fixed) {
         placementIssues.push(`${sku}: со стороны петель нет неподвижного стекла для ответных отверстий`)
         return
@@ -715,7 +773,7 @@ const applyMachiningPattern = (
   if (pattern === 'corner-hinge-fdp184') {
     groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
       const doorEdge = getDoorHingeEdge(panels, door, doorPlacements)
-      const fixed = getFixedOnDoorSide(panels, door, doorEdge)
+      const fixed = getFixedOnDoorSide(panels, door, doorEdge, openingSegments)
       if (!fixed) {
         placementIssues.push(`${sku}: со стороны петель нет неподвижного стекла для ответной части`)
         return
@@ -733,6 +791,7 @@ const applyMachiningPattern = (
   if (pattern === 'wall-connector-fdk22' || pattern === 'wall-connector-fdk27') {
     const placements = connectorPlacements.filter((placement) => placement.hardwareItemId === component.item.id)
     placements.forEach((placement) => {
+      if (placement.mountType === 'profile') return
       const panel = panels[placement.panelIndex]
       if (!panel || panel.role !== 'fixed') return
       spacedPositions(placement.verticalCount, panel.heightMm, 140).forEach((center, connectorIndex) => {
@@ -889,7 +948,7 @@ export const createProductionPackage = (
     ...createTemplateCheck(component, glassThickness),
   }))
   const placementIssues: string[] = []
-  const doorPlacements = createDoorPlacements(panels, designOverrides?.doors)
+  const doorPlacements = createDoorPlacements(panels, openingSegments, designOverrides?.doors)
   const connectorPlacements = createConnectorPlacements(resolvedChecks, panels, designOverrides?.connectors)
   const magneticPlacements = createMagneticPlacements(resolvedChecks, panels, glassThickness, doorPlacements, designOverrides?.magnetic)
 
@@ -897,21 +956,41 @@ export const createProductionPackage = (
 
   resolvedChecks.forEach(({ component, template, check }) => {
     if (!template || check.status !== 'verified') return
-    if (template.pattern !== 'none') applyMachiningPattern(template.pattern, component, template, panels, placementIssues, connectorPlacements, doorPlacements)
+    if (template.pattern !== 'none') applyMachiningPattern(template.pattern, component, template, panels, placementIssues, connectorPlacements, doorPlacements, openingSegments)
   })
 
-  const purchases = components.map((component) => ({
-    id: crypto.randomUUID(),
-    hardwareItemId: component.item.id,
-    label: component.item.label,
-    sku: component.item.sku ?? '',
-    quantity: connectorPlacements.some((placement) => placement.hardwareItemId === component.item.id)
-      ? connectorPlacements
-        .filter((placement) => placement.hardwareItemId === component.item.id)
+  const purchases = components.map((component) => {
+    const matchingConnectors = connectorPlacements.filter((placement) => placement.hardwareItemId === component.item.id)
+    const matchingMagnets = magneticPlacements.filter((placement) => placement.hardwareItemId === component.item.id)
+    const quantity = matchingConnectors.length > 0
+      ? matchingConnectors
+        .filter((placement) => placement.mountType === 'connectors')
         .reduce((total, placement) => total + placement.verticalCount + placement.horizontalCount, 0)
-      : component.quantity,
-    sourceUrl: component.item.sourceUrl,
-  }))
+      : matchingMagnets.length > 0 ? matchingMagnets.length : component.quantity
+    return {
+      id: crypto.randomUUID(),
+      hardwareItemId: component.item.id,
+      label: component.item.label,
+      sku: component.item.sku ?? '',
+      quantity,
+      sourceUrl: component.item.sourceUrl,
+    }
+  }).filter((item) => item.quantity > 0)
+  connectorPlacements.forEach((placement) => {
+    if (placement.mountType !== 'profile' || !placement.profileHardwareItemId) return
+    const item = catalog.hardwareItems.find((entry) => entry.id === placement.profileHardwareItemId)
+    if (!item) return
+    const existing = purchases.find((entry) => entry.hardwareItemId === item.id)
+    if (existing) existing.quantity += 1
+    else purchases.push({
+      id: crypto.randomUUID(),
+      hardwareItemId: item.id,
+      label: item.label,
+      sku: item.sku ?? '',
+      quantity: 1,
+      sourceUrl: item.sourceUrl,
+    })
+  })
   const cuts = components.flatMap((component) => {
     if (!isCutMaterial(component.item.label, component.item.sectionId)) return []
     const cutLengthMm = getCutLengthMm(component.item.label, form, openingSegments, openingHeightMm)
@@ -929,8 +1008,33 @@ export const createProductionPackage = (
       sourceUrl: component.item.sourceUrl,
     }]
   })
+  connectorPlacements.forEach((placement) => {
+    if (placement.mountType !== 'profile' || !placement.profileHardwareItemId) return
+    const item = catalog.hardwareItems.find((entry) => entry.id === placement.profileHardwareItemId)
+    if (!item) return
+    const cutLengthMm = openingHeightMm
+    const stockLengthMm = inferStockLengthMm(item.label)
+    cuts.push({
+      id: crypto.randomUUID(),
+      hardwareItemId: item.id,
+      label: item.label,
+      sku: item.sku ?? '',
+      quantity: 1,
+      cutLengthMm,
+      stockLengthMm,
+      stockPieces: Math.ceil(cutLengthMm / stockLengthMm),
+      sourceUrl: item.sourceUrl,
+    })
+  })
   const templateChecks = resolvedChecks.map(({ check }) => {
-    const placements = connectorPlacements.filter((placement) => placement.hardwareItemId === check.hardwareItemId)
+    const allPlacements = connectorPlacements.filter((placement) => placement.hardwareItemId === check.hardwareItemId)
+    const placements = allPlacements.filter((placement) => placement.mountType === 'connectors')
+    if (allPlacements.length > 0 && placements.length === 0) return {
+      ...check,
+      quantity: 0,
+      status: 'not-required' as const,
+      message: 'Коннекторы заменены опорным профилем',
+    }
     if (placements.length === 0) return check
     return {
       ...check,

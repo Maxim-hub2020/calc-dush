@@ -352,29 +352,29 @@ const buildTopViewSvg = (draft: ProductionPackage) => {
     const normalX = -(y2 - y1) / length
     const normalY = (x2 - x1) / length
     const connectorPlacements = draft.connectorPlacements.filter((placement) => placement.panelIndex === index)
+    const connectorPlacement = connectorPlacements[0]
     const verticalConnectors = connectorPlacements.reduce((total, placement) => total + placement.verticalCount, 0)
     const horizontalConnectors = connectorPlacements.reduce((total, placement) => total + placement.horizontalCount, 0)
-    const magnetic = draft.magneticPlacements.find((placement) => placement.panelIndex === index)
-    const hardwareLabel = [
-      connectorPlacements.length > 0 ? `К ${verticalConnectors}+${horizontalConnectors}` : '',
-      magnetic ? `М ${Math.round(magnetic.gapMm)} мм` : '',
-    ].filter(Boolean).join(' · ')
+    const hardwareLabel = connectorPlacement
+      ? connectorPlacement.mountType === 'profile' ? 'ПРОФИЛЬ' : `К ${verticalConnectors}+${horizontalConnectors}`
+      : ''
     return [
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${panel.role === 'door' ? '#f59e0b' : '#2563eb'}" stroke-width="7" stroke-linecap="round"/>`,
-      hardwareLabel ? `<text x="${middleX - normalX * 14}" y="${middleY - normalY * 14 + 2}" text-anchor="middle" font-size="6.8" font-weight="700" fill="#1d4ed8">${xml(hardwareLabel)}</text>` : '',
+      hardwareLabel ? `<rect x="${middleX - normalX * 15 - 18}" y="${middleY - normalY * 15 - 6}" width="36" height="11" rx="2" fill="#ffffff" stroke="#bfdbfe" stroke-width=".5"/><text x="${middleX - normalX * 15}" y="${middleY - normalY * 15 + 2}" text-anchor="middle" font-size="6.5" font-weight="700" fill="#1d4ed8">${xml(hardwareLabel)}</text>` : '',
       `<circle cx="${middleX}" cy="${middleY}" r="9" fill="#ffffff" stroke="#0f172a"/><text x="${middleX}" y="${middleY + 3.5}" text-anchor="middle" font-size="9" font-weight="700" fill="#0f172a">${index + 1}</text>`,
     ].join('')
   }
   const coordinates: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
   if (['corner', 'corner-plus', 'double-corner', 'slider-corner', 'slider-double'].includes(draft.constructionSketch)) {
-    const firstCount = Math.max(1, draft.openingSegments[0]?.panelIndexes.length ?? 1)
-    const secondCount = draft.openingSegments[1]?.panelIndexes.length ?? Math.max(0, draft.panels.length - firstCount)
-    for (let index = 0; index < firstCount; index += 1) {
-      coordinates.push({ x1: 55 + index * (220 / firstCount), y1: 82, x2: 55 + (index + 1) * (220 / firstCount), y2: 82 })
-    }
-    for (let index = 0; index < secondCount; index += 1) {
-      coordinates.push({ x1: 275, y1: 82 + index * (65 / Math.max(1, secondCount)), x2: 275, y2: 82 + (index + 1) * (65 / Math.max(1, secondCount)) })
-    }
+    draft.panels.forEach(() => coordinates.push({ x1: 0, y1: 0, x2: 0, y2: 0 }))
+    const firstIndexes = draft.openingSegments[0]?.panelIndexes ?? [0]
+    const secondIndexes = draft.openingSegments[1]?.panelIndexes ?? []
+    firstIndexes.forEach((panelIndex, position) => {
+      coordinates[panelIndex] = { x1: 55 + position * (220 / firstIndexes.length), y1: 82, x2: 55 + (position + 1) * (220 / firstIndexes.length), y2: 82 }
+    })
+    secondIndexes.forEach((panelIndex, position) => {
+      coordinates[panelIndex] = { x1: 275, y1: 82 + position * (65 / Math.max(1, secondIndexes.length)), x2: 275, y2: 82 + (position + 1) * (65 / Math.max(1, secondIndexes.length)) }
+    })
   } else if (draft.constructionSketch === 'trapezoid') {
     coordinates.push({ x1: 55, y1: 105, x2: 155, y2: 38 }, { x1: 155, y1: 38, x2: 365, y2: 38 }, { x1: 365, y1: 38, x2: 465, y2: 105 })
   } else {
@@ -399,8 +399,13 @@ const buildTopViewSvg = (draft: ProductionPackage) => {
     const dimX2 = x2 + normalX * offset
     const dimY2 = y2 + normalY * offset
     const labelX = (dimX1 + dimX2) / 2 + normalX * 10
-    const labelY = (dimY1 + dimY2) / 2 + normalY * 10 + 3
-    return [`<line x1="${x1}" y1="${y1}" x2="${dimX1}" y2="${dimY1}" class="plan-extension"/><line x1="${x2}" y1="${y2}" x2="${dimX2}" y2="${dimY2}" class="plan-extension"/><line x1="${dimX1}" y1="${dimY1}" x2="${dimX2}" y2="${dimY2}" class="plan-dim" marker-start="url(#plan-arrow)" marker-end="url(#plan-arrow)"/><text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="7.2" font-weight="700" fill="#111827">${xml(opening.label)} ${Math.round(opening.lengthMm)}</text>`]
+    const labelY = (dimY1 + dimY2) / 2 + normalY * 10
+    let angle = Math.atan2(dimY2 - dimY1, dimX2 - dimX1) * 180 / Math.PI
+    if (angle > 90) angle -= 180
+    if (angle < -90) angle += 180
+    const label = `${xml(opening.label)} ${Math.round(opening.lengthMm)}`
+    const labelWidth = Math.max(58, label.length * 3.8)
+    return [`<line x1="${x1}" y1="${y1}" x2="${dimX1}" y2="${dimY1}" class="plan-extension"/><line x1="${x2}" y1="${y2}" x2="${dimX2}" y2="${dimY2}" class="plan-extension"/><line x1="${dimX1}" y1="${dimY1}" x2="${dimX2}" y2="${dimY2}" class="plan-dim" marker-start="url(#plan-arrow)" marker-end="url(#plan-arrow)"/><g transform="rotate(${angle} ${labelX} ${labelY})"><rect x="${labelX - labelWidth / 2}" y="${labelY - 5}" width="${labelWidth}" height="10" fill="#f8fafc"/><text x="${labelX}" y="${labelY + 2}" text-anchor="middle" font-size="6.6" font-weight="700" fill="#111827">${label}</text></g>`]
   }).join('')
   const doorSwings = draft.doorPlacements.flatMap((door) => {
     const item = coordinates[door.panelIndex]
@@ -414,17 +419,30 @@ const buildTopViewSvg = (draft: ProductionPackage) => {
     const direction = door.swingDirection === 'outward' ? 1 : -1
     const swingX = hingeX - direction * vy / length * radius
     const swingY = hingeY + direction * vx / length * radius
-    return [`<line x1="${hingeX}" y1="${hingeY}" x2="${swingX}" y2="${swingY}" stroke="#d97706" stroke-width="1.2" stroke-dasharray="4 3"/><circle cx="${hingeX}" cy="${hingeY}" r="3.5" fill="#fff" stroke="#d97706"/><text x="${swingX + 4}" y="${swingY + 2}" font-size="6.5" font-weight="700" fill="#92400e">${door.swingDirection === 'outward' ? 'наружу' : 'внутрь'}</text>`]
+    return [`<line x1="${hingeX}" y1="${hingeY}" x2="${swingX}" y2="${swingY}" stroke="#d97706" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#swing-arrow)"/><circle cx="${hingeX}" cy="${hingeY}" r="3.5" fill="#fff" stroke="#d97706"/>`]
+  }).join('')
+  const magneticJoints = draft.magneticPlacements.flatMap((magnetic) => {
+    const first = coordinates[magnetic.panelIndex]
+    if (!first) return []
+    const second = magnetic.pairedPanelIndex === undefined ? undefined : coordinates[magnetic.pairedPanelIndex]
+    const firstPoints = [{ x: first.x1, y: first.y1 }, { x: first.x2, y: first.y2 }]
+    const secondPoints = second ? [{ x: second.x1, y: second.y1 }, { x: second.x2, y: second.y2 }] : []
+    const point = secondPoints.length > 0
+      ? firstPoints.flatMap((left) => secondPoints.map((right) => ({ left, right, distance: Math.hypot(left.x - right.x, left.y - right.y) }))).sort((left, right) => left.distance - right.distance)[0]
+      : undefined
+    const x = point ? (point.left.x + point.right.x) / 2 : first.x2
+    const y = point ? (point.left.y + point.right.y) / 2 : first.y2
+    return [`<circle cx="${x}" cy="${y}" r="7" fill="#fff" stroke="#e11d48" stroke-width="1.4"/><text x="${x}" y="${y + 2.3}" text-anchor="middle" font-size="5.8" font-weight="800" fill="#be123c">М</text>`]
   }).join('')
   const legend = draft.panels.map((panel, index) => {
     const column = index % 2
     const row = Math.floor(index / 2)
     const x = 32 + column * 250
-    const y = 132 + row * 18
-    return `<text x="${x}" y="${y}" font-size="7.5" font-weight="700" fill="#334155">${index + 1}. ${xml(panel.label)} · расчётный участок ${Math.round(panel.openingWidthMm)} × ${Math.round(panel.openingHeightMm)}</text><text x="${x + 11}" y="${y + 9}" font-size="7" fill="#64748b">чистое стекло ${Math.round(panel.widthMm)} × ${Math.round(panel.heightMm)} мм</text>`
+    const y = 154 + row * 11
+    return `<text x="${x}" y="${y}" font-size="5.8" font-weight="700" fill="#334155">${index + 1}. ${xml(panel.label)}: участок ${Math.round(panel.openingWidthMm)}×${Math.round(panel.openingHeightMm)}; стекло ${Math.round(panel.widthMm)}×${Math.round(panel.heightMm)}</text>`
   }).join('')
   const openingSummary = draft.openingSegments.map((opening) => `${xml(opening.label)} ${Math.round(opening.lengthMm)}`).join(' · ')
-  return `<svg width="520" height="190" viewBox="0 0 520 190" xmlns="http://www.w3.org/2000/svg"><defs><marker id="plan-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 5 L10 0 L10 10 Z" fill="#111827"/></marker></defs><style>.plan-extension{stroke:#94a3b8;stroke-width:.55}.plan-dim{stroke:#111827;stroke-width:.65}</style><rect width="520" height="190" fill="#f8fafc"/><text x="32" y="15" font-size="8.2" font-weight="700" fill="#111827">${openingSummary} · высота ${Math.round(draft.openingHeightMm)} мм</text>${drawing}${openingDimensions}${doorSwings}${legend}<path d="M30 173 H490" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6 5"/><text x="260" y="186" text-anchor="middle" font-size="9" fill="#64748b">Схема расположения стекол, вид сверху</text></svg>`
+  return `<svg width="520" height="190" viewBox="0 0 520 190" xmlns="http://www.w3.org/2000/svg"><defs><marker id="plan-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 5 L10 0 L10 10 Z" fill="#111827"/></marker><marker id="swing-arrow" viewBox="0 0 7 7" refX="5" refY="3.5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L7 3.5 L0 7 Z" fill="#d97706"/></marker></defs><style>.plan-extension{stroke:#94a3b8;stroke-width:.55}.plan-dim{stroke:#111827;stroke-width:.65}</style><rect width="520" height="190" fill="#f8fafc"/><text x="32" y="15" font-size="8.2" font-weight="700" fill="#111827">${openingSummary} · высота ${Math.round(draft.openingHeightMm)} мм</text>${drawing}${openingDimensions}${doorSwings}${magneticJoints}${legend}<path d="M30 176 H490" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6 5"/><text x="260" y="187" text-anchor="middle" font-size="8" fill="#64748b">Схема расположения стекол, вид сверху</text></svg>`
 }
 
 const headerCell = (text: string): TableCell => ({

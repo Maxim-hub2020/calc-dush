@@ -213,6 +213,15 @@ const formatVariantCount = (count: number) => {
 const cloneForm = (form: CalculatorForm): CalculatorForm => ({
   ...form,
   dimensions: { ...form.dimensions },
+  productionDesign: form.productionDesign ? {
+    opening: form.productionDesign.opening ? {
+      ...form.productionDesign.opening,
+      segments: { ...form.productionDesign.opening.segments },
+    } : undefined,
+    doors: form.productionDesign.doors ? Object.fromEntries(Object.entries(form.productionDesign.doors).map(([id, value]) => [id, { ...value }])) : undefined,
+    connectors: form.productionDesign.connectors ? Object.fromEntries(Object.entries(form.productionDesign.connectors).map(([id, value]) => [id, { ...value }])) : undefined,
+    magnetic: form.productionDesign.magnetic ? Object.fromEntries(Object.entries(form.productionDesign.magnetic).map(([id, value]) => [id, { ...value }])) : undefined,
+  } : undefined,
 })
 
 type ShowerDraftPosition = {
@@ -333,6 +342,7 @@ function App() {
   const [pdfQuoteId, setPdfQuoteId] = useState('')
   const [pdfPreview, setPdfPreview] = useState<QuotePdfPreview | null>(null)
   const [productionWorkspace, setProductionWorkspace] = useState<{
+    positionId: string
     form: CalculatorForm
     itemIndex: number
     quoteNumber: string
@@ -838,6 +848,8 @@ function App() {
             ...position.form,
             constructionId: id,
             dimensions: resetDimensionsForConstruction(nextConstruction),
+            productionDesign: undefined,
+            productionPriceAdjustment: undefined,
           },
         }
       : position))
@@ -944,10 +956,20 @@ function App() {
     if (focusFirstInvalidPosition()) return
     const editingQuote = quotes.find((quote) => quote.id === editingQuoteId)
     setProductionWorkspace({
+      positionId: activePosition.id,
       form: cloneForm(activePosition.form),
       itemIndex: Math.max(0, positions.findIndex((position) => position.id === activePosition.id)),
       quoteNumber: editingQuote?.number ?? getNextQuoteNumber(quotes),
     })
+  }
+
+  const updateProductionWorkspaceForm = (nextForm: CalculatorForm) => {
+    const positionId = productionWorkspace?.positionId
+    if (!positionId) return
+    setProductionWorkspace((current) => current ? { ...current, form: cloneForm(nextForm) } : null)
+    setPositions((current) => current.map((position) => position.id === positionId && position.kind === 'shower'
+      ? { ...position, form: cloneForm(nextForm) }
+      : position))
   }
 
   const addPosition = (kind: ProductKind) => {
@@ -1333,6 +1355,7 @@ function App() {
           itemIndex={productionWorkspace.itemIndex}
           quoteNumber={productionWorkspace.quoteNumber}
           onClose={() => setProductionWorkspace(null)}
+          onFormChange={updateProductionWorkspaceForm}
           onPreview={setPdfPreview}
         />
       ) : null}

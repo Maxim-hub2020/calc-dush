@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -13,8 +13,14 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react'
-import type { CalculatorForm } from './calculator'
-import type { PricingCatalog } from './pricing'
+import {
+  calculateQuote,
+  getConstruction,
+  getConstructionHardwareComponents,
+  getOption,
+  type CalculatorForm,
+} from './calculator'
+import { inferHardwareItemGlassThickness, type PricingCatalog } from './pricing'
 import {
   createProductionPackage,
   getProductionValidationErrors,
@@ -35,6 +41,7 @@ type ProductionWorkspaceProps = {
   itemIndex: number
   quoteNumber: string
   onClose: () => void
+  onFormChange: (form: CalculatorForm) => void
   onPreview: (preview: ProductionPdfPreview) => void
 }
 
@@ -159,21 +166,26 @@ const planSegments = (draft: ReturnType<typeof createProductionPackage>) => {
     ].slice(0, count)
   }
   if (['corner', 'corner-plus', 'double-corner', 'slider-corner', 'slider-double'].includes(draft.constructionSketch)) {
-    const firstCount = Math.max(1, draft.openingSegments[0]?.panelIndexes.length ?? 1)
-    const secondCount = draft.openingSegments[1]?.panelIndexes.length ?? Math.max(0, count - firstCount)
-    const horizontal = Array.from({ length: firstCount }, (_, index) => ({
-      x1: 70 + index * (250 / firstCount),
-      y1: 190,
-      x2: 70 + (index + 1) * (250 / firstCount),
-      y2: 190,
-    }))
-    const vertical = Array.from({ length: secondCount }, (_, index) => ({
-      x1: 320,
-      y1: 190 - index * (120 / Math.max(1, secondCount)),
-      x2: 320,
-      y2: 190 - (index + 1) * (120 / Math.max(1, secondCount)),
-    }))
-    return [...horizontal, ...vertical]
+    const result = Array.from({ length: count }, () => ({ x1: 0, y1: 0, x2: 0, y2: 0 }))
+    const firstIndexes = draft.openingSegments[0]?.panelIndexes ?? [0]
+    const secondIndexes = draft.openingSegments[1]?.panelIndexes ?? []
+    firstIndexes.forEach((panelIndex, position) => {
+      result[panelIndex] = {
+        x1: 70 + position * (250 / firstIndexes.length),
+        y1: 190,
+        x2: 70 + (position + 1) * (250 / firstIndexes.length),
+        y2: 190,
+      }
+    })
+    secondIndexes.forEach((panelIndex, position) => {
+      result[panelIndex] = {
+        x1: 320,
+        y1: 190 - position * (120 / Math.max(1, secondIndexes.length)),
+        x2: 320,
+        y2: 190 - (position + 1) * (120 / Math.max(1, secondIndexes.length)),
+      }
+    })
+    return result
   }
   return Array.from({ length: count }, (_, index) => ({
     x1: 70 + index * (470 / count),
@@ -183,17 +195,47 @@ const planSegments = (draft: ReturnType<typeof createProductionPackage>) => {
   }))
 }
 
-function ProductionPlanView({ draft }: { draft: ReturnType<typeof createProductionPackage> }) {
+type PlanEditor = { kind: 'connector' | 'magnetic'; id: string } | null
+
+type ProductionPlanViewProps = {
+  catalog: PricingCatalog
+  draft: ReturnType<typeof createProductionPackage>
+  onConnector: (placement: ProductionConnectorPlacement, patch: Partial<ProductionConnectorPlacement>) => void
+  onDoor: (placement: ProductionDoorPlacement, patch: Partial<ProductionDoorPlacement>) => void
+  onMagnetic: (placement: ProductionMagneticPlacement, patch: Partial<ProductionMagneticPlacement>) => void
+}
+
+const closestSegmentEndpoints = (
+  first: { x1: number; y1: number; x2: number; y2: number },
+  second?: { x1: number; y1: number; x2: number; y2: number },
+) => {
+  const firstPoints = [{ x: first.x1, y: first.y1 }, { x: first.x2, y: first.y2 }]
+  if (!second) return firstPoints[1]
+  const secondPoints = [{ x: second.x1, y: second.y1 }, { x: second.x2, y: second.y2 }]
+  const pairs = firstPoints.flatMap((left) => secondPoints.map((right) => ({
+    left,
+    right,
+    distance: Math.hypot(left.x - right.x, left.y - right.y),
+  })))
+  const closest = pairs.sort((a, b) => a.distance - b.distance)[0]
+  return { x: (closest.left.x + closest.right.x) / 2, y: (closest.left.y + closest.right.y) / 2 }
+}
+
+function ProductionPlanView({ catalog, draft, onConnector, onDoor, onMagnetic }: ProductionPlanViewProps) {
+  const [editor, setEditor] = useState<PlanEditor>(null)
   const segments = planSegments(draft)
-  const connectorByPanel = new Map<number, { verticalCount: number; horizontalCount: number }>()
-  draft.connectorPlacements.forEach((placement) => {
-    const current = connectorByPanel.get(placement.panelIndex) ?? { verticalCount: 0, horizontalCount: 0 }
-    connectorByPanel.set(placement.panelIndex, {
-      verticalCount: current.verticalCount + placement.verticalCount,
-      horizontalCount: current.horizontalCount + placement.horizontalCount,
+  const connectorByPanel = new Map(draft.connectorPlacements.map((placement) => [placement.panelIndex, placement]))
+  const activeConnector = editor?.kind === 'connector' ? draft.connectorPlacements.find((placement) => placement.id === editor.id) : undefined
+  const activeMagnetic = editor?.kind === 'magnetic' ? draft.magneticPlacements.find((placement) => placement.id === editor.id) : undefined
+  const profileOptions = catalog.hardwareItems
+    .filter((item) => {
+      if (item.sectionId !== 'support-profiles' || !/^профиль(?:\s|$)/i.test(item.label) || !/(для стекла|опорн|п-образн)/i.test(item.label) || /заглуш|декоратив|магнит|имитац|уплотнител/i.test(item.label)) return false
+      const explicitThickness = item.label.match(/(?:стекл[ао]|под стекло)\s*(6|8|10|12)\s*мм/i)
+      if (explicitThickness && Number(explicitThickness[1]) !== draft.glassThickness) return false
+      const thickness = inferHardwareItemGlassThickness(item)
+      return thickness === undefined || thickness === draft.glassThickness
     })
-  })
-  const magneticByPanel = new Map(draft.magneticPlacements.map((placement) => [placement.panelIndex, placement]))
+    .sort((a, b) => (a.price || Number.MAX_SAFE_INTEGER) - (b.price || Number.MAX_SAFE_INTEGER))
   const openingDimensions = draft.openingSegments.flatMap((opening, openingIndex) => {
     const first = segments[opening.panelIndexes[0]]
     const last = segments[opening.panelIndexes.at(-1) ?? -1]
@@ -209,76 +251,165 @@ function ProductionPlanView({ draft }: { draft: ReturnType<typeof createProducti
     return [{ ...opening, x1, y1, x2, y2, normalX, normalY, offset }]
   })
   return (
-    <svg aria-label="Схема душевой сверху" className="production-plan-svg" viewBox="0 0 610 260">
-      <rect fill="#f8fafc" height="260" width="610" />
-      <path d="M35 225 H575" fill="none" stroke="#cbd5e1" strokeDasharray="7 6" strokeWidth="2" />
-      <text fill="#64748b" fontSize="11" textAnchor="middle" x="305" y="246">Поддон и чистый проём · вид сверху</text>
-      {segments.map((segment, index) => {
-        const panel = draft.panels[index]
-        if (!panel) return null
-        const middleX = (segment.x1 + segment.x2) / 2
-        const middleY = (segment.y1 + segment.y2) / 2
-        const connector = connectorByPanel.get(index)
-        const magnetic = magneticByPanel.get(index)
-        const length = Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1) || 1
-        const normalX = -(segment.y2 - segment.y1) / length
-        const normalY = (segment.x2 - segment.x1) / length
-        const hardwareX = middleX - normalX * 20
-        const hardwareY = middleY - normalY * 20
-        return (
-          <g key={panel.id}>
-            <line stroke={panel.role === 'door' ? '#f59e0b' : '#2563eb'} strokeLinecap="round" strokeWidth="9" x1={segment.x1} x2={segment.x2} y1={segment.y1} y2={segment.y2} />
-            <circle cx={middleX} cy={middleY} fill="#fff" r="12" stroke="#0f172a" strokeWidth="1.2" />
-            <text fill="#0f172a" fontSize="11" fontWeight="800" textAnchor="middle" x={middleX} y={middleY + 4}>{index + 1}</text>
-            {connector ? <text fill="#2563eb" fontSize="9.5" fontWeight="800" textAnchor="middle" x={hardwareX} y={hardwareY + 3}>К {connector.verticalCount}+{connector.horizontalCount}</text> : null}
-            {magnetic ? <text fill="#be123c" fontSize="9.5" fontWeight="800" textAnchor="middle" x={hardwareX} y={hardwareY + 3}>М {Math.round(magnetic.gapMm)} мм</text> : null}
-          </g>
-        )
-      })}
-      {openingDimensions.map((opening) => {
-        const dx1 = opening.x1 + opening.normalX * opening.offset
-        const dy1 = opening.y1 + opening.normalY * opening.offset
-        const dx2 = opening.x2 + opening.normalX * opening.offset
-        const dy2 = opening.y2 + opening.normalY * opening.offset
-        return (
-          <g key={opening.id}>
-            <line stroke="#94a3b8" strokeWidth="1" x1={opening.x1} x2={dx1} y1={opening.y1} y2={dy1} />
-            <line stroke="#94a3b8" strokeWidth="1" x1={opening.x2} x2={dx2} y1={opening.y2} y2={dy2} />
-            <line markerEnd="url(#production-plan-arrow)" markerStart="url(#production-plan-arrow)" stroke="#0f172a" strokeWidth="1" x1={dx1} x2={dx2} y1={dy1} y2={dy2} />
-            <text fill="#0f172a" fontSize="10.5" fontWeight="800" textAnchor="middle" x={(dx1 + dx2) / 2 + opening.normalX * 13} y={(dy1 + dy2) / 2 + opening.normalY * 13 + 4}>{opening.label}: {Math.round(opening.lengthMm)} мм</text>
-          </g>
-        )
-      })}
-      {draft.doorPlacements.map((door) => {
-        const segment = segments[door.panelIndex]
-        if (!segment) return null
-        const hingeX = door.hingeEdge === 'left' ? segment.x1 : segment.x2
-        const hingeY = door.hingeEdge === 'left' ? segment.y1 : segment.y2
-        const vx = door.hingeEdge === 'left' ? segment.x2 - segment.x1 : segment.x1 - segment.x2
-        const vy = door.hingeEdge === 'left' ? segment.y2 - segment.y1 : segment.y1 - segment.y2
-        const length = Math.hypot(vx, vy) || 1
-        const radius = Math.min(75, length * 0.72)
-        const direction = door.swingDirection === 'outward' ? 1 : -1
-        const swingX = hingeX - direction * vy / length * radius
-        const swingY = hingeY + direction * vx / length * radius
-        return (
-          <g key={door.id}>
-            <line stroke="#d97706" strokeDasharray="5 4" strokeWidth="2" x1={hingeX} x2={swingX} y1={hingeY} y2={swingY} />
-            <circle cx={hingeX} cy={hingeY} fill="#fff" r="5" stroke="#d97706" strokeWidth="2" />
-            <text fill="#92400e" fontSize="9" fontWeight="700" x={swingX + 5} y={swingY + 3}>{door.swingDirection === 'outward' ? 'наружу' : 'внутрь'}</text>
-          </g>
-        )
-      })}
-      <defs><marker id="production-plan-arrow" markerHeight="5" markerWidth="5" orient="auto-start-reverse" refX="3" refY="3" viewBox="0 0 6 6"><path d="M0 3 L6 0 L6 6 Z" fill="#0f172a" /></marker></defs>
-      <g transform="translate(40 22)">
-        <line stroke="#2563eb" strokeWidth="7" x1="0" x2="24" y1="0" y2="0" /><text fill="#475569" fontSize="10" x="31" y="4">неподвижное стекло</text>
-        <line stroke="#f59e0b" strokeWidth="7" x1="145" x2="169" y1="0" y2="0" /><text fill="#475569" fontSize="10" x="176" y="4">дверь</text>
-      </g>
-    </svg>
+    <div className="production-plan-interactive">
+      <svg aria-label="Интерактивная схема душевой сверху" className="production-plan-svg" viewBox="0 0 610 260">
+        <rect fill="#f8fafc" height="260" width="610" />
+        <path d="M35 225 H575" fill="none" stroke="#cbd5e1" strokeDasharray="7 6" strokeWidth="2" />
+        {segments.map((segment, index) => {
+          const panel = draft.panels[index]
+          if (!panel) return null
+          const middleX = (segment.x1 + segment.x2) / 2
+          const middleY = (segment.y1 + segment.y2) / 2
+          const connector = connectorByPanel.get(index)
+          const length = Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1) || 1
+          const normalX = -(segment.y2 - segment.y1) / length
+          const normalY = (segment.x2 - segment.x1) / length
+          const hardwareX = middleX - normalX * 23
+          const hardwareY = middleY - normalY * 23
+          return (
+            <g key={panel.id}>
+              <line stroke={panel.role === 'door' ? '#f59e0b' : '#2563eb'} strokeLinecap="round" strokeWidth="9" x1={segment.x1} x2={segment.x2} y1={segment.y1} y2={segment.y2} />
+              <circle cx={middleX} cy={middleY} fill="#fff" r="12" stroke="#0f172a" strokeWidth="1.2" />
+              <text fill="#0f172a" fontSize="11" fontWeight="800" pointerEvents="none" textAnchor="middle" x={middleX} y={middleY + 4}>{index + 1}</text>
+              {connector ? (
+                <g
+                  aria-label={`Изменить крепление ${panel.label}`}
+                  className="production-plan-control"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setEditor({ kind: 'connector', id: connector.id })}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setEditor({ kind: 'connector', id: connector.id }) }}
+                >
+                  <title>{connector.mountType === 'profile' ? 'Опорный профиль' : `${connector.verticalCount} вертикальных и ${connector.horizontalCount} горизонтальных коннектора`}. Нажмите для изменения.</title>
+                  <rect fill="#fff" height="22" rx="5" stroke="#93c5fd" width="58" x={hardwareX - 29} y={hardwareY - 11} />
+                  <text fill="#1d4ed8" fontSize="9.5" fontWeight="800" textAnchor="middle" x={hardwareX} y={hardwareY + 3}>{connector.mountType === 'profile' ? 'ПРОФИЛЬ' : `К ${connector.verticalCount}+${connector.horizontalCount}`}</text>
+                </g>
+              ) : null}
+            </g>
+          )
+        })}
+        {openingDimensions.map((opening) => {
+          const dx1 = opening.x1 + opening.normalX * opening.offset
+          const dy1 = opening.y1 + opening.normalY * opening.offset
+          const dx2 = opening.x2 + opening.normalX * opening.offset
+          const dy2 = opening.y2 + opening.normalY * opening.offset
+          let angle = Math.atan2(dy2 - dy1, dx2 - dx1) * 180 / Math.PI
+          if (angle > 90) angle -= 180
+          if (angle < -90) angle += 180
+          const labelX = (dx1 + dx2) / 2 + opening.normalX * 13
+          const labelY = (dy1 + dy2) / 2 + opening.normalY * 13
+          return (
+            <g key={opening.id}>
+              <line stroke="#94a3b8" strokeWidth="1" x1={opening.x1} x2={dx1} y1={opening.y1} y2={dy1} />
+              <line stroke="#94a3b8" strokeWidth="1" x1={opening.x2} x2={dx2} y1={opening.y2} y2={dy2} />
+              <line markerEnd="url(#production-plan-arrow)" markerStart="url(#production-plan-arrow)" stroke="#0f172a" strokeWidth="1" x1={dx1} x2={dx2} y1={dy1} y2={dy2} />
+              <text fill="#0f172a" fontSize="9.5" fontWeight="800" paintOrder="stroke" stroke="#f8fafc" strokeWidth="5" textAnchor="middle" transform={`rotate(${angle} ${labelX} ${labelY})`} x={labelX} y={labelY + 3}>{opening.label}: {Math.round(opening.lengthMm)} мм</text>
+            </g>
+          )
+        })}
+        {draft.doorPlacements.map((door) => {
+          const segment = segments[door.panelIndex]
+          if (!segment) return null
+          const hingeX = door.hingeEdge === 'left' ? segment.x1 : segment.x2
+          const hingeY = door.hingeEdge === 'left' ? segment.y1 : segment.y2
+          const vx = door.hingeEdge === 'left' ? segment.x2 - segment.x1 : segment.x1 - segment.x2
+          const vy = door.hingeEdge === 'left' ? segment.y2 - segment.y1 : segment.y1 - segment.y2
+          const length = Math.hypot(vx, vy) || 1
+          const radius = Math.min(75, length * 0.72)
+          const direction = door.swingDirection === 'outward' ? 1 : -1
+          const swingX = hingeX - direction * vy / length * radius
+          const swingY = hingeY + direction * vx / length * radius
+          return (
+            <g key={door.id}>
+              <g>
+                <rect
+                  aria-label={`Изменить направление открывания ${door.panelLabel}`}
+                  className="production-plan-control"
+                  fill="#fff"
+                  fillOpacity="0.01"
+                  height={Math.max(18, Math.abs(swingY - hingeY) + 18)}
+                  role="button"
+                  tabIndex={0}
+                  width={Math.max(18, Math.abs(swingX - hingeX) + 18)}
+                  x={Math.min(hingeX, swingX) - 9}
+                  y={Math.min(hingeY, swingY) - 9}
+                  onClick={() => onDoor(door, { swingDirection: door.swingDirection === 'outward' ? 'inward' : 'outward' })}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onDoor(door, { swingDirection: door.swingDirection === 'outward' ? 'inward' : 'outward' }) }}
+                ><title>Изменить направление открывания</title></rect>
+                <line markerEnd="url(#production-swing-arrow)" pointerEvents="none" stroke="#d97706" strokeDasharray="5 4" strokeWidth="3" x1={hingeX} x2={swingX} y1={hingeY} y2={swingY} />
+              </g>
+              {(['left', 'right'] as const).map((edge) => {
+                const x = edge === 'left' ? segment.x1 : segment.x2
+                const y = edge === 'left' ? segment.y1 : segment.y2
+                const controlX = x - (-(segment.y2 - segment.y1) / length) * 13
+                const controlY = y - ((segment.x2 - segment.x1) / length) * 13
+                const selected = edge === door.hingeEdge
+                return (
+                  <g aria-label={`${door.panelLabel}: петли ${edge === 'left' ? 'слева' : 'справа'}`} className="production-plan-control" key={edge} role="button" tabIndex={0} onClick={() => onDoor(door, { hingeEdge: edge })} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onDoor(door, { hingeEdge: edge }) }}>
+                    <title>Поставить петли {edge === 'left' ? 'на левую' : 'на правую'} сторону</title>
+                    <line pointerEvents="none" stroke="#d97706" strokeWidth="1" x1={x} x2={controlX} y1={y} y2={controlY} />
+                    <circle cx={controlX} cy={controlY} fill="#fff" fillOpacity="0.01" r="12" />
+                    <circle cx={controlX} cy={controlY} fill={selected ? '#d97706' : '#fff'} pointerEvents="none" r={selected ? 7 : 5} stroke="#d97706" strokeWidth="2" />
+                  </g>
+                )
+              })}
+            </g>
+          )
+        })}
+        {draft.magneticPlacements.map((magnetic) => {
+          const point = closestSegmentEndpoints(segments[magnetic.panelIndex], magnetic.pairedPanelIndex === undefined ? undefined : segments[magnetic.pairedPanelIndex])
+          return (
+            <g aria-label="Изменить магнитный притвор" className="production-plan-control" key={magnetic.id} role="button" tabIndex={0} onClick={() => setEditor({ kind: 'magnetic', id: magnetic.id })}>
+              <title>Один магнитный притвор между дверями. Нажмите для изменения.</title>
+              <circle cx={point.x} cy={point.y} fill="#fff" r="10" stroke="#e11d48" strokeWidth="2" />
+              <text fill="#be123c" fontSize="8.5" fontWeight="900" pointerEvents="none" textAnchor="middle" x={point.x} y={point.y + 3}>М</text>
+            </g>
+          )
+        })}
+        <defs>
+          <marker id="production-plan-arrow" markerHeight="5" markerWidth="5" orient="auto-start-reverse" refX="3" refY="3" viewBox="0 0 6 6"><path d="M0 3 L6 0 L6 6 Z" fill="#0f172a" /></marker>
+          <marker id="production-swing-arrow" markerHeight="7" markerWidth="7" orient="auto" refX="5" refY="3.5" viewBox="0 0 7 7"><path d="M0 0 L7 3.5 L0 7 Z" fill="#d97706" /></marker>
+        </defs>
+        <g transform="translate(40 22)">
+          <line stroke="#2563eb" strokeWidth="7" x1="0" x2="24" y1="0" y2="0" /><text fill="#475569" fontSize="10" x="31" y="4">неподвижное стекло</text>
+          <line stroke="#f59e0b" strokeWidth="7" x1="145" x2="169" y1="0" y2="0" /><text fill="#475569" fontSize="10" x="176" y="4">дверь</text>
+        </g>
+      </svg>
+
+      {activeConnector ? (
+        <div className="production-plan-popover">
+          <header><div><strong>Крепление · {activeConnector.panelLabel}</strong><span>{activeConnector.sku}</span></div><button aria-label="Закрыть настройку" type="button" onClick={() => setEditor(null)}><X size={15} /></button></header>
+          <label><span>Тип крепления</span><select value={activeConnector.mountType} onChange={(event) => {
+            const mountType = event.target.value as 'connectors' | 'profile'
+            onConnector(activeConnector, { mountType, profileHardwareItemId: mountType === 'profile' ? activeConnector.profileHardwareItemId ?? profileOptions[0]?.id : activeConnector.profileHardwareItemId })
+          }}><option value="connectors">Коннекторы</option><option value="profile">Опорный профиль</option></select></label>
+          {activeConnector.mountType === 'connectors' ? <>
+            <div className="production-placement-controls">
+              <CountStepper label="По вертикали" maximum={3} value={activeConnector.verticalCount} onChange={(value) => onConnector(activeConnector, { verticalCount: value })} />
+              <CountStepper label="По горизонтали" maximum={2} value={activeConnector.horizontalCount} onChange={(value) => onConnector(activeConnector, { horizontalCount: value })} />
+            </div>
+            <div className="production-select-row">
+              <label><span>Вертикальная кромка</span><select value={activeConnector.verticalEdge} onChange={(event) => onConnector(activeConnector, { verticalEdge: event.target.value as 'left' | 'right' })}><option value="left">Левая</option><option value="right">Правая</option></select></label>
+              <label><span>Горизонтальная кромка</span><select value={activeConnector.horizontalEdge} onChange={(event) => onConnector(activeConnector, { horizontalEdge: event.target.value as 'top' | 'bottom' })}><option value="bottom">Нижняя</option><option value="top">Верхняя</option></select></label>
+            </div>
+          </> : (
+            <label><span>Профиль</span><select value={activeConnector.profileHardwareItemId ?? profileOptions[0]?.id ?? ''} onChange={(event) => onConnector(activeConnector, { profileHardwareItemId: event.target.value })}>{profileOptions.map((item) => <option key={item.id} value={item.id}>{item.sku || item.label} · {Math.round(item.price)} ₽</option>)}</select></label>
+          )}
+        </div>
+      ) : null}
+
+      {activeMagnetic ? (
+        <div className="production-plan-popover is-magnetic">
+          <header><div><strong>Магнитный притвор</strong><span>{activeMagnetic.pairedPanelLabel ? `${activeMagnetic.panelLabel} + ${activeMagnetic.pairedPanelLabel}` : activeMagnetic.panelLabel}</span></div><button aria-label="Закрыть настройку" type="button" onClick={() => setEditor(null)}><X size={15} /></button></header>
+          <label><span>Общий зазор, мм</span><input inputMode="numeric" min="0" step="1" type="number" value={Math.round(activeMagnetic.gapMm)} onChange={(event) => onMagnetic(activeMagnetic, { gapMm: clamp(Number(event.target.value), 0, 100) })} /></label>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
 type ConstructorProps = {
+  catalog: PricingCatalog
   draft: ReturnType<typeof createProductionPackage>
   onOpeningHeight: (value: number) => void
   onOpeningSegment: (segmentId: string, value: number) => void
@@ -287,7 +418,7 @@ type ConstructorProps = {
   onMagnetic: (placement: ProductionMagneticPlacement, patch: Partial<ProductionMagneticPlacement>) => void
 }
 
-function ProductionConstructor({ draft, onOpeningHeight, onOpeningSegment, onDoor, onConnector, onMagnetic }: ConstructorProps) {
+function ProductionConstructor({ catalog, draft, onOpeningHeight, onOpeningSegment, onDoor, onConnector, onMagnetic }: ConstructorProps) {
   return (
     <section className="production-constructor">
       <div className="production-section-head">
@@ -295,7 +426,7 @@ function ProductionConstructor({ draft, onOpeningHeight, onOpeningSegment, onDoo
         <Ruler size={20} aria-hidden="true" />
       </div>
       <div className="production-constructor-layout">
-        <ProductionPlanView draft={draft} />
+        <ProductionPlanView catalog={catalog} draft={draft} onConnector={onConnector} onDoor={onDoor} onMagnetic={onMagnetic} />
         <div className="production-opening-list">
           <article>
             <header><strong>Замеры проёма / поддона</strong><span>Исходные размеры</span></header>
@@ -315,60 +446,59 @@ function ProductionConstructor({ draft, onOpeningHeight, onOpeningSegment, onDoo
           </article>
         </div>
       </div>
-
-      {draft.doorPlacements.length > 0 || draft.connectorPlacements.length > 0 || draft.magneticPlacements.length > 0 ? (
-        <div className="production-placement-grid">
-          {draft.doorPlacements.map((placement) => (
-            <article className="production-placement-card is-door" key={placement.id}>
-              <header><div><strong>Открывание двери</strong><span>{placement.panelLabel}</span></div></header>
-              <div className="production-select-row">
-                <label><span>Сторона петель</span><select value={placement.hingeEdge} onChange={(event) => onDoor(placement, { hingeEdge: event.target.value as 'left' | 'right' })}><option value="left">Слева</option><option value="right">Справа</option></select></label>
-                <label><span>Открывание</span><select value={placement.swingDirection} onChange={(event) => onDoor(placement, { swingDirection: event.target.value as 'inward' | 'outward' })}><option value="outward">Наружу</option><option value="inward">Внутрь</option></select></label>
-              </div>
-              <p>Положение петель меняет вырезы двери и ответные отверстия.</p>
-            </article>
-          ))}
-          {draft.connectorPlacements.map((placement) => (
-            <article className="production-placement-card" key={placement.id}>
-              <header><div><strong>{placement.sku}</strong><span>{placement.panelLabel}</span></div><a aria-label={`Чертёж ${placement.sku}`} href={placement.sourceUrl} rel="noreferrer" target="_blank"><ExternalLink size={15} /></a></header>
-              <div className="production-placement-controls">
-                <CountStepper label="По вертикали" maximum={3} value={placement.verticalCount} onChange={(value) => onConnector(placement, { verticalCount: value })} />
-                <CountStepper label="По горизонтали" maximum={2} value={placement.horizontalCount} onChange={(value) => onConnector(placement, { horizontalCount: value })} />
-              </div>
-              <div className="production-select-row">
-                <label><span>Вертикальная кромка</span><select value={placement.verticalEdge} onChange={(event) => onConnector(placement, { verticalEdge: event.target.value as 'left' | 'right' })}><option value="left">Левая</option><option value="right">Правая</option></select></label>
-                <label><span>Горизонтальная кромка</span><select value={placement.horizontalEdge} onChange={(event) => onConnector(placement, { horizontalEdge: event.target.value as 'top' | 'bottom' })}><option value="bottom">Нижняя</option><option value="top">Верхняя</option></select></label>
-              </div>
-            </article>
-          ))}
-          {draft.magneticPlacements.map((placement) => (
-            <article className="production-placement-card is-magnetic" key={placement.id}>
-              <header><div><strong>Магнитный притвор</strong><span>{placement.sku} · {placement.panelLabel}</span></div>{placement.sourceUrl ? <a aria-label={`Чертёж ${placement.sku}`} href={placement.sourceUrl} rel="noreferrer" target="_blank"><ExternalLink size={15} /></a> : null}</header>
-              <div className="production-select-row">
-                <label><span>Кромка двери</span><select value={placement.edge} onChange={(event) => onMagnetic(placement, { edge: event.target.value as 'left' | 'right' })}><option value="left">Левая</option><option value="right">Правая</option></select></label>
-                <label><span>Чистый зазор, мм</span><input inputMode="numeric" min="0" step="1" type="number" value={Math.round(placement.gapMm)} onChange={(event) => onMagnetic(placement, { gapMm: clamp(Number(event.target.value), 0, 100) })} /></label>
-              </div>
-              <p>{draft.glassThickness === 6 && /FDPP-50[12]\.6/i.test(placement.sku) ? 'По чертежу AV24 для 6-мм притвора: 22 мм.' : 'Значение можно уточнить по чертежу выбранного профиля.'}</p>
-            </article>
-          ))}
-        </div>
-      ) : null}
     </section>
   )
 }
 
-export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onClose, onPreview }: ProductionWorkspaceProps) {
-  const [designOverrides, setDesignOverrides] = useState<ProductionDesignOverrides>({})
+export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onClose, onFormChange, onPreview }: ProductionWorkspaceProps) {
+  const [workingForm, setWorkingForm] = useState<CalculatorForm>(() => ({ ...form, dimensions: { ...form.dimensions } }))
+  const [designOverrides, setDesignOverrides] = useState<ProductionDesignOverrides>(() => form.productionDesign ?? {})
   const [notes, setNotes] = useState('')
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
+  const workingFormRef = useRef(workingForm)
+  const designOverridesRef = useRef(designOverrides)
+  workingFormRef.current = workingForm
+  designOverridesRef.current = designOverrides
   const draft = useMemo(() => ({
-    ...createProductionPackage(catalog, form, quoteNumber, itemIndex, designOverrides),
+    ...createProductionPackage(catalog, workingForm, quoteNumber, itemIndex, designOverrides),
     notes,
-  }), [catalog, designOverrides, form, itemIndex, notes, quoteNumber])
+  }), [catalog, designOverrides, itemIndex, notes, quoteNumber, workingForm])
   const validationErrors = useMemo(() => getProductionValidationErrors(draft), [draft])
   const verifiedCount = draft.templateChecks.filter((check) => check.status === 'verified' || check.status === 'not-required').length
   const operationCount = draft.panels.reduce((total, panel) => total + panel.operations.length, 0)
+  const quoteTotal = calculateQuote(catalog, workingForm).total
+
+  const commitDesign = useCallback((nextDesign: ProductionDesignOverrides) => {
+    const currentForm = workingFormRef.current
+    const nextDraft = createProductionPackage(catalog, currentForm, quoteNumber, itemIndex, nextDesign)
+    const construction = getConstruction(catalog, currentForm.constructionId)
+    const nextDimensions = { ...currentForm.dimensions }
+    const heightField = construction.fields.find((field) => field.key.startsWith('HEIGHT'))
+    if (heightField) nextDimensions[heightField.key] = Math.round(nextDraft.openingHeightMm)
+    construction.fields.filter((field) => field.key.startsWith('WIDTH')).forEach((field, index) => {
+      const panel = nextDraft.panels[index]
+      if (panel) nextDimensions[field.key] = Math.round(panel.openingWidthMm)
+    })
+    const glass = getOption(catalog.glass, currentForm.glassId)
+    const baseHardwarePrice = getConstructionHardwareComponents(catalog, construction, glass.thickness)
+      .reduce((sum, component) => sum + component.total, 0)
+    const productionHardwarePrice = nextDraft.purchases.reduce((sum, purchase) => {
+      const item = catalog.hardwareItems.find((entry) => entry.id === purchase.hardwareItemId)
+      return sum + (item?.price ?? 0) * purchase.quantity
+    }, 0)
+    const nextForm: CalculatorForm = {
+      ...currentForm,
+      dimensions: nextDimensions,
+      productionDesign: nextDesign,
+      productionPriceAdjustment: productionHardwarePrice - baseHardwarePrice,
+    }
+    designOverridesRef.current = nextDesign
+    workingFormRef.current = nextForm
+    setDesignOverrides(nextDesign)
+    setWorkingForm(nextForm)
+    onFormChange(nextForm)
+  }, [catalog, itemIndex, onFormChange, quoteNumber])
 
   const generatePdf = useCallback(async () => {
     const errors = getProductionValidationErrors(draft)
@@ -390,17 +520,19 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
   }, [draft, generating, onClose, onPreview])
 
   const updateOpeningHeight = useCallback((heightMm: number) => {
-    setDesignOverrides((current) => ({
+    const current = designOverridesRef.current
+    commitDesign({
       ...current,
       opening: {
         ...current.opening,
         heightMm,
       },
-    }))
-  }, [])
+    })
+  }, [commitDesign])
 
   const updateOpeningSegment = useCallback((segmentId: string, value: number) => {
-    setDesignOverrides((current) => ({
+    const current = designOverridesRef.current
+    commitDesign({
       ...current,
       opening: {
         ...current.opening,
@@ -409,38 +541,41 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
           [segmentId]: value,
         },
       },
-    }))
-  }, [])
+    })
+  }, [commitDesign])
 
   const updateDoor = useCallback((placement: ProductionDoorPlacement, patch: Partial<ProductionDoorPlacement>) => {
-    setDesignOverrides((current) => ({
+    const current = designOverridesRef.current
+    commitDesign({
       ...current,
       doors: {
         ...current.doors,
         [placement.id]: { ...current.doors?.[placement.id], ...patch },
       },
-    }))
-  }, [])
+    })
+  }, [commitDesign])
 
   const updateConnector = useCallback((placement: ProductionConnectorPlacement, patch: Partial<ProductionConnectorPlacement>) => {
-    setDesignOverrides((current) => ({
+    const current = designOverridesRef.current
+    commitDesign({
       ...current,
       connectors: {
         ...current.connectors,
         [placement.id]: { ...current.connectors?.[placement.id], ...patch },
       },
-    }))
-  }, [])
+    })
+  }, [commitDesign])
 
   const updateMagnetic = useCallback((placement: ProductionMagneticPlacement, patch: Partial<ProductionMagneticPlacement>) => {
-    setDesignOverrides((current) => ({
+    const current = designOverridesRef.current
+    commitDesign({
       ...current,
       magnetic: {
         ...current.magnetic,
         [placement.id]: { ...current.magnetic?.[placement.id], ...patch },
       },
-    }))
-  }, [])
+    })
+  }, [commitDesign])
 
   return (
     <div className="production-backdrop">
@@ -451,6 +586,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
             <h2 id="production-title">Автоматические чертежи стекол</h2>
             <p>{draft.constructionTitle} · {draft.glassThickness} мм · {draft.hardwareClass}</p>
           </div>
+          <div className="production-price-badge"><span>Стоимость позиции</span><strong>{new Intl.NumberFormat('ru-RU').format(quoteTotal)} ₽</strong></div>
           <button aria-label="Закрыть производственные чертежи" className="production-close" title="Закрыть" type="button" onClick={onClose}><X size={21} /></button>
         </header>
 
@@ -486,6 +622,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
           ) : null}
 
           <ProductionConstructor
+            catalog={catalog}
             draft={draft}
             onConnector={updateConnector}
             onDoor={updateDoor}

@@ -31,6 +31,29 @@ export type QuoteCustomer = {
   note: string
 }
 
+export type ShowerProductionDesign = {
+  opening?: {
+    heightMm?: number
+    segments?: Record<string, number>
+  }
+  doors?: Record<string, {
+    hingeEdge?: 'left' | 'right'
+    swingDirection?: 'inward' | 'outward'
+  }>
+  connectors?: Record<string, {
+    verticalCount?: number
+    horizontalCount?: number
+    verticalEdge?: 'left' | 'right'
+    horizontalEdge?: 'top' | 'bottom'
+    mountType?: 'connectors' | 'profile'
+    profileHardwareItemId?: string
+  }>
+  magnetic?: Record<string, {
+    edge?: 'left' | 'right'
+    gapMm?: number
+  }>
+}
+
 export type QuoteVariant = {
   id: string
   title: string
@@ -56,6 +79,8 @@ export type CalculatorForm = {
   clientName: string
   clientPhone: string
   note: string
+  productionDesign?: ShowerProductionDesign
+  productionPriceAdjustment?: number
 }
 
 export type CalculationLine = {
@@ -337,11 +362,11 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
     .map((field) => Number(form.dimensions[field.key] ?? 0))
   const glassArea = widths.reduce((sum, width) => sum + width * 0.001 * height * 0.001, 0)
   const glassPrice = widths.reduce((sum, width) => sum + Math.round(width * 0.001 * height * 0.001 * glass.price), 0)
-  const hardwareBasePrice = getConstructionHardwareBasePrice(
+  const hardwareBasePrice = Math.max(0, getConstructionHardwareBasePrice(
     catalog,
     construction,
     glass.thickness,
-  )
+  ) + (Number(form.productionPriceAdjustment) || 0))
   const hasHardwareComposition = getConstructionHardwareComponents(catalog, construction, glass.thickness).length > 0
   const fallbackConstructionBase = hasHardwareComposition ? 0 : Math.max(0, Number(construction.basePrice) || 0)
   const hardwareClassFactor = 1 + Math.max(0, Number(hardwareClass.price) || 0) / 100
