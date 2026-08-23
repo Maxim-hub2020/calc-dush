@@ -1,4 +1,5 @@
 import type { Content, TableCell, TDocumentDefinitions } from 'pdfmake/interfaces'
+import { createProductionDxfBlob } from './productionDxf'
 import type { ProductionCutItem, ProductionOperation, ProductionPackage, ProductionPanel } from './productionPlanning'
 
 const colors = {
@@ -124,6 +125,7 @@ const edgeCutPath = (
 const buildDetailSvg = (
   group: ReturnType<typeof buildOperationGroups>[number],
   panelWidthMm: number,
+  panelHeightMm: number,
   x: number,
   y: number,
   width: number,
@@ -132,7 +134,19 @@ const buildDetailSvg = (
   const operation = group.operation
   const title = `${group.id} · ${operation.sourceSku || operationKindLabel[operation.kind]}`
   const cx = x + width / 2
-  const cy = y + 58
+  const cy = y + 48
+  const horizontalEdge = operation.edge
+    ?? (operation.xMm <= panelWidthMm / 2 ? 'left' : 'right')
+  const horizontalOffset = Math.round(horizontalEdge === 'left'
+    ? operation.xMm
+    : panelWidthMm - operation.xMm)
+  const verticalOffsets = uniqueNumbers(group.operations.map((item) => item.yMm)).sort((left, right) => left - right)
+  const verticalText = verticalOffsets.length === 1
+    ? `ось: ${verticalOffsets[0]} от низа; ${Math.round(panelHeightMm - verticalOffsets[0])} от верха`
+    : verticalOffsets.length <= 4
+      ? `оси от низа: ${verticalOffsets.join(', ')} мм`
+    : `оси от низа: ${verticalOffsets.slice(0, 4).join(', ')}... мм`
+  const horizontalText = `ось от ${horizontalEdge === 'left' ? 'левой' : 'правой'} кромки: ${horizontalOffset} мм`
   let drawing = ''
 
   if (operation.profile === 'circle') {
@@ -144,8 +158,6 @@ const buildDetailSvg = (
       const actualSpacing = uniqueNumbers(group.operations.flatMap((item, index) => group.operations.slice(index + 1).map((other) => Math.abs(item.yMm - other.yMm))).filter((value) => value > 0 && value < 120))[0]
       if (actualSpacing) drawing += dimensionLine(cx - 28, centers[0], cx - 28, centers[1], `${actualSpacing}`, true)
     }
-    const edgeOffset = Math.round(Math.min(operation.xMm, Math.max(0, panelWidthMm - operation.xMm)))
-    if (edgeOffset > 0) drawing += `<text x="${x + 10}" y="${y + height - 12}" class="detail-note">ось от кромки ${edgeOffset} мм</text>`
   } else if (operation.profile === 'round-slot') {
     const slotX = x + 58
     const slotY = cy - 10
@@ -169,19 +181,22 @@ const buildDetailSvg = (
     drawing += `<path d="M ${cutX + depth - 8} ${cutY - 8} L ${x + width - 12} ${y + 43}" class="leader"/><text x="${x + width - 10}" y="${y + 40}" class="detail-text" text-anchor="end">R${Math.round(operation.radiusMm)}</text>`
   }
 
-  return `<g><rect x="${x}" y="${y}" width="${width}" height="${height}" rx="3" class="detail-box"/><text x="${x + 9}" y="${y + 17}" class="detail-title">${xml(title)}</text>${drawing}<text x="${x + 9}" y="${y + height - 2}" class="detail-note">${xml(operationSize(operation))}</text></g>`
+  const locationNotes = operation.profile === 'circle'
+    ? `<text x="${x + 9}" y="${y + height - 25}" class="detail-note">${xml(horizontalText)}</text><text x="${x + 9}" y="${y + height - 15}" class="detail-note">${xml(verticalText)}</text>`
+    : `<text x="${x + 9}" y="${y + height - 15}" class="detail-note">${xml(verticalText.replace('оси', 'центры').replace('ось:', 'центр:'))}</text>`
+  return `<g><rect x="${x}" y="${y}" width="${width}" height="${height}" rx="3" class="detail-box"/><text x="${x + 9}" y="${y + 17}" class="detail-title">${xml(title)}</text>${drawing}${locationNotes}<text x="${x + 9}" y="${y + height - 4}" class="detail-note">${xml(operationSize(operation))}</text></g>`
 }
 
 const buildPanelSvg = (panel: ProductionPanel) => {
   const width = Math.max(1, panel.widthMm)
   const height = Math.max(1, panel.heightMm)
   const maxW = 285
-  const maxH = 430
+  const maxH = 400
   const scale = Math.min(maxW / width, maxH / height)
   const drawW = width * scale
   const drawH = height * scale
   const x = 52 + (maxW - drawW) / 2
-  const y = 48 + (maxH - drawH) / 2
+  const y = 68 + (maxH - drawH) / 2
   const topWidth = Math.min(width, Math.max(1, panel.topWidthMm || width))
   const topInset = panel.shape === 'trapezoid' ? (width - topWidth) * scale / 2 : 0
   const panelPath = panel.shape === 'trapezoid'
@@ -194,50 +209,45 @@ const buildPanelSvg = (panel: ProductionPanel) => {
     const py = y + drawH - Math.min(height, operation.yMm) * scale
     if (operation.kind === 'hole') {
       const radius = Math.max(3.5, operation.diameterMm * scale / 2)
-      return `<circle cx="${number(px)}" cy="${number(py)}" r="${number(radius)}" class="cut"/>${centerMark(px, py, 5)}<text x="${number(px + radius + 5)}" y="${number(py - 5)}" class="node-label">${groupByOperation.get(operation.id)}</text>`
+      return `<circle cx="${number(px)}" cy="${number(py)}" r="${number(radius)}" class="cut"/>${centerMark(px, py, 5)}`
     }
-    return `<path d="${edgeCutPath(operation, x, y, drawW, drawH, scale)}" class="cut"/><text x="${number(px)}" y="${number(py - operation.heightMm * scale / 2 - 5)}" class="node-label">${groupByOperation.get(operation.id)}</text>`
+    return `<path d="${edgeCutPath(operation, x, y, drawW, drawH, scale)}" class="cut"/>`
   }).join('')
-
-  const xDimensionEntries = [...new Map(panel.operations.map((operation) => {
-    const side = operation.xMm <= width / 2 ? 'left' : 'right'
-    const offset = Math.round(side === 'left' ? operation.xMm : width - operation.xMm)
-    return [`${side}-${offset}`, { side, offset, position: operation.xMm }]
-  })).values()]
-  const xDimensions = xDimensionEntries
-    .slice(0, 5)
-    .map(({ side, offset, position }, index) => {
-      const px = x + position * scale
-      const edgePosition = side === 'left' ? x : x + drawW
-      const dimY = y - 14 - index * 10
-      return `<line x1="${edgePosition}" y1="${y}" x2="${edgePosition}" y2="${dimY}" class="extension"/><line x1="${px}" y1="${y}" x2="${px}" y2="${dimY}" class="extension"/>${dimensionLine(edgePosition, dimY, px, dimY, `${offset}`)}`
-    }).join('')
-  const yDimensionEntries = [...new Map(panel.operations.map((operation) => {
-    const side = operation.yMm <= height / 2 ? 'bottom' : 'top'
-    const offset = Math.round(side === 'bottom' ? operation.yMm : height - operation.yMm)
-    return [`${side}-${offset}`, { side, offset, position: operation.yMm }]
-  })).values()]
-  const yDimensions = yDimensionEntries
-    .slice(0, 7)
-    .map(({ side, offset, position }, index) => {
-      const py = y + drawH - position * scale
-      const edgePosition = side === 'bottom' ? y + drawH : y
-      const dimX = x + drawW + 13 + index * 9
-      return `<line x1="${x + drawW}" y1="${edgePosition}" x2="${dimX}" y2="${edgePosition}" class="extension"/><line x1="${x + drawW}" y1="${py}" x2="${dimX}" y2="${py}" class="extension"/>${dimensionLine(dimX, edgePosition, dimX, py, `${offset}`, true)}`
-    }).join('')
+  const groupLabels = groups.flatMap((group) => {
+    const sorted = [...group.operations].sort((left, right) => left.yMm - right.yMm)
+    const clusters: ProductionOperation[][] = []
+    sorted.forEach((operation) => {
+      const cluster = clusters.at(-1)
+      const previous = cluster?.at(-1)
+      if (!cluster || !previous || operation.yMm - previous.yMm > 120) clusters.push([operation])
+      else cluster.push(operation)
+    })
+    return clusters.map((cluster) => {
+      const operation = cluster[0]
+      const averageX = cluster.reduce((total, item) => total + item.xMm, 0) / cluster.length
+      const averageY = cluster.reduce((total, item) => total + item.yMm, 0) / cluster.length
+      const px = x + Math.min(width, averageX) * scale
+      const py = y + drawH - Math.min(height, averageY) * scale
+      return `<circle cx="${number(px + 10)}" cy="${number(py - 10)}" r="8" class="node-badge"/><text x="${number(px + 10)}" y="${number(py - 7)}" class="node-label" text-anchor="middle">${groupByOperation.get(operation.id)}</text>`
+    })
+  }).join('')
   const detailWidth = 176
-  const detailHeight = Math.min(118, Math.max(92, 390 / Math.max(1, groups.length)))
-  const details = groups.slice(0, 4).map((group, index) => buildDetailSvg(group, panel.widthMm, 350, 54 + index * (detailHeight + 7), detailWidth, detailHeight)).join('')
+  const detailHeight = Math.min(118, Math.max(96, 410 / Math.max(1, groups.length)))
+  const details = groups.slice(0, 4).map((group, index) => buildDetailSvg(group, panel.widthMm, panel.heightMm, 350, 60 + index * (detailHeight + 7), detailWidth, detailHeight)).join('')
+  const clearanceSummary = panel.clearances.length > 0
+    ? `Проём ${Math.round(panel.openingWidthMm)} мм; ${panel.clearances.map((item) => `${item.widthAdjustmentMm > 0 ? '+' : ''}${Math.round(item.widthAdjustmentMm)} ${item.label}`).join('; ')}; стекло ${Math.round(panel.widthMm)} мм`
+    : `Проём и чистовой размер стекла: ${Math.round(panel.widthMm)} мм`
 
   return `<svg width="535" height="545" viewBox="0 0 535 545" xmlns="http://www.w3.org/2000/svg">
     <defs><marker id="dim-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M 0 5 L 10 0 L 10 10 Z" fill="#111827"/></marker></defs>
-    <style>.panel{fill:#f0f9ff;stroke:#111827;stroke-width:1.4}.cut{fill:#fff;stroke:#111827;stroke-width:1.35}.center{fill:none;stroke:#64748b;stroke-width:.7;stroke-dasharray:3 2}.dim{stroke:#111827;stroke-width:.7}.extension{stroke:#64748b;stroke-width:.55}.dim-text{font:8px Roboto,Arial,sans-serif;fill:#111827}.node-label{font:bold 8px Roboto,Arial,sans-serif;fill:#1d4ed8}.detail-box{fill:#fff;stroke:#94a3b8;stroke-width:.7}.detail-title{font:bold 8px Roboto,Arial,sans-serif;fill:#111827}.detail-text{font:8px Roboto,Arial,sans-serif;fill:#111827}.detail-note{font:6.8px Roboto,Arial,sans-serif;fill:#475569}.leader{fill:none;stroke:#111827;stroke-width:.7}</style>
+    <style>.panel{fill:#f0f9ff;stroke:#111827;stroke-width:1.4}.cut{fill:#fff;stroke:#111827;stroke-width:1.35}.center{fill:none;stroke:#64748b;stroke-width:.7;stroke-dasharray:3 2}.dim{stroke:#111827;stroke-width:.7}.extension{stroke:#64748b;stroke-width:.55}.dim-text{font:8px Roboto,Arial,sans-serif;fill:#111827}.node-badge{fill:#fff;stroke:#2563eb;stroke-width:1}.node-label{font:bold 7px Roboto,Arial,sans-serif;fill:#1d4ed8}.detail-box{fill:#fff;stroke:#94a3b8;stroke-width:.7}.detail-title{font:bold 8px Roboto,Arial,sans-serif;fill:#111827}.detail-text{font:8px Roboto,Arial,sans-serif;fill:#111827}.detail-note{font:6.8px Roboto,Arial,sans-serif;fill:#475569}.clearance-text{font:bold 7px Roboto,Arial,sans-serif;fill:#1d4ed8}.leader{fill:none;stroke:#111827;stroke-width:.7}</style>
     <rect width="535" height="545" fill="#ffffff"/>
     <text x="12" y="18" class="detail-title">КОНТУР СТЕКЛА И ПРИВЯЗКИ ОБРАБОТОК</text>
     <text x="523" y="18" class="detail-note" text-anchor="end">Все размеры в миллиметрах</text>
+    <text x="12" y="34" class="clearance-text">${xml(clearanceSummary)}</text>
     <path d="${panelPath}" class="panel"/>
     ${operations}
-    ${xDimensions}${yDimensions}
+    ${groupLabels}
     <line x1="${x}" y1="${y + drawH}" x2="${x}" y2="${y + drawH + 27}" class="extension"/><line x1="${x + drawW}" y1="${y + drawH}" x2="${x + drawW}" y2="${y + drawH + 27}" class="extension"/>
     ${dimensionLine(x, y + drawH + 22, x + drawW, y + drawH + 22, `${Math.round(width)}`)}
     <line x1="${x}" y1="${y}" x2="${x - 30}" y2="${y}" class="extension"/><line x1="${x}" y1="${y + drawH}" x2="${x - 30}" y2="${y + drawH}" class="extension"/>
@@ -246,7 +256,7 @@ const buildPanelSvg = (panel: ProductionPanel) => {
     ${details}
     <rect x="8" y="510" width="519" height="27" class="detail-box"/>
     <text x="17" y="522" class="detail-title">${xml(panel.label)} · ${panel.role === 'door' ? 'дверное стекло' : 'неподвижное стекло'} · ${Math.round(panel.widthMm)} × ${Math.round(panel.heightMm)} мм · ${panel.quantity} шт.</text>
-    <text x="17" y="532" class="detail-note">Обработка кромок: полировка. Стекло: закалённое. Контуры вырезов показаны на детали и увеличены в узлах справа.</text>
+    <text x="17" y="532" class="detail-note">Обработка кромок: полировка. Стекло: закалённое. Привязки отверстий вынесены в узлы справа без пересечения размерных линий.</text>
   </svg>`
 }
 
@@ -390,13 +400,16 @@ export const buildProductionPdfDefinition = (draft: ProductionPackage): TDocumen
       { svg: buildPanelSvg(panel), fit: [535, 545], margin: [0, 8, 0, 4] },
       {
         table: {
-          widths: ['*', '*', '*', '*'],
+          widths: [74, 92, '*', 82, 56],
           body: [
-            [headerCell('Форма'), headerCell('Ширина'), headerCell('Высота'), headerCell('Толщина')],
+            [headerCell('Форма'), headerCell('Проём'), headerCell('Учтённые зазоры'), headerCell('Стекло'), headerCell('Толщина')],
             [
               panel.shape === 'trapezoid' ? 'Трапеция' : 'Прямоугольник',
-              { text: mm(panel.widthMm), alignment: 'center', bold: true },
-              { text: mm(panel.heightMm), alignment: 'center', bold: true },
+              { text: `${mm(panel.openingWidthMm)} × ${mm(panel.openingHeightMm)}`, alignment: 'center' },
+              panel.clearances.length > 0
+                ? panel.clearances.map((item) => `${item.widthAdjustmentMm > 0 ? '+' : ''}${Math.round(item.widthAdjustmentMm)} мм - ${item.label} (${item.sourceSku})`).join('\n')
+                : 'Не требуются',
+              { text: `${mm(panel.widthMm)} × ${mm(panel.heightMm)}`, alignment: 'center', bold: true },
               { text: mm(draft.glassThickness), alignment: 'center', bold: true },
             ],
           ] as TableCell[][],
@@ -491,6 +504,11 @@ export type ProductionPdfPreview = {
   title: string
   documentLabel: string
   url: string
+  attachments: Array<{
+    fileName: string
+    label: string
+    url: string
+  }>
 }
 
 export const createProductionPdfBlob = (draft: ProductionPackage) => new Promise<Blob>((resolve, reject) => {
@@ -517,11 +535,17 @@ export const createProductionPdfBlob = (draft: ProductionPackage) => new Promise
 
 export const shareProductionPdf = async (draft: ProductionPackage): Promise<ProductionPdfPreview> => {
   const blob = await createProductionPdfBlob(draft)
+  const dxfBlob = createProductionDxfBlob(draft)
   const baseNumber = draft.quoteNumber.trim().replace(/[^\p{L}\p{N}._-]+/gu, '-')
   return {
     fileName: `Производство-${baseNumber}-позиция-${draft.itemIndex + 1}.pdf`,
     title: `${draft.quoteNumber} · ${draft.constructionTitle}`,
     documentLabel: 'Производственные чертежи',
     url: URL.createObjectURL(blob),
+    attachments: [{
+      fileName: `Производство-${baseNumber}-позиция-${draft.itemIndex + 1}-1к1.dxf`,
+      label: 'Скачать DXF 1:1',
+      url: URL.createObjectURL(dxfBlob),
+    }],
   }
 }

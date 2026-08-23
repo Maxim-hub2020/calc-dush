@@ -24,21 +24,21 @@ const templates: ShowerHardwareMachiningTemplate[] = [
     pattern: 'wall-hinge-fdp122',
     drawingUrl: 'https://av24.su/wa-data/public/site/drawings/FDP-122-ZN-av24.pdf',
     supportedThicknesses: [6, 8],
-    sourceNote: '2 отверстия Ø16, межосевое 50 мм, ось 34 мм от кромки',
+    sourceNote: '2 отверстия Ø16, межосевое 50 мм, ось 34 мм от кромки; зазор стекло-стена 6 мм',
   },
   {
     skuPrefix: 'FDP-115',
     pattern: 'glass-hinge-fdp115',
     drawingUrl: 'https://av24.su/wa-data/public/site/drawings/FDP-115-SUS304-av24.pdf',
     supportedThicknesses: [6, 8],
-    sourceNote: 'На каждом стекле 2 отверстия Ø14, межосевое 45 мм, ось 32 мм от кромки',
+    sourceNote: 'На каждом стекле 2 отверстия Ø14, межосевое 45 мм, ось 32 мм от кромки; зазор между стеклами 8 мм',
   },
   {
     skuPrefix: 'FDP-184',
     pattern: 'corner-hinge-fdp184',
     drawingUrl: 'https://av24.su/wa-data/public/site/drawings/FDP-184-BR.pdf',
     supportedThicknesses: [6, 8],
-    sourceNote: 'Вырез R15 на дверном стекле и 2 отверстия Ø16 на ответном стекле',
+    sourceNote: 'Вырез R15 на дверном стекле и 2 отверстия Ø16 на ответном стекле; угловой зазор 6 мм',
   },
   {
     skuPrefix: 'FDK-22',
@@ -80,7 +80,7 @@ const templates: ShowerHardwareMachiningTemplate[] = [
     pattern: 'slider-fds1',
     drawingUrl: 'https://av24.su/wa-data/public/shop/products/10/29/2910/images/12989/12989.970x0.jpg',
     supportedThicknesses: [8],
-    sourceNote: 'Карта отверстий роликов, креплений трека и вырез Ø48 под ручку',
+    sourceNote: 'Карта отверстий роликов, креплений трека и вырез Ø48 под ручку; дверное стекло L/2 + 50 мм',
   },
   {
     skuPrefix: 'FDC-12',

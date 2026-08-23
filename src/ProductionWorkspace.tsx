@@ -157,12 +157,12 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
               {generating ? <LoaderCircle className="is-spinning" size={28} /> : validationErrors.length === 0 ? <ShieldCheck size={28} /> : <AlertTriangle size={28} />}
             </div>
             <div>
-              <h3>{generating ? 'Формируем производственный PDF' : validationErrors.length === 0 ? 'Все шаблоны проверены' : 'Нужны данные по фурнитуре'}</h3>
+              <h3>{generating ? 'Формируем PDF и DXF 1:1' : validationErrors.length === 0 ? 'Все шаблоны проверены' : 'Нужны данные по фурнитуре'}</h3>
               <p>
                 {generating
-                  ? 'Стекла, отверстия, вырезы, карта напила и закупка уже рассчитаны.'
+                  ? 'Стекла, зазоры, отверстия, вырезы, карта напила и закупка уже рассчитаны.'
                   : validationErrors.length === 0
-                    ? 'PDF создаётся автоматически по текущему расчёту.'
+                    ? 'PDF и DXF в масштабе 1:1 создаются автоматически по текущему расчёту.'
                     : 'Система не выпускает в производство неподтверждённые размеры.'}
               </p>
             </div>
@@ -195,6 +195,11 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
                     <span>{panel.role === 'door' ? 'Дверь' : 'Неподвижное'} · стекло {index + 1}</span>
                     <h4>{panel.label}</h4>
                     <strong>{formatMm(panel.widthMm)} × {formatMm(panel.heightMm)} × {draft.glassThickness} мм</strong>
+                    {panel.clearances.length > 0 ? (
+                      <p>
+                        Проём {formatMm(panel.openingWidthMm)}. {panel.clearances.map((item) => `${item.widthAdjustmentMm > 0 ? '+' : ''}${formatMm(item.widthAdjustmentMm)}: ${item.label}`).join('; ')}.
+                      </p>
+                    ) : null}
                     {panel.operations.length > 0 ? (
                       <ul>
                         {panel.operations.map((operation) => (

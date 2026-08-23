@@ -437,6 +437,11 @@ export type QuotePdfPreview = {
   title: string
   documentLabel: string
   url: string
+  attachments?: Array<{
+    fileName: string
+    label: string
+    url: string
+  }>
 }
 
 export const shareQuotePdf = async (quote: Quote): Promise<QuotePdfPreview> => {

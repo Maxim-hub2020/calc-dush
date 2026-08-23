@@ -17,6 +17,16 @@ export type ProductionPanelRole = 'fixed' | 'door'
 export type ProductionOperationEdge = 'left' | 'right' | 'top' | 'bottom'
 export type ProductionOperationProfile = 'circle' | 'round-slot' | 'hinge-cutout'
 
+export type ProductionClearance = {
+  id: string
+  label: string
+  edge: ProductionOperationEdge
+  valueMm: number
+  widthAdjustmentMm: number
+  sourceSku: string
+  sourceUrl?: string
+}
+
 export type ProductionOperation = {
   id: string
   kind: ProductionOperationKind
@@ -40,11 +50,14 @@ export type ProductionPanel = {
   label: string
   role: ProductionPanelRole
   shape: 'rectangle' | 'trapezoid'
+  openingWidthMm: number
+  openingHeightMm: number
   widthMm: number
   heightMm: number
   topWidthMm: number
   quantity: number
   notes: string
+  clearances: ProductionClearance[]
   operations: ProductionOperation[]
 }
 
@@ -142,11 +155,14 @@ const getPanelDefaults = (catalog: PricingCatalog, form: CalculatorForm): Produc
         label: panelLabel(field.label, index),
         role,
         shape: construction.sketch === 'trapezoid' && role === 'fixed' ? 'trapezoid' as const : 'rectangle' as const,
+        openingWidthMm: width,
+        openingHeightMm: height,
         widthMm: width,
         heightMm: height,
         topWidthMm: width,
         quantity: 1,
         notes: role === 'door' ? 'Дверное стекло' : 'Неподвижное стекло',
+        clearances: [],
         operations: [],
       }
     })
@@ -196,9 +212,37 @@ const spacedPositions = (count: number, height: number, margin = 250) => {
   return Array.from({ length: count }, (_, index) => safeMargin + span * index / (count - 1))
 }
 
-const hingeEdge = (_panels: ProductionPanel[], _door: ProductionPanel): Edge => 'left'
+const hingeEdge = (panels: ProductionPanel[], door: ProductionPanel): Edge => {
+  const doorIndex = panels.indexOf(door)
+  const fixedIndex = panels.indexOf(getAdjacentFixed(panels, door) ?? door)
+  return fixedIndex > doorIndex ? 'right' : 'left'
+}
 const oppositeEdge = (edge: Edge): Edge => edge === 'left' ? 'right' : 'left'
 const edgeX = (panel: ProductionPanel, edge: Edge, offset: number) => edge === 'left' ? offset : panel.widthMm - offset
+
+const addWidthClearance = (
+  panel: ProductionPanel,
+  label: string,
+  edge: Edge,
+  valueMm: number,
+  widthAdjustmentMm: number,
+  sourceSku: string,
+  sourceUrl?: string,
+) => {
+  const key = `${sourceSku}|${label}|${edge}`
+  if (panel.clearances.some((item) => `${item.sourceSku}|${item.label}|${item.edge}` === key)) return
+  panel.clearances.push({
+    id: crypto.randomUUID(),
+    label,
+    edge,
+    valueMm,
+    widthAdjustmentMm,
+    sourceSku,
+    sourceUrl,
+  })
+  panel.widthMm = Math.max(1, panel.widthMm + widthAdjustmentMm)
+  panel.topWidthMm = Math.max(1, panel.topWidthMm + widthAdjustmentMm)
+}
 
 const addHole = (
   panel: ProductionPanel,
@@ -266,17 +310,93 @@ const getAdjacentFixed = (panels: ProductionPanel[], door: ProductionPanel) => {
   return [...panels.slice(0, index).reverse(), ...panels.slice(index + 1)].find((panel) => panel.role === 'fixed')
 }
 
+const applyVerifiedClearances = (
+  resolvedChecks: Array<{
+    component: ResolvedComponent
+    template?: ShowerHardwareMachiningTemplate
+    check: ProductionTemplateCheck
+  }>,
+  panels: ProductionPanel[],
+) => {
+  const doors = panels.filter((panel) => panel.role === 'door')
+
+  resolvedChecks.forEach(({ component, template, check }) => {
+    if (!template || check.status !== 'verified') return
+    const sku = component.item.sku ?? template.skuPrefix
+    if (template.pattern === 'wall-hinge-fdp122') {
+      doors.forEach((door) => addWidthClearance(
+        door,
+        'Зазор стекло-стена по петле',
+        hingeEdge(panels, door),
+        6,
+        -6,
+        sku,
+        template.drawingUrl,
+      ))
+    } else if (template.pattern === 'glass-hinge-fdp115') {
+      doors.forEach((door) => addWidthClearance(
+        door,
+        'Зазор стекло-стекло по петле',
+        hingeEdge(panels, door),
+        8,
+        -8,
+        sku,
+        template.drawingUrl,
+      ))
+    } else if (template.pattern === 'corner-hinge-fdp184') {
+      doors.forEach((door) => addWidthClearance(
+        door,
+        'Угловой зазор стекло-стекло по петле',
+        hingeEdge(panels, door),
+        6,
+        -6,
+        sku,
+        template.drawingUrl,
+      ))
+    } else if (template.pattern === 'slider-fds1') {
+      doors.forEach((door) => addWidthClearance(
+        door,
+        'Перехлёст раздвижной створки',
+        oppositeEdge(hingeEdge(panels, door)),
+        50,
+        50,
+        sku,
+        template.drawingUrl,
+      ))
+    }
+  })
+
+  const magneticSeal = resolvedChecks.find(({ component }) => (
+    /магнит/i.test(component.item.label)
+    && /FDPP-|уплотнител/i.test(component.item.sku ?? component.item.label)
+  ))?.component
+  if (magneticSeal) {
+    const sku = magneticSeal.item.sku ?? magneticSeal.item.label
+    doors.forEach((door) => addWidthClearance(
+      door,
+      'Зазор притвора под магнитный уплотнитель',
+      oppositeEdge(hingeEdge(panels, door)),
+      6,
+      -6,
+      sku,
+      magneticSeal.item.sourceUrl,
+    ))
+  }
+}
+
 const applyMachiningPattern = (
   pattern: MachiningPattern,
   component: ResolvedComponent,
   template: ShowerHardwareMachiningTemplate,
   panels: ProductionPanel[],
+  placementIssues: string[],
 ) => {
   const fixedPanels = panels.filter((panel) => panel.role === 'fixed')
   const doors = panels.filter((panel) => panel.role === 'door')
   const sku = component.item.sku ?? template.skuPrefix
 
   if (pattern === 'wall-hinge-fdp122') {
+    if (doors.length === 0) placementIssues.push(`${sku}: в конструкции нет дверного стекла для установки петли`)
     groupCountByPanel(doors, component.quantity).forEach(({ panel, count }) => {
       const edge = hingeEdge(panels, panel)
       spacedPositions(count, panel.heightMm).forEach((center, hingeIndex) => {
@@ -290,7 +410,10 @@ const applyMachiningPattern = (
   if (pattern === 'glass-hinge-fdp115') {
     groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
       const fixed = getAdjacentFixed(panels, door)
-      if (!fixed) return
+      if (!fixed) {
+        placementIssues.push(`${sku}: не найдено неподвижное стекло для ответных отверстий петли`)
+        return
+      }
       const doorEdge = hingeEdge(panels, door)
       const fixedEdge = oppositeEdge(doorEdge)
       spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
@@ -306,7 +429,10 @@ const applyMachiningPattern = (
   if (pattern === 'corner-hinge-fdp184') {
     groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
       const fixed = getAdjacentFixed(panels, door)
-      if (!fixed) return
+      if (!fixed) {
+        placementIssues.push(`${sku}: не найдено неподвижное стекло для ответной части угловой петли`)
+        return
+      }
       const doorEdge = hingeEdge(panels, door)
       const fixedEdge = oppositeEdge(doorEdge)
       spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
@@ -329,8 +455,11 @@ const applyMachiningPattern = (
   }
 
   if (pattern === 'corner-connector-fdk24') {
-    const pair = fixedPanels.length >= 2 ? fixedPanels.slice(0, 2) : panels.slice(0, 2)
-    if (pair.length < 2) return
+    const pair = fixedPanels.slice(0, 2)
+    if (pair.length < 2) {
+      placementIssues.push(`${sku}: коннектор требует два неподвижных стекла; на дверь он не устанавливается`)
+      return
+    }
     spacedPositions(component.quantity, Math.min(pair[0].heightMm, pair[1].heightMm), 140).forEach((center, index) => {
       addHole(pair[0], component, template, `${sku}: коннектор ${index + 1}, отверстие`, edgeX(pair[0], 'right', 32), center, 20)
       addEdgeCut(pair[1], component, template, 'notch', `${sku}: коннектор ${index + 1}, ответный вырез R10`, 'left', center, 32, 20, 10, 'round-slot', 22)
@@ -339,11 +468,15 @@ const applyMachiningPattern = (
   }
 
   if (pattern === 'glass-connector-fdk28') {
-    const pairs: Array<readonly [ProductionPanel, ProductionPanel]> = doors.flatMap((door) => {
-      const fixed = getAdjacentFixed(panels, door)
-      return fixed ? [[fixed, door] as const] : []
+    const pairs: Array<readonly [ProductionPanel, ProductionPanel]> = []
+    fixedPanels.forEach((panel, index) => {
+      const next = fixedPanels[index + 1]
+      if (next) pairs.push([panel, next])
     })
-    if (pairs.length === 0 && panels.length >= 2) pairs.push([panels[0], panels[1]])
+    if (pairs.length === 0) {
+      placementIssues.push(`${sku}: коннектор требует стык двух неподвижных стекол; дверная створка исключена`)
+      return
+    }
     pairs.forEach((pair, pairIndex) => {
       const count = Math.floor(component.quantity / pairs.length) + (pairIndex < component.quantity % pairs.length ? 1 : 0)
       spacedPositions(count, Math.min(pair[0].heightMm, pair[1].heightMm), 140).forEach((center, index) => {
@@ -463,10 +596,13 @@ export const createProductionPackage = (
     component,
     ...createTemplateCheck(component, glassThickness),
   }))
+  const placementIssues: string[] = []
+
+  applyVerifiedClearances(resolvedChecks, panels)
 
   resolvedChecks.forEach(({ component, template, check }) => {
     if (!template || check.status !== 'verified') return
-    if (template.pattern !== 'none') applyMachiningPattern(template.pattern, component, template, panels)
+    if (template.pattern !== 'none') applyMachiningPattern(template.pattern, component, template, panels, placementIssues)
   })
 
   const purchases = components.map((component) => ({
@@ -498,6 +634,7 @@ export const createProductionPackage = (
   const blockingIssues = templateChecks
     .filter((check) => check.status === 'missing' || check.status === 'incompatible')
     .map((check) => `${check.sku || check.label}: ${check.message}`)
+    .concat(placementIssues)
 
   return {
     quoteNumber,
@@ -514,6 +651,7 @@ export const createProductionPackage = (
     templateChecks,
     warnings: [
       'Контуры отверстий и вырезов построены автоматически по монтажным чертежам выбранных артикулов.',
+      'Чистовые размеры стекол рассчитаны из размеров проёма с учётом подтверждённых зазоров и перехлёстов.',
       'Высотное расположение петель и коннекторов выполнено по производственному стандарту калькулятора.',
     ],
     blockingIssues,

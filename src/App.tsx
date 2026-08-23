@@ -1374,6 +1374,12 @@ function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
             <Save size={18} />
             Скачать PDF
           </a>
+          {preview.attachments?.map((attachment) => (
+            <a download={attachment.fileName} href={attachment.url} key={attachment.fileName}>
+              <FileDown size={18} />
+              {attachment.label}
+            </a>
+          ))}
           <button type="button" onClick={onClose}>Закрыть</button>
         </footer>
       </section>
