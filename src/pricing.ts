@@ -109,7 +109,7 @@ const thicknessComponents = (
 ]
 
 export const defaultCatalog: PricingCatalog = {
-  revision: 8,
+  revision: 9,
   constructions: [
     {
       id: '6663',
@@ -439,6 +439,7 @@ export const defaultCatalog: PricingCatalog = {
   ],
   hardware: [
     { id: 'chrome', label: 'Глянцевый хром', price: 0 },
+    { id: 'white', label: 'Белый матовый', price: 20 },
     { id: 'black', label: 'Черный матовый', price: 5 },
     { id: 'mattchrome', label: 'Матовый хром', price: 25 },
     { id: 'bronze', label: 'Бронза', price: 25 },

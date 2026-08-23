@@ -116,7 +116,15 @@ export const mergeCatalog = (saved: Partial<PricingCatalog> = {}): PricingCatalo
           ...defaultCatalog.hardware,
           ...(saved.hardware ?? []).filter((item) => !defaultCatalog.hardware.some((entry) => entry.id === item.id)),
         ]
-      : mergeItems(defaultCatalog.hardware, saved.hardware),
+      : savedRevision < 9
+        ? [
+            ...defaultCatalog.hardware.map((item) => ({
+              ...item,
+              ...(saved.hardware ?? []).find((savedItem) => savedItem.id === item.id),
+            })),
+            ...(saved.hardware ?? []).filter((item) => !defaultCatalog.hardware.some((entry) => entry.id === item.id)),
+          ]
+        : mergeItems(defaultCatalog.hardware, saved.hardware),
     hardwareItems,
     hardwareClass: savedRevision < 4
       ? [
