@@ -5070,12 +5070,20 @@ function ShowerHardwarePicker({ items, value, onChange }: ShowerHardwarePickerPr
   const [query, setQuery] = useState('')
   const [sectionId, setSectionId] = useState<ShowerHardwareSectionId>(selected?.sectionId ?? 'accessories')
   const filteredItems = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase('ru')
-    return items.filter((item) => item.sectionId === sectionId && (
-      !normalizedQuery
-      || item.label.toLocaleLowerCase('ru').includes(normalizedQuery)
-      || item.sku?.toLocaleLowerCase('ru').includes(normalizedQuery)
-    ))
+    const normalizedQuery = query.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е')
+    const numericQuery = normalizedQuery.replace(/[^\d,.-]/g, '').replace(',', '.')
+
+    return items.filter((item) => {
+      if (!normalizedQuery) return item.sectionId === sectionId
+
+      const sectionLabel = showerHardwareSections.find((section) => section.id === item.sectionId)?.label ?? ''
+      const searchableText = `${item.label} ${item.sku ?? ''} ${sectionLabel}`
+        .toLocaleLowerCase('ru')
+        .replaceAll('ё', 'е')
+      const matchesPrice = numericQuery.length > 0 && String(item.price).includes(numericQuery)
+
+      return searchableText.includes(normalizedQuery) || matchesPrice
+    })
   }, [items, query, sectionId])
 
   useEffect(() => {
@@ -5121,7 +5129,7 @@ function ShowerHardwarePicker({ items, value, onChange }: ShowerHardwarePickerPr
               <span className="sr-only">Поиск фурнитуры</span>
               <input
                 autoFocus
-                placeholder="Название или артикул"
+                placeholder="Поиск везде: название, артикул, цена"
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -5132,7 +5140,10 @@ function ShowerHardwarePicker({ items, value, onChange }: ShowerHardwarePickerPr
             </button>
           </div>
           <div className="composition-hardware-picker-list">
-            {filteredItems.map((item) => (
+            {filteredItems.map((item) => {
+              const sectionLabel = showerHardwareSections.find((section) => section.id === item.sectionId)?.label
+
+              return (
               <button
                 className={item.id === value ? 'is-selected' : ''}
                 key={item.id}
@@ -5145,11 +5156,12 @@ function ShowerHardwarePicker({ items, value, onChange }: ShowerHardwarePickerPr
               >
                 <span>
                   <strong>{item.label}</strong>
-                  <small>{item.sku ? `арт. ${item.sku}` : 'Своя позиция'}</small>
+                  <small>{[sectionLabel, item.sku ? `арт. ${item.sku}` : 'Своя позиция'].filter(Boolean).join(' · ')}</small>
                 </span>
                 <b>{item.priceOnRequest ? 'По запросу' : money(item.price)}</b>
               </button>
-            ))}
+              )
+            })}
             {filteredItems.length === 0 ? <p>Совпадений нет</p> : null}
           </div>
         </div>
