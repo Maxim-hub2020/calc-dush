@@ -14,6 +14,8 @@ import {
 
 export type ProductionOperationKind = 'hole' | 'notch' | 'cutout' | 'template'
 export type ProductionPanelRole = 'fixed' | 'door'
+export type ProductionOperationEdge = 'left' | 'right' | 'top' | 'bottom'
+export type ProductionOperationProfile = 'circle' | 'round-slot' | 'hinge-cutout'
 
 export type ProductionOperation = {
   id: string
@@ -24,6 +26,10 @@ export type ProductionOperation = {
   widthMm: number
   heightMm: number
   diameterMm: number
+  radiusMm: number
+  straightDepthMm: number
+  edge?: ProductionOperationEdge
+  profile: ProductionOperationProfile
   confirmed: boolean
   sourceSku: string
   sourceUrl?: string
@@ -209,9 +215,12 @@ const addHole = (
   xMm,
   yMm,
   widthMm: 0,
-  heightMm: 0,
-  diameterMm,
-  confirmed: true,
+    heightMm: 0,
+    diameterMm,
+    radiusMm: diameterMm / 2,
+    straightDepthMm: 0,
+    profile: 'circle',
+    confirmed: true,
   sourceSku: component.item.sku ?? '',
   sourceUrl: template.drawingUrl,
 })
@@ -226,6 +235,9 @@ const addEdgeCut = (
   yMm: number,
   depthMm: number,
   openingMm: number,
+  radiusMm: number,
+  profile: Extract<ProductionOperationProfile, 'round-slot' | 'hinge-cutout'>,
+  straightDepthMm = Math.max(0, depthMm - radiusMm),
 ) => panel.operations.push({
   id: crypto.randomUUID(),
   kind,
@@ -235,6 +247,10 @@ const addEdgeCut = (
   widthMm: depthMm,
   heightMm: openingMm,
   diameterMm: 0,
+  radiusMm,
+  straightDepthMm,
+  edge,
+  profile,
   confirmed: true,
   sourceSku: component.item.sku ?? '',
   sourceUrl: template.drawingUrl,
@@ -294,7 +310,7 @@ const applyMachiningPattern = (
       const doorEdge = hingeEdge(panels, door)
       const fixedEdge = oppositeEdge(doorEdge)
       spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
-        addEdgeCut(door, component, template, 'cutout', `${sku}: вырез петли ${hingeIndex + 1}, R15`, doorEdge, center, 40, 40)
+        addEdgeCut(door, component, template, 'cutout', `${sku}: вырез петли ${hingeIndex + 1}, R15`, doorEdge, center, 40, 40, 15, 'hinge-cutout', 25)
         addHole(fixed, component, template, `${sku}: ответная часть ${hingeIndex + 1}, верхнее`, edgeX(fixed, fixedEdge, 40), center + 15, 16)
         addHole(fixed, component, template, `${sku}: ответная часть ${hingeIndex + 1}, нижнее`, edgeX(fixed, fixedEdge, 40), center - 15, 16)
       })
@@ -306,7 +322,7 @@ const applyMachiningPattern = (
     groupCountByPanel(fixedPanels, component.quantity).forEach(({ panel, count }, panelIndex) => {
       const edge: Edge = panelIndex === 0 ? 'left' : 'right'
       spacedPositions(count, panel.heightMm, 140).forEach((center, connectorIndex) => {
-        addEdgeCut(panel, component, template, 'notch', `${sku}: коннектор ${connectorIndex + 1}, R10`, edge, center, 22, 20)
+        addEdgeCut(panel, component, template, 'notch', `${sku}: коннектор ${connectorIndex + 1}, R10`, edge, center, 32, 20, 10, 'round-slot', 22)
       })
     })
     return
@@ -317,7 +333,7 @@ const applyMachiningPattern = (
     if (pair.length < 2) return
     spacedPositions(component.quantity, Math.min(pair[0].heightMm, pair[1].heightMm), 140).forEach((center, index) => {
       addHole(pair[0], component, template, `${sku}: коннектор ${index + 1}, отверстие`, edgeX(pair[0], 'right', 32), center, 20)
-      addEdgeCut(pair[1], component, template, 'notch', `${sku}: коннектор ${index + 1}, ответный вырез R10`, 'left', center, 22, 20)
+      addEdgeCut(pair[1], component, template, 'notch', `${sku}: коннектор ${index + 1}, ответный вырез R10`, 'left', center, 32, 20, 10, 'round-slot', 22)
     })
     return
   }
@@ -331,8 +347,8 @@ const applyMachiningPattern = (
     pairs.forEach((pair, pairIndex) => {
       const count = Math.floor(component.quantity / pairs.length) + (pairIndex < component.quantity % pairs.length ? 1 : 0)
       spacedPositions(count, Math.min(pair[0].heightMm, pair[1].heightMm), 140).forEach((center, index) => {
-        addEdgeCut(pair[0], component, template, 'notch', `${sku}: коннектор ${index + 1}, R10`, 'right', center, 22, 20)
-        addEdgeCut(pair[1], component, template, 'notch', `${sku}: ответный вырез ${index + 1}, R10`, 'left', center, 22, 20)
+        addEdgeCut(pair[0], component, template, 'notch', `${sku}: коннектор ${index + 1}, R10`, 'right', center, 32, 20, 10, 'round-slot', 22)
+        addEdgeCut(pair[1], component, template, 'notch', `${sku}: ответный вырез ${index + 1}, R10`, 'left', center, 32, 20, 10, 'round-slot', 22)
       })
     })
     return
@@ -497,7 +513,7 @@ export const createProductionPackage = (
     purchases,
     templateChecks,
     warnings: [
-      'Координаты обработок построены автоматически по монтажным чертежам выбранных артикулов.',
+      'Контуры отверстий и вырезов построены автоматически по монтажным чертежам выбранных артикулов.',
       'Высотное расположение петель и коннекторов выполнено по производственному стандарту калькулятора.',
     ],
     blockingIssues,

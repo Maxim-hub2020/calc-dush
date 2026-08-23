@@ -48,6 +48,29 @@ const operationKindLabels: Record<ProductionOperation['kind'], string> = {
 
 const formatMm = (value: number) => `${Math.round(value)} мм`
 
+const miniatureEdgeCutPath = (
+  operation: ProductionOperation,
+  left: number,
+  top: number,
+  drawWidth: number,
+  drawHeight: number,
+  scale: number,
+) => {
+  const centerY = top + drawHeight - operation.yMm * scale
+  const depth = operation.widthMm * scale
+  const halfOpening = operation.heightMm * scale / 2
+  const radius = operation.radiusMm * scale
+  const straight = operation.straightDepthMm * scale
+  const right = operation.edge === 'right'
+  const edgeX = right ? left + drawWidth : left
+  const direction = right ? -1 : 1
+  const sweep = right ? 0 : 1
+  if (operation.profile === 'hinge-cutout') {
+    return `M ${edgeX} ${centerY - halfOpening} H ${edgeX + direction * straight} A ${radius} ${radius} 0 0 ${sweep} ${edgeX + direction * depth} ${centerY - halfOpening + radius} V ${centerY + halfOpening - radius} A ${radius} ${radius} 0 0 ${sweep} ${edgeX + direction * straight} ${centerY + halfOpening} H ${edgeX} Z`
+  }
+  return `M ${edgeX} ${centerY - halfOpening} H ${edgeX + direction * straight} A ${radius} ${radius} 0 0 ${sweep} ${edgeX + direction * depth} ${centerY} A ${radius} ${radius} 0 0 ${sweep} ${edgeX + direction * straight} ${centerY + halfOpening} H ${edgeX} Z`
+}
+
 function PanelMiniature({ panel }: { panel: ProductionPanel }) {
   const width = Math.max(1, panel.widthMm)
   const height = Math.max(1, panel.heightMm)
@@ -67,18 +90,13 @@ function PanelMiniature({ panel }: { panel: ProductionPanel }) {
         if (operation.kind === 'hole') {
           return <circle cx={cx} cy={cy} fill="#fff" key={operation.id} r={Math.max(2.5, operation.diameterMm * scale / 2)} stroke="#dc2626" strokeWidth="1.5" />
         }
-        const operationWidth = Math.max(6, operation.widthMm * scale)
-        const operationHeight = Math.max(6, operation.heightMm * scale)
         return (
-          <rect
+          <path
+            d={miniatureEdgeCutPath(operation, left, top, drawWidth, drawHeight, scale)}
             fill="#fff7ed"
-            height={operationHeight}
             key={operation.id}
             stroke="#c2410c"
             strokeWidth="1.5"
-            width={operationWidth}
-            x={cx - operationWidth / 2}
-            y={cy - operationHeight / 2}
           />
         )
       })}

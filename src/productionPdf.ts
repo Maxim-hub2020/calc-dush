@@ -37,67 +37,240 @@ const operationKindLabel: Record<ProductionOperation['kind'], string> = {
 
 const operationSize = (operation: ProductionOperation) => {
   if (operation.kind === 'hole') return `Ø ${mm(operation.diameterMm)}`
+  if (operation.profile === 'round-slot') {
+    return `${mm(operation.heightMm)} × ${mm(operation.straightDepthMm)} + R${Math.round(operation.radiusMm)}`
+  }
+  if (operation.profile === 'hinge-cutout') {
+    return `${mm(operation.widthMm)} × ${mm(operation.heightMm)}, R${Math.round(operation.radiusMm)}`
+  }
   if (operation.widthMm > 0 || operation.heightMm > 0) return `${mm(operation.widthMm)} × ${mm(operation.heightMm)}`
   return 'Размер по шаблону'
+}
+
+const number = (value: number) => Math.round(value * 10) / 10
+
+const uniqueNumbers = (values: number[]) => [...new Set(values.map((value) => Math.round(value)))]
+
+const operationGroupKey = (operation: ProductionOperation) => [
+  operation.sourceSku,
+  operation.profile,
+  Math.round(operation.diameterMm),
+  Math.round(operation.widthMm),
+  Math.round(operation.heightMm),
+  operation.edge ?? '',
+].join('|')
+
+const buildOperationGroups = (panel: ProductionPanel) => {
+  const groups = new Map<string, ProductionOperation[]>()
+  panel.operations.forEach((operation) => {
+    const key = operationGroupKey(operation)
+    groups.set(key, [...(groups.get(key) ?? []), operation])
+  })
+  return [...groups.values()].map((operations, index) => ({
+    id: `A${index + 1}`,
+    operations,
+    operation: operations[0],
+  }))
+}
+
+const dimensionLine = (
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  label: string,
+  rotate = false,
+) => {
+  const textX = (x1 + x2) / 2
+  const textY = (y1 + y2) / 2 - (rotate ? 0 : 4)
+  const transform = rotate ? ` transform="rotate(-90 ${textX} ${textY})"` : ''
+  return `<line x1="${number(x1)}" y1="${number(y1)}" x2="${number(x2)}" y2="${number(y2)}" class="dim" marker-start="url(#dim-arrow)" marker-end="url(#dim-arrow)"/><text x="${number(textX)}" y="${number(textY)}" class="dim-text" text-anchor="middle"${transform}>${xml(label)}</text>`
+}
+
+const centerMark = (x: number, y: number, size = 6) => (
+  `<path d="M ${number(x - size)} ${number(y)} H ${number(x + size)} M ${number(x)} ${number(y - size)} V ${number(y + size)}" class="center"/>`
+)
+
+const edgeCutPath = (
+  operation: ProductionOperation,
+  panelX: number,
+  panelY: number,
+  drawWidth: number,
+  drawHeight: number,
+  scale: number,
+) => {
+  const edge = operation.edge ?? (operation.xMm < drawWidth / scale / 2 ? 'left' : 'right')
+  const centerY = panelY + drawHeight - operation.yMm * scale
+  const depth = operation.widthMm * scale
+  const halfOpening = operation.heightMm * scale / 2
+  const radius = operation.radiusMm * scale
+  const straight = operation.straightDepthMm * scale
+
+  if (edge === 'right') {
+    const x = panelX + drawWidth
+    if (operation.profile === 'hinge-cutout') {
+      return `M ${x} ${centerY - halfOpening} H ${x - straight} A ${radius} ${radius} 0 0 0 ${x - depth} ${centerY - halfOpening + radius} V ${centerY + halfOpening - radius} A ${radius} ${radius} 0 0 0 ${x - straight} ${centerY + halfOpening} H ${x} Z`
+    }
+    return `M ${x} ${centerY - halfOpening} H ${x - straight} A ${radius} ${radius} 0 0 0 ${x - depth} ${centerY} A ${radius} ${radius} 0 0 0 ${x - straight} ${centerY + halfOpening} H ${x} Z`
+  }
+
+  const x = panelX
+  if (operation.profile === 'hinge-cutout') {
+    return `M ${x} ${centerY - halfOpening} H ${x + straight} A ${radius} ${radius} 0 0 1 ${x + depth} ${centerY - halfOpening + radius} V ${centerY + halfOpening - radius} A ${radius} ${radius} 0 0 1 ${x + straight} ${centerY + halfOpening} H ${x} Z`
+  }
+  return `M ${x} ${centerY - halfOpening} H ${x + straight} A ${radius} ${radius} 0 0 1 ${x + depth} ${centerY} A ${radius} ${radius} 0 0 1 ${x + straight} ${centerY + halfOpening} H ${x} Z`
+}
+
+const buildDetailSvg = (
+  group: ReturnType<typeof buildOperationGroups>[number],
+  panelWidthMm: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) => {
+  const operation = group.operation
+  const title = `${group.id} · ${operation.sourceSku || operationKindLabel[operation.kind]}`
+  const cx = x + width / 2
+  const cy = y + 58
+  let drawing = ''
+
+  if (operation.profile === 'circle') {
+    const radius = 13
+    const centers = group.operations.length > 1 ? [cy - 22, cy + 22] : [cy]
+    drawing += centers.map((centerY) => `<circle cx="${cx}" cy="${centerY}" r="${radius}" class="cut"/>${centerMark(cx, centerY, 5)}`).join('')
+    drawing += `<path d="M ${cx + radius} ${centers[0]} L ${x + width - 12} ${centers[0] - 16}" class="leader"/><text x="${x + width - 10}" y="${centers[0] - 18}" class="detail-text" text-anchor="end">Ø${Math.round(operation.diameterMm)}</text>`
+    if (centers.length > 1) {
+      const actualSpacing = uniqueNumbers(group.operations.flatMap((item, index) => group.operations.slice(index + 1).map((other) => Math.abs(item.yMm - other.yMm))).filter((value) => value > 0 && value < 120))[0]
+      if (actualSpacing) drawing += dimensionLine(cx - 28, centers[0], cx - 28, centers[1], `${actualSpacing}`, true)
+    }
+    const edgeOffset = Math.round(Math.min(operation.xMm, Math.max(0, panelWidthMm - operation.xMm)))
+    if (edgeOffset > 0) drawing += `<text x="${x + 10}" y="${y + height - 12}" class="detail-note">ось от кромки ${edgeOffset} мм</text>`
+  } else if (operation.profile === 'round-slot') {
+    const slotX = x + 58
+    const slotY = cy - 10
+    const straight = 45
+    const radius = 18
+    const total = straight + radius
+    drawing += `<path d="M ${slotX} ${slotY - radius} H ${slotX + straight} A ${radius} ${radius} 0 0 1 ${slotX + total} ${slotY} A ${radius} ${radius} 0 0 1 ${slotX + straight} ${slotY + radius} H ${slotX} Z" class="cut"/>`
+    drawing += dimensionLine(slotX, slotY + radius + 17, slotX + straight, slotY + radius + 17, `${Math.round(operation.straightDepthMm)}`)
+    drawing += dimensionLine(slotX - 15, slotY - radius, slotX - 15, slotY + radius, `${Math.round(operation.heightMm)}`, true)
+    drawing += `<path d="M ${slotX + total - 5} ${slotY - 5} L ${x + width - 12} ${y + 43}" class="leader"/><text x="${x + width - 10}" y="${y + 40}" class="detail-text" text-anchor="end">R${Math.round(operation.radiusMm)}</text>`
+  } else {
+    const cutX = x + 58
+    const cutY = cy
+    const straight = 42
+    const radius = 20
+    const depth = 62
+    const opening = 55
+    drawing += `<path d="M ${cutX} ${cutY - opening / 2} H ${cutX + straight} A ${radius} ${radius} 0 0 1 ${cutX + depth} ${cutY - opening / 2 + radius} V ${cutY + opening / 2 - radius} A ${radius} ${radius} 0 0 1 ${cutX + straight} ${cutY + opening / 2} H ${cutX} Z" class="cut"/>`
+    drawing += dimensionLine(cutX, cutY + opening / 2 + 17, cutX + depth, cutY + opening / 2 + 17, `${Math.round(operation.widthMm)}`)
+    drawing += dimensionLine(cutX - 15, cutY - opening / 2, cutX - 15, cutY + opening / 2, `${Math.round(operation.heightMm)}`, true)
+    drawing += `<path d="M ${cutX + depth - 8} ${cutY - 8} L ${x + width - 12} ${y + 43}" class="leader"/><text x="${x + width - 10}" y="${y + 40}" class="detail-text" text-anchor="end">R${Math.round(operation.radiusMm)}</text>`
+  }
+
+  return `<g><rect x="${x}" y="${y}" width="${width}" height="${height}" rx="3" class="detail-box"/><text x="${x + 9}" y="${y + 17}" class="detail-title">${xml(title)}</text>${drawing}<text x="${x + 9}" y="${y + height - 2}" class="detail-note">${xml(operationSize(operation))}</text></g>`
 }
 
 const buildPanelSvg = (panel: ProductionPanel) => {
   const width = Math.max(1, panel.widthMm)
   const height = Math.max(1, panel.heightMm)
-  const maxW = 380
-  const maxH = 220
+  const maxW = 285
+  const maxH = 430
   const scale = Math.min(maxW / width, maxH / height)
   const drawW = width * scale
   const drawH = height * scale
-  const x = (520 - drawW) / 2
-  const y = 45 + (maxH - drawH) / 2
+  const x = 52 + (maxW - drawW) / 2
+  const y = 48 + (maxH - drawH) / 2
   const topWidth = Math.min(width, Math.max(1, panel.topWidthMm || width))
   const topInset = panel.shape === 'trapezoid' ? (width - topWidth) * scale / 2 : 0
   const panelPath = panel.shape === 'trapezoid'
     ? `M ${x} ${y + drawH} L ${x + topInset} ${y} L ${x + drawW - topInset} ${y} L ${x + drawW} ${y + drawH} Z`
     : `M ${x} ${y} H ${x + drawW} V ${y + drawH} H ${x} Z`
-  const operations = panel.operations.map((operation, index) => {
+  const groups = buildOperationGroups(panel)
+  const groupByOperation = new Map(groups.flatMap((group) => group.operations.map((operation) => [operation.id, group.id])))
+  const operations = panel.operations.map((operation) => {
     const px = x + Math.min(width, operation.xMm) * scale
     const py = y + drawH - Math.min(height, operation.yMm) * scale
     if (operation.kind === 'hole') {
-      const radius = Math.max(4, operation.diameterMm * scale / 2)
-      return `<circle cx="${px}" cy="${py}" r="${radius}" fill="#ffffff" stroke="#dc2626" stroke-width="2"/><text x="${px + radius + 5}" y="${py - 5}" font-size="11" fill="#991b1b">${index + 1}</text>`
+      const radius = Math.max(3.5, operation.diameterMm * scale / 2)
+      return `<circle cx="${number(px)}" cy="${number(py)}" r="${number(radius)}" class="cut"/>${centerMark(px, py, 5)}<text x="${number(px + radius + 5)}" y="${number(py - 5)}" class="node-label">${groupByOperation.get(operation.id)}</text>`
     }
-    const opWidth = Math.max(12, operation.widthMm * scale)
-    const opHeight = Math.max(12, operation.heightMm * scale)
-    return `<rect x="${px - opWidth / 2}" y="${py - opHeight / 2}" width="${opWidth}" height="${opHeight}" fill="#fff7ed" stroke="#c2410c" stroke-width="2"/><text x="${px + opWidth / 2 + 5}" y="${py - 5}" font-size="11" fill="#9a3412">${index + 1}</text>`
+    return `<path d="${edgeCutPath(operation, x, y, drawW, drawH, scale)}" class="cut"/><text x="${number(px)}" y="${number(py - operation.heightMm * scale / 2 - 5)}" class="node-label">${groupByOperation.get(operation.id)}</text>`
   }).join('')
 
-  return `<svg width="520" height="320" viewBox="0 0 520 320" xmlns="http://www.w3.org/2000/svg">
-    <defs><marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker></defs>
-    <rect width="520" height="320" fill="#ffffff"/>
-    <path d="${panelPath}" fill="#e0f2fe" fill-opacity="0.62" stroke="#0f172a" stroke-width="2"/>
+  const xDimensionEntries = [...new Map(panel.operations.map((operation) => {
+    const side = operation.xMm <= width / 2 ? 'left' : 'right'
+    const offset = Math.round(side === 'left' ? operation.xMm : width - operation.xMm)
+    return [`${side}-${offset}`, { side, offset, position: operation.xMm }]
+  })).values()]
+  const xDimensions = xDimensionEntries
+    .slice(0, 5)
+    .map(({ side, offset, position }, index) => {
+      const px = x + position * scale
+      const edgePosition = side === 'left' ? x : x + drawW
+      const dimY = y - 14 - index * 10
+      return `<line x1="${edgePosition}" y1="${y}" x2="${edgePosition}" y2="${dimY}" class="extension"/><line x1="${px}" y1="${y}" x2="${px}" y2="${dimY}" class="extension"/>${dimensionLine(edgePosition, dimY, px, dimY, `${offset}`)}`
+    }).join('')
+  const yDimensionEntries = [...new Map(panel.operations.map((operation) => {
+    const side = operation.yMm <= height / 2 ? 'bottom' : 'top'
+    const offset = Math.round(side === 'bottom' ? operation.yMm : height - operation.yMm)
+    return [`${side}-${offset}`, { side, offset, position: operation.yMm }]
+  })).values()]
+  const yDimensions = yDimensionEntries
+    .slice(0, 7)
+    .map(({ side, offset, position }, index) => {
+      const py = y + drawH - position * scale
+      const edgePosition = side === 'bottom' ? y + drawH : y
+      const dimX = x + drawW + 13 + index * 9
+      return `<line x1="${x + drawW}" y1="${edgePosition}" x2="${dimX}" y2="${edgePosition}" class="extension"/><line x1="${x + drawW}" y1="${py}" x2="${dimX}" y2="${py}" class="extension"/>${dimensionLine(dimX, edgePosition, dimX, py, `${offset}`, true)}`
+    }).join('')
+  const detailWidth = 176
+  const detailHeight = Math.min(118, Math.max(92, 390 / Math.max(1, groups.length)))
+  const details = groups.slice(0, 4).map((group, index) => buildDetailSvg(group, panel.widthMm, 350, 54 + index * (detailHeight + 7), detailWidth, detailHeight)).join('')
+
+  return `<svg width="535" height="545" viewBox="0 0 535 545" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="dim-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M 0 5 L 10 0 L 10 10 Z" fill="#111827"/></marker></defs>
+    <style>.panel{fill:#f0f9ff;stroke:#111827;stroke-width:1.4}.cut{fill:#fff;stroke:#111827;stroke-width:1.35}.center{fill:none;stroke:#64748b;stroke-width:.7;stroke-dasharray:3 2}.dim{stroke:#111827;stroke-width:.7}.extension{stroke:#64748b;stroke-width:.55}.dim-text{font:8px Roboto,Arial,sans-serif;fill:#111827}.node-label{font:bold 8px Roboto,Arial,sans-serif;fill:#1d4ed8}.detail-box{fill:#fff;stroke:#94a3b8;stroke-width:.7}.detail-title{font:bold 8px Roboto,Arial,sans-serif;fill:#111827}.detail-text{font:8px Roboto,Arial,sans-serif;fill:#111827}.detail-note{font:6.8px Roboto,Arial,sans-serif;fill:#475569}.leader{fill:none;stroke:#111827;stroke-width:.7}</style>
+    <rect width="535" height="545" fill="#ffffff"/>
+    <text x="12" y="18" class="detail-title">КОНТУР СТЕКЛА И ПРИВЯЗКИ ОБРАБОТОК</text>
+    <text x="523" y="18" class="detail-note" text-anchor="end">Все размеры в миллиметрах</text>
+    <path d="${panelPath}" class="panel"/>
     ${operations}
-    <line x1="${x}" y1="${y + drawH + 28}" x2="${x + drawW}" y2="${y + drawH + 28}" stroke="#64748b" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-    <text x="260" y="${y + drawH + 45}" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">${Math.round(width)} мм</text>
-    <line x1="${x - 28}" y1="${y}" x2="${x - 28}" y2="${y + drawH}" stroke="#64748b" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-    <text x="${x - 42}" y="${y + drawH / 2}" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a" transform="rotate(-90 ${x - 42} ${y + drawH / 2})">${Math.round(height)} мм</text>
-    ${panel.shape === 'trapezoid' ? `<text x="260" y="31" text-anchor="middle" font-size="12" fill="#334155">верх ${Math.round(topWidth)} мм</text>` : ''}
+    ${xDimensions}${yDimensions}
+    <line x1="${x}" y1="${y + drawH}" x2="${x}" y2="${y + drawH + 27}" class="extension"/><line x1="${x + drawW}" y1="${y + drawH}" x2="${x + drawW}" y2="${y + drawH + 27}" class="extension"/>
+    ${dimensionLine(x, y + drawH + 22, x + drawW, y + drawH + 22, `${Math.round(width)}`)}
+    <line x1="${x}" y1="${y}" x2="${x - 30}" y2="${y}" class="extension"/><line x1="${x}" y1="${y + drawH}" x2="${x - 30}" y2="${y + drawH}" class="extension"/>
+    ${dimensionLine(x - 25, y, x - 25, y + drawH, `${Math.round(height)}`, true)}
+    ${panel.shape === 'trapezoid' ? `<text x="${x + drawW / 2}" y="${y - 8}" text-anchor="middle" class="dim-text">верх ${Math.round(topWidth)}</text>` : ''}
+    ${details}
+    <rect x="8" y="510" width="519" height="27" class="detail-box"/>
+    <text x="17" y="522" class="detail-title">${xml(panel.label)} · ${panel.role === 'door' ? 'дверное стекло' : 'неподвижное стекло'} · ${Math.round(panel.widthMm)} × ${Math.round(panel.heightMm)} мм · ${panel.quantity} шт.</text>
+    <text x="17" y="532" class="detail-note">Обработка кромок: полировка. Стекло: закалённое. Контуры вырезов показаны на детали и увеличены в узлах справа.</text>
   </svg>`
 }
 
 const buildTopViewSvg = (draft: ProductionPackage) => {
-  const labels = draft.panels.map((panel, index) => `${index + 1}. ${xml(panel.label)} ${Math.round(panel.widthMm)}`)
   const line = (x1: number, y1: number, x2: number, y2: number, index: number) => (
-    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2563eb" stroke-width="7" stroke-linecap="round"/><text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 10}" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">${labels[index] ?? index + 1}</text>`
+    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2563eb" stroke-width="7" stroke-linecap="round"/><circle cx="${(x1 + x2) / 2}" cy="${(y1 + y2) / 2 - 10}" r="9" fill="#ffffff" stroke="#2563eb"/><text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6.5}" text-anchor="middle" font-size="10" font-weight="700" fill="#1e3a8a">${index + 1}</text>`
   )
   let drawing = ''
   if (['corner', 'corner-plus', 'double-corner', 'slider-corner', 'slider-double'].includes(draft.constructionSketch)) {
-    drawing = line(70, 145, 250, 145, 0) + line(250, 145, 250, 35, 1)
-    if (draft.panels[2]) drawing += line(250, 35, 360, 35, 2)
-    if (draft.panels[3]) drawing += line(360, 35, 445, 35, 3)
+    drawing = line(70, 95, 250, 95, 0) + line(250, 95, 250, 25, 1)
+    if (draft.panels[2]) drawing += line(250, 25, 360, 25, 2)
+    if (draft.panels[3]) drawing += line(360, 25, 445, 25, 3)
   } else if (draft.constructionSketch === 'trapezoid') {
-    drawing = line(70, 145, 175, 55, 0) + line(175, 55, 345, 55, 1) + line(345, 55, 450, 145, 2)
+    drawing = line(70, 95, 175, 30, 0) + line(175, 30, 345, 30, 1) + line(345, 30, 450, 95, 2)
   } else {
     const segmentWidth = 360 / Math.max(1, draft.panels.length)
-    drawing = draft.panels.map((_, index) => line(80 + index * segmentWidth, 105, 80 + (index + 1) * segmentWidth, 105, index)).join('')
+    drawing = draft.panels.map((_, index) => line(80 + index * segmentWidth, 65, 80 + (index + 1) * segmentWidth, 65, index)).join('')
   }
-  return `<svg width="520" height="180" viewBox="0 0 520 180" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="180" fill="#f8fafc"/><path d="M40 160 H480" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6 5"/>${drawing}<text x="260" y="171" text-anchor="middle" font-size="10" fill="#64748b">Схема расположения стекол, вид сверху</text></svg>`
+  const legend = draft.panels.map((panel, index) => {
+    const column = index % 2
+    const row = Math.floor(index / 2)
+    return `<text x="${42 + column * 245}" y="${127 + row * 15}" font-size="9" fill="#334155">${index + 1}. ${xml(panel.label)} · ${Math.round(panel.widthMm)} мм</text>`
+  }).join('')
+  return `<svg width="520" height="180" viewBox="0 0 520 180" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="180" fill="#f8fafc"/>${drawing}${legend}<path d="M40 163 H480" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6 5"/><text x="260" y="175" text-anchor="middle" font-size="9" fill="#64748b">Схема расположения стекол, вид сверху</text></svg>`
 }
 
 const headerCell = (text: string): TableCell => ({
@@ -118,42 +291,6 @@ const tableLayout = {
   paddingRight: () => 5,
   paddingTop: () => 3,
   paddingBottom: () => 3,
-}
-
-const operationTable = (panel: ProductionPanel): Content => {
-  if (panel.operations.length === 0) {
-    return { text: 'Сверления и вырезы не заданы.', italics: true, color: colors.muted, margin: [0, 4, 0, 0] }
-  }
-  return {
-    table: {
-      headerRows: 1,
-      widths: [18, 64, '*', 54, 54, 74],
-      body: [
-        [headerCell('№'), headerCell('Тип'), headerCell('Назначение'), headerCell('X'), headerCell('Y'), headerCell('Размер')],
-        ...panel.operations.map((operation, index) => [
-          { text: String(index + 1), alignment: 'center' },
-          operationKindLabel[operation.kind],
-          {
-            stack: [
-              { text: operation.label },
-              ...(operation.sourceSku ? [{
-                text: operation.sourceSku,
-                color: colors.accent,
-                fontSize: 7,
-                link: operation.sourceUrl,
-                decoration: operation.sourceUrl ? 'underline' as const : undefined,
-              }] : []),
-            ],
-          },
-          { text: mm(operation.xMm), alignment: 'right' },
-          { text: mm(operation.yMm), alignment: 'right' },
-          { text: operationSize(operation), alignment: 'right' },
-        ]),
-      ] as TableCell[][],
-    },
-    layout: tableLayout,
-    margin: [0, 6, 0, 0],
-  }
 }
 
 const cutStockSummary = (item: ProductionCutItem) => {
@@ -250,8 +387,7 @@ export const buildProductionPdfDefinition = (draft: ProductionPackage): TDocumen
     content.push(
       { text: `${index + 1}. ${panel.label}`, style: 'title', pageBreak: 'before', margin: [0, 0, 0, 3] },
       { text: `${draft.glassLabel} · количество ${panel.quantity} шт.`, color: colors.muted },
-      { svg: buildPanelSvg(panel), fit: [535, 330], margin: [0, 12, 0, 0] },
-      { text: 'Координаты обработок указаны до центра: X от левого края, Y от нижнего края.', alignment: 'center', color: colors.muted, fontSize: 7.5, margin: [0, 0, 0, 7] },
+      { svg: buildPanelSvg(panel), fit: [535, 545], margin: [0, 8, 0, 4] },
       {
         table: {
           widths: ['*', '*', '*', '*'],
@@ -269,8 +405,6 @@ export const buildProductionPdfDefinition = (draft: ProductionPackage): TDocumen
       },
       { text: 'Обработка: закалка, полировка всех кромок.', color: colors.text, margin: [0, 8, 0, 0] },
       ...(panel.notes ? [{ text: `Примечание: ${panel.notes}`, color: colors.muted, margin: [0, 3, 0, 0] } as Content] : []),
-      { text: 'Сверления и вырезы', style: 'sectionTitle', margin: [0, 12, 0, 0] },
-      operationTable(panel),
     )
   })
 
