@@ -69,11 +69,13 @@ export const buildShowerCalculationBreakdown = (
   const panelPrices = panelAreas.map((area) => Math.round(area * glass.price))
   const glassArea = panelAreas.reduce((sum, area) => sum + area, 0)
   const glassPrice = panelPrices.reduce((sum, price) => sum + price, 0)
-  const hardwareBasePrice = getConstructionHardwareBasePrice(
+  const staticHardwareBasePrice = getConstructionHardwareBasePrice(
     catalog,
     construction,
     glass.thickness,
   )
+  const productionAdjustment = Number(form.productionPriceAdjustment) || 0
+  const hardwareBasePrice = Math.max(0, staticHardwareBasePrice + productionAdjustment)
   const hasHardwareComposition = hardwareComponents.length > 0
   const fallbackConstructionBase = hasHardwareComposition ? 0 : Math.max(0, Number(construction.basePrice) || 0)
   const hardwareClassMarkup = Math.max(0, Number(hardwareClass.price) || 0)
@@ -155,9 +157,14 @@ export const buildShowerCalculationBreakdown = (
                   value: money(0),
                 }]
           ),
+          ...(productionAdjustment !== 0 ? [{
+            label: 'Корректировка по производственному составу',
+            formula: 'Автоматическая замена петель и креплений по схеме',
+            value: money(productionAdjustment),
+          }] : []),
           {
             label: 'Сумма состава фурнитуры в хроме',
-            formula: hardwareComponents.length > 0 ? 'Сумма всех позиций выше' : `Класс «${hardwareClass.label}»`,
+            formula: hardwareComponents.length > 0 ? 'Сумма позиций с учётом производственной корректировки' : `Класс «${hardwareClass.label}»`,
             value: money(hardwareBasePrice),
           },
           {

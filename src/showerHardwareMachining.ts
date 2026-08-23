@@ -2,6 +2,7 @@ export type MachiningPattern =
   | 'wall-hinge-fdp122'
   | 'glass-hinge-fdp115'
   | 'corner-hinge-fdp184'
+  | 'angled-hinge-fdp185'
   | 'wall-connector-fdk22'
   | 'corner-connector-fdk24'
   | 'wall-connector-fdk27'
@@ -39,6 +40,13 @@ const templates: ShowerHardwareMachiningTemplate[] = [
     drawingUrl: 'https://av24.su/wa-data/public/site/drawings/FDP-184-BR.pdf',
     supportedThicknesses: [6, 8],
     sourceNote: 'Вырез R15 на дверном стекле и 2 отверстия Ø16 на ответном стекле; угловой зазор 6 мм',
+  },
+  {
+    skuPrefix: 'FDP-185',
+    pattern: 'angled-hinge-fdp185',
+    drawingUrl: 'https://av24.su/wa-data/public/site/drawings/FDP-185-%2890%29.pdf',
+    supportedThicknesses: [6, 8],
+    sourceNote: 'Петля 135°: вырез R15 на двери; на ответном стекле 2 кромочных выреза R9 с межосевым 28 мм',
   },
   {
     skuPrefix: 'FDK-22',

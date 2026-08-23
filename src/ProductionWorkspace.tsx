@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -57,6 +57,15 @@ const operationKindLabels: Record<ProductionOperation['kind'], string> = {
   notch: 'Паз',
   cutout: 'Вырез',
   template: 'По шаблону',
+}
+
+const hingeJointLabels: Record<ProductionDoorPlacement['hingeJointType'], string> = {
+  none: 'Без петель',
+  wall: 'Стена-стекло',
+  'glass-180': 'Стекло-стекло 180°',
+  'glass-90': 'Стекло-стекло 90°',
+  'glass-135': 'Стекло-стекло 135°',
+  invalid: 'Недопустимая опора',
 }
 
 const formatMm = (value: number) => `${Math.round(value)} мм`
@@ -381,7 +390,7 @@ function ProductionPlanView({ catalog, draft, onConnector, onDoor, onMagnetic }:
                 const selected = edge === door.hingeEdge
                 return (
                   <g aria-label={`${door.panelLabel}: петли ${edge === 'left' ? 'слева' : 'справа'}`} className="production-plan-control" key={edge} role="button" tabIndex={0} onClick={() => onDoor(door, { hingeEdge: edge })} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onDoor(door, { hingeEdge: edge }) }}>
-                    <title>Поставить петли {edge === 'left' ? 'на левую' : 'на правую'} сторону</title>
+                    <title>{selected && door.hingeSku ? `${hingeJointLabels[door.hingeJointType]} · ${door.hingeSku}. ` : ''}Поставить петли {edge === 'left' ? 'на левую' : 'на правую'} сторону</title>
                     <line pointerEvents="none" stroke="#d97706" strokeWidth="1" x1={x} x2={controlX} y1={y} y2={controlY} />
                     <circle cx={controlX} cy={controlY} fill="#fff" fillOpacity="0.01" r="12" />
                     <circle cx={controlX} cy={controlY} fill={selected ? '#d97706' : '#fff'} pointerEvents="none" r={selected ? 7 : 5} stroke="#d97706" strokeWidth="2" />
@@ -493,6 +502,7 @@ function ProductionConstructor({ catalog, draft, onOpeningHeight, onCurbWidth, o
             <div className="production-opening-results">
               {draft.openingSegments.map((segment) => <p className="is-axis" key={`axis-${segment.id}`}><span>Ось · {segment.label}</span><strong>{Math.round(segment.lengthMm)} мм</strong></p>)}
               {draft.panels.map((panel, panelIndex) => <p key={panel.id}><span>{panelIndex + 1}. {panel.label}</span><strong>{Math.round(panel.widthMm)} × {Math.round(panel.heightMm)} мм</strong></p>)}
+              {draft.doorPlacements.filter((door) => door.motionType === 'hinged').map((door) => <p className="is-hardware" key={`hinge-${door.id}`}><span>{door.panelLabel} · петли</span><strong>{hingeJointLabels[door.hingeJointType]}{door.hingeSku ? ` · ${door.hingeSku}` : ''} · {door.hingeQuantity} шт.</strong></p>)}
             </div>
           </article>
         </div>
@@ -509,6 +519,7 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
   const [error, setError] = useState('')
   const workingFormRef = useRef(workingForm)
   const designOverridesRef = useRef(designOverrides)
+  const initialDesignSyncedRef = useRef(false)
   workingFormRef.current = workingForm
   designOverridesRef.current = designOverrides
   const draft = useMemo(() => ({
@@ -531,6 +542,14 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
         curbWidthMm: nextDraft.trayCurbWidthMm,
         segments: Object.fromEntries(nextDraft.openingSegments.map((segment) => [segment.id, segment.trayLengthMm])),
       },
+      doors: Object.fromEntries(nextDraft.doorPlacements.map((door) => [door.id, {
+        ...nextDesign.doors?.[door.id],
+        hingeEdge: door.hingeEdge,
+        swingDirection: door.swingDirection,
+        hingeJointType: door.hingeJointType,
+        hingeHardwareItemId: door.hingeHardwareItemId,
+        hingeQuantity: door.hingeQuantity,
+      }])),
     }
     const construction = getConstruction(catalog, currentForm.constructionId)
     const nextDimensions = { ...currentForm.dimensions }
@@ -559,6 +578,12 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
     setWorkingForm(nextForm)
     onFormChange(nextForm)
   }, [catalog, itemIndex, onFormChange, quoteNumber])
+
+  useEffect(() => {
+    if (initialDesignSyncedRef.current) return
+    initialDesignSyncedRef.current = true
+    commitDesign(designOverridesRef.current)
+  }, [commitDesign])
 
   const generatePdf = useCallback(async () => {
     const errors = getProductionValidationErrors(draft)

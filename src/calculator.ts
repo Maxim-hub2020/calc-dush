@@ -40,6 +40,9 @@ export type ShowerProductionDesign = {
   doors?: Record<string, {
     hingeEdge?: 'left' | 'right'
     swingDirection?: 'inward' | 'outward'
+    hingeJointType?: 'none' | 'wall' | 'glass-180' | 'glass-90' | 'glass-135' | 'invalid'
+    hingeHardwareItemId?: string
+    hingeQuantity?: number
   }>
   connectors?: Record<string, {
     verticalCount?: number
@@ -479,13 +482,67 @@ export const multiplyCalculationResult = (
   }
 }
 
+const hingeQuoteLabels: Record<NonNullable<NonNullable<ShowerProductionDesign['doors']>[string]['hingeJointType']>, string> = {
+  none: 'Петли',
+  wall: 'Петли стена-стекло',
+  'glass-180': 'Петли стекло-стекло 180°',
+  'glass-90': 'Петли стекло-стекло 90°',
+  'glass-135': 'Петли стекло-стекло 135°',
+  invalid: 'Петли требуют проверки',
+}
+
+const buildShowerQuoteDetails = (
+  catalog: PricingCatalog,
+  itemId: string,
+  form: CalculatorForm,
+  glassLabel: string,
+  hardwareLabel: string,
+  hardwareClassLabel: string,
+): QuoteDetailLine[] => {
+  const construction = getConstruction(catalog, form.constructionId)
+  const hingeGroups = new Map<string, {
+    jointType: NonNullable<NonNullable<ShowerProductionDesign['doors']>[string]['hingeJointType']>
+    hardwareItemId?: string
+    quantity: number
+  }>()
+  Object.values(form.productionDesign?.doors ?? {}).forEach((door) => {
+    if (!door.hingeJointType || door.hingeJointType === 'none' || door.hingeQuantity === 0) return
+    const key = `${door.hingeJointType}:${door.hingeHardwareItemId ?? ''}`
+    const current = hingeGroups.get(key)
+    hingeGroups.set(key, {
+      jointType: door.hingeJointType,
+      hardwareItemId: door.hingeHardwareItemId,
+      quantity: (current?.quantity ?? 0) + Math.max(1, Math.round(Number(door.hingeQuantity) || 0)),
+    })
+  })
+  return [
+    ...construction.fields.map((field) => ({
+      id: `${itemId}:dimension:${field.key}`,
+      label: field.label,
+      value: `${form.dimensions[field.key] ?? 0} мм`,
+    })),
+    { id: `${itemId}:glass`, label: 'Стекло', value: glassLabel },
+    { id: `${itemId}:hardware`, label: 'Фурнитура', value: hardwareLabel },
+    { id: `${itemId}:hardware-class`, label: 'Класс фурнитуры', value: hardwareClassLabel },
+    ...[...hingeGroups.values()].map((hinge, index) => {
+      const item = catalog.hardwareItems.find((entry) => entry.id === hinge.hardwareItemId)
+      return {
+        id: `${itemId}:hinge:${index}`,
+        label: hingeQuoteLabels[hinge.jointType],
+        value: `${item?.sku ?? item?.label ?? 'артикул не выбран'} · ${hinge.quantity} шт.`,
+      }
+    }),
+  ]
+}
+
 const createShowerQuoteItem = (catalog: PricingCatalog, draft: ShowerQuoteDraftItem): ShowerQuoteItem => {
   const construction = getConstruction(catalog, draft.form.constructionId)
   const glass = getOption(catalog.glass, draft.form.glassId)
   const hardware = getOption(catalog.hardware, draft.form.hardwareId)
   const hardwareClass = getOption(catalog.hardwareClass, draft.form.hardwareClassId)
+  const id = crypto.randomUUID()
   return {
-    id: crypto.randomUUID(),
+    id,
     kind: 'shower',
     quantity: normalizeQuoteQuantity(draft.quantity),
     form: draft.form,
@@ -494,6 +551,7 @@ const createShowerQuoteItem = (catalog: PricingCatalog, draft: ShowerQuoteDraftI
     glassLabel: glass.label,
     hardwareLabel: hardware.label,
     hardwareClassLabel: hardwareClass.label,
+    details: buildShowerQuoteDetails(catalog, id, draft.form, glass.label, hardware.label, hardwareClass.label),
   }
 }
 
@@ -555,18 +613,14 @@ export const getQuoteItemDetails = (item: QuoteItem): QuoteDetailLine[] => {
     ]
   }
 
-  const construction = getConstruction(defaultCatalog, item.form.constructionId)
-  const details: QuoteDetailLine[] = [
-    ...construction.fields.map((field) => ({
-      id: `${item.id}:dimension:${field.key}`,
-      label: field.label,
-      value: `${item.form.dimensions[field.key] ?? 0} мм`,
-    })),
-    { id: `${item.id}:glass`, label: 'Стекло', value: item.glassLabel },
-    { id: `${item.id}:hardware`, label: 'Фурнитура', value: item.hardwareLabel },
-    { id: `${item.id}:hardware-class`, label: 'Класс фурнитуры', value: item.hardwareClassLabel },
-  ]
-  return details
+  return buildShowerQuoteDetails(
+    defaultCatalog,
+    item.id,
+    item.form,
+    item.glassLabel,
+    item.hardwareLabel,
+    item.hardwareClassLabel,
+  )
 }
 
 export const getQuoteTotal = (quote: Quote) => {

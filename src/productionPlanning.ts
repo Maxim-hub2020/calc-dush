@@ -5,7 +5,7 @@ import {
   type CalculatorForm,
   type ShowerProductionDesign,
 } from './calculator'
-import type { PricingCatalog } from './pricing'
+import type { PricingCatalog, ShowerHardwareItem } from './pricing'
 import {
   getShowerHardwareMachiningTemplate,
   hardwareSectionNeedsMachiningTemplate,
@@ -70,6 +70,12 @@ export type ProductionDoorPlacement = {
   motionType: 'hinged' | 'sliding'
   hingeEdge: Extract<ProductionOperationEdge, 'left' | 'right'>
   swingDirection: 'inward' | 'outward'
+  hingeJointType: 'none' | 'wall' | 'glass-180' | 'glass-90' | 'glass-135' | 'invalid'
+  hingeHardwareItemId?: string
+  hingeLabel?: string
+  hingeSku?: string
+  hingeQuantity: number
+  hingeSourceUrl?: string
 }
 
 export type ProductionOpeningSegment = {
@@ -468,6 +474,58 @@ const hingeEdge = (
   return fixedIndex > doorIndex ? 'right' : 'left'
 }
 const oppositeEdge = (edge: Edge): Edge => edge === 'left' ? 'right' : 'left'
+
+type HingeJointType = ProductionDoorPlacement['hingeJointType']
+
+const hingeSkuByJoint: Record<Exclude<HingeJointType, 'none' | 'invalid'>, string> = {
+  wall: 'FDP-122',
+  'glass-180': 'FDP-115',
+  'glass-90': 'FDP-184',
+  'glass-135': 'FDP-185',
+}
+
+const preferredHingeIdByJoint: Record<Exclude<HingeJointType, 'none' | 'invalid'>, string> = {
+  wall: 'av24-6930',
+  'glass-180': 'av24-4697',
+  'glass-90': 'av24-6044',
+  'glass-135': 'av24-5879',
+}
+
+const hingeJointFromConnection = (
+  connection: PanelConnection | undefined,
+  panels: ProductionPanel[],
+): HingeJointType => {
+  if (!connection) return 'wall'
+  if (panels[connection.panelIndex]?.role !== 'fixed') return 'invalid'
+  if (connection.angle === 90) return 'glass-90'
+  if (connection.angle === 135) return 'glass-135'
+  return 'glass-180'
+}
+
+const hingeMatchesJoint = (item: ShowerHardwareItem, jointType: HingeJointType) => {
+  if (jointType === 'none' || jointType === 'invalid') return false
+  return (item.sku ?? '').toLocaleUpperCase('ru').startsWith(hingeSkuByJoint[jointType])
+}
+
+const resolveHingeItem = (
+  catalog: PricingCatalog,
+  jointType: HingeJointType,
+  overrideItemId?: string,
+) => {
+  if (jointType === 'none' || jointType === 'invalid') return undefined
+  const override = catalog.hardwareItems.find((item) => item.id === overrideItemId)
+  if (override && hingeMatchesJoint(override, jointType)) return override
+  const preferred = catalog.hardwareItems.find((item) => item.id === preferredHingeIdByJoint[jointType])
+  if (preferred) return preferred
+  return catalog.hardwareItems.find((item) => (
+    item.sectionId === 'hinges'
+    && hingeMatchesJoint(item, jointType)
+    && !/DEF/i.test(item.sku ?? '')
+    && !item.priceOnRequest
+    && item.price > 0
+  ))
+}
+
 const createDoorPlacements = (
   panels: ProductionPanel[],
   openingSegments: ProductionOpeningSegment[],
@@ -491,8 +549,82 @@ const createDoorPlacements = (
     motionType: usesSlider ? 'sliding' : 'hinged',
     hingeEdge: override?.hingeEdge ?? (usesWallHinge ? wallHingeEdge ?? inferredHingeEdge : inferredHingeEdge),
     swingDirection: override?.swingDirection ?? 'outward',
+    hingeJointType: usesSlider ? 'none' : override?.hingeJointType ?? 'wall',
+    hingeHardwareItemId: override?.hingeHardwareItemId,
+    hingeQuantity: Math.max(0, Math.round(Number(override?.hingeQuantity) || 0)),
   } satisfies ProductionDoorPlacement]
 })
+
+const resolveDoorHinges = (
+  catalog: PricingCatalog,
+  panels: ProductionPanel[],
+  openingSegments: ProductionOpeningSegment[],
+  constructionSketch: ProductionPackage['constructionSketch'],
+  placements: ProductionDoorPlacement[],
+  baseHingeQuantity: number,
+  issues: string[],
+) => {
+  const hingedDoorCount = placements.filter((placement) => placement.motionType === 'hinged').length
+  const defaultQuantity = hingedDoorCount > 0
+    ? Math.max(1, Math.round(baseHingeQuantity / hingedDoorCount) || 2)
+    : 0
+  return placements.map((placement) => {
+    if (placement.motionType === 'sliding') return {
+      ...placement,
+      hingeJointType: 'none' as const,
+      hingeHardwareItemId: undefined,
+      hingeLabel: undefined,
+      hingeSku: undefined,
+      hingeQuantity: 0,
+      hingeSourceUrl: undefined,
+    }
+    const connection = getPanelConnection(constructionSketch, openingSegments, placement.panelIndex, placement.hingeEdge)
+    const hingeJointType = hingeJointFromConnection(connection, panels)
+    if (hingeJointType === 'invalid') {
+      issues.push(`${placement.panelLabel}: дверь нельзя навесить на другую дверь; выберите стену или неподвижное стекло`)
+    }
+    const item = resolveHingeItem(catalog, hingeJointType, placement.hingeHardwareItemId)
+    if (hingeJointType !== 'invalid' && !item) {
+      issues.push(`${placement.panelLabel}: в ценах не найдена подходящая петля ${hingeSkuByJoint[hingeJointType as Exclude<HingeJointType, 'none' | 'invalid'>]}`)
+    }
+    return {
+      ...placement,
+      hingeJointType,
+      hingeHardwareItemId: item?.id,
+      hingeLabel: item?.label,
+      hingeSku: item?.sku,
+      hingeQuantity: placement.hingeQuantity || defaultQuantity,
+      hingeSourceUrl: item?.sourceUrl,
+    }
+  })
+}
+
+const createHingeComponents = (
+  catalog: PricingCatalog,
+  doorPlacements: ProductionDoorPlacement[],
+  glassThickness: 6 | 8,
+): ResolvedComponent[] => {
+  const quantities = new Map<string, number>()
+  doorPlacements.forEach((placement) => {
+    if (!placement.hingeHardwareItemId || placement.hingeQuantity <= 0) return
+    quantities.set(
+      placement.hingeHardwareItemId,
+      (quantities.get(placement.hingeHardwareItemId) ?? 0) + placement.hingeQuantity,
+    )
+  })
+  return [...quantities].flatMap(([hardwareItemId, quantity]) => {
+    const item = catalog.hardwareItems.find((entry) => entry.id === hardwareItemId)
+    if (!item) return []
+    return [{
+      id: `auto-hinge:${hardwareItemId}`,
+      hardwareItemId,
+      glassThickness,
+      item,
+      quantity,
+      total: item.price * quantity,
+    } satisfies ResolvedComponent]
+  })
+}
 const getDoorHingeEdge = (
   panels: ProductionPanel[],
   door: ProductionPanel,
@@ -618,28 +750,6 @@ const groupCountByPanel = (panels: ProductionPanel[], quantity: number) => panel
 const getAdjacentFixed = (panels: ProductionPanel[], door: ProductionPanel) => {
   const index = panels.indexOf(door)
   return [...panels.slice(0, index).reverse(), ...panels.slice(index + 1)].find((panel) => panel.role === 'fixed')
-}
-
-const getFixedOnDoorSide = (
-  panels: ProductionPanel[],
-  door: ProductionPanel,
-  edge: Edge,
-  openingSegments?: ProductionOpeningSegment[],
-) => {
-  const index = panels.indexOf(door)
-  const group = openingSegments?.find((segment) => segment.panelIndexes.includes(index))?.panelIndexes
-  if (group) {
-    const position = group.indexOf(index)
-    const candidateIndexes = edge === 'left'
-      ? group.slice(0, position).reverse()
-      : group.slice(position + 1)
-    const fixedIndex = candidateIndexes.find((panelIndex) => panels[panelIndex]?.role === 'fixed')
-    if (fixedIndex !== undefined) return panels[fixedIndex]
-  }
-  const candidates = edge === 'left'
-    ? panels.slice(0, index).reverse()
-    : panels.slice(index + 1)
-  return candidates.find((panel) => panel.role === 'fixed')
 }
 
 const clampCount = (value: unknown, maximum: number) => Math.min(maximum, Math.max(0, Math.round(Number(value) || 0)))
@@ -800,8 +910,12 @@ const applyVerifiedClearances = (
   resolvedChecks.forEach(({ component, template, check }) => {
     if (!template || check.status !== 'verified') return
     const sku = component.item.sku ?? template.skuPrefix
+    const matchingDoors = doors.filter((door) => {
+      const placement = doorPlacements.find((entry) => entry.panelIndex === panels.indexOf(door))
+      return placement?.hingeHardwareItemId === component.item.id
+    })
     if (template.pattern === 'wall-hinge-fdp122') {
-      doors.forEach((door) => addWidthClearance(
+      matchingDoors.forEach((door) => addWidthClearance(
         door,
         'Зазор стекло-стена по петле',
         getDoorHingeEdge(panels, door, doorPlacements),
@@ -811,7 +925,7 @@ const applyVerifiedClearances = (
         template.drawingUrl,
       ))
     } else if (template.pattern === 'glass-hinge-fdp115') {
-      doors.forEach((door) => addWidthClearance(
+      matchingDoors.forEach((door) => addWidthClearance(
         door,
         'Зазор стекло-стекло по петле',
         getDoorHingeEdge(panels, door, doorPlacements),
@@ -821,9 +935,19 @@ const applyVerifiedClearances = (
         template.drawingUrl,
       ))
     } else if (template.pattern === 'corner-hinge-fdp184') {
-      doors.forEach((door) => addWidthClearance(
+      matchingDoors.forEach((door) => addWidthClearance(
         door,
         'Угловой зазор стекло-стекло по петле',
+        getDoorHingeEdge(panels, door, doorPlacements),
+        6,
+        -6,
+        sku,
+        template.drawingUrl,
+      ))
+    } else if (template.pattern === 'angled-hinge-fdp185') {
+      matchingDoors.forEach((door) => addWidthClearance(
+        door,
+        'Угловой зазор стекло-стекло по петле 135°',
         getDoorHingeEdge(panels, door, doorPlacements),
         6,
         -6,
@@ -901,9 +1025,17 @@ const applyMachiningPattern = (
   connectorPlacements: ProductionConnectorPlacement[],
   doorPlacements: ProductionDoorPlacement[],
   openingSegments: ProductionOpeningSegment[],
+  constructionSketch: ProductionPackage['constructionSketch'],
 ) => {
   const fixedPanels = panels.filter((panel) => panel.role === 'fixed')
-  const doors = panels.filter((panel) => panel.role === 'door')
+  const allDoors = panels.filter((panel) => panel.role === 'door')
+  const hingePattern = ['wall-hinge-fdp122', 'glass-hinge-fdp115', 'corner-hinge-fdp184', 'angled-hinge-fdp185'].includes(pattern)
+  const doors = hingePattern
+    ? allDoors.filter((door) => doorPlacements.find((placement) => (
+      placement.panelIndex === panels.indexOf(door)
+      && placement.hingeHardwareItemId === component.item.id
+    )))
+    : allDoors
   const sku = component.item.sku ?? template.skuPrefix
 
   if (pattern === 'wall-hinge-fdp122') {
@@ -912,7 +1044,7 @@ const applyMachiningPattern = (
       const edge = getDoorHingeEdge(panels, panel, doorPlacements)
       const panelIndex = panels.indexOf(panel)
       if (getPanelConnection(
-        panel.shape === 'trapezoid' ? 'trapezoid' : openingSegments.length > 1 ? 'corner' : 'niche',
+        constructionSketch,
         openingSegments,
         panelIndex,
         edge,
@@ -931,12 +1063,13 @@ const applyMachiningPattern = (
   if (pattern === 'glass-hinge-fdp115') {
     groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
       const doorEdge = getDoorHingeEdge(panels, door, doorPlacements)
-      const fixed = getFixedOnDoorSide(panels, door, doorEdge, openingSegments)
+      const connection = getPanelConnection(constructionSketch, openingSegments, panels.indexOf(door), doorEdge)
+      const fixed = connection ? panels[connection.panelIndex] : undefined
       if (!fixed) {
         placementIssues.push(`${sku}: со стороны петель нет неподвижного стекла для ответных отверстий`)
         return
       }
-      const fixedEdge = oppositeEdge(doorEdge)
+      const fixedEdge = connection?.edge ?? oppositeEdge(doorEdge)
       spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
         for (const delta of [-22.5, 22.5]) {
           addHole(door, component, template, `${sku}: петля ${hingeIndex + 1}`, edgeX(door, doorEdge, 32), center + delta, 14)
@@ -950,16 +1083,37 @@ const applyMachiningPattern = (
   if (pattern === 'corner-hinge-fdp184') {
     groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
       const doorEdge = getDoorHingeEdge(panels, door, doorPlacements)
-      const fixed = getFixedOnDoorSide(panels, door, doorEdge, openingSegments)
+      const connection = getPanelConnection(constructionSketch, openingSegments, panels.indexOf(door), doorEdge)
+      const fixed = connection ? panels[connection.panelIndex] : undefined
       if (!fixed) {
         placementIssues.push(`${sku}: со стороны петель нет неподвижного стекла для ответной части`)
         return
       }
-      const fixedEdge = oppositeEdge(doorEdge)
+      const fixedEdge = connection?.edge ?? oppositeEdge(doorEdge)
       spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
         addEdgeCut(door, component, template, 'cutout', `${sku}: вырез петли ${hingeIndex + 1}, R15`, doorEdge, center, 40, 40, 15, 'hinge-cutout', 25)
         addHole(fixed, component, template, `${sku}: ответная часть ${hingeIndex + 1}, верхнее`, edgeX(fixed, fixedEdge, 40), center + 15, 16)
         addHole(fixed, component, template, `${sku}: ответная часть ${hingeIndex + 1}, нижнее`, edgeX(fixed, fixedEdge, 40), center - 15, 16)
+      })
+    })
+    return
+  }
+
+  if (pattern === 'angled-hinge-fdp185') {
+    groupCountByPanel(doors, component.quantity).forEach(({ panel: door, count }) => {
+      const doorEdge = getDoorHingeEdge(panels, door, doorPlacements)
+      const connection = getPanelConnection(constructionSketch, openingSegments, panels.indexOf(door), doorEdge)
+      const fixed = connection ? panels[connection.panelIndex] : undefined
+      if (!fixed) {
+        placementIssues.push(`${sku}: со стороны петель нет неподвижного стекла для ответной части 135°`)
+        return
+      }
+      const fixedEdge = connection?.edge ?? oppositeEdge(doorEdge)
+      spacedPositions(count, door.heightMm).forEach((center, hingeIndex) => {
+        addEdgeCut(door, component, template, 'cutout', `${sku}: вырез петли ${hingeIndex + 1}, R15`, doorEdge, center, 40, 40, 15, 'hinge-cutout', 25)
+        for (const delta of [-14, 14]) {
+          addEdgeCut(fixed, component, template, 'cutout', `${sku}: ответный вырез ${hingeIndex + 1}, R9`, fixedEdge, center + delta, 16, 18, 9, 'round-slot', 7)
+        }
       })
     })
     return
@@ -1118,14 +1272,34 @@ export const createProductionPackage = (
   const hardware = getOption(catalog.hardware, form.hardwareId)
   const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
   const glassThickness = glass.thickness ?? 8
-  const components = getConstructionHardwareComponents(catalog, construction, glassThickness)
+  const baseComponents = getConstructionHardwareComponents(catalog, construction, glassThickness)
   const { panels, openingHeightMm, trayCurbWidthMm, openingSegments } = getPanelDefaults(catalog, form, designOverrides?.opening)
-  const resolvedChecks = components.map((component) => ({
+  const initialChecks = baseComponents.map((component) => ({
     component,
     ...createTemplateCheck(component, glassThickness),
   }))
   const placementIssues: string[] = []
-  const doorPlacements = createDoorPlacements(panels, openingSegments, construction.sketch, resolvedChecks, designOverrides?.doors)
+  const initialDoorPlacements = createDoorPlacements(panels, openingSegments, construction.sketch, initialChecks, designOverrides?.doors)
+  const baseHingeQuantity = baseComponents
+    .filter((component) => component.item.sectionId === 'hinges')
+    .reduce((total, component) => total + component.quantity, 0)
+  const doorPlacements = resolveDoorHinges(
+    catalog,
+    panels,
+    openingSegments,
+    construction.sketch,
+    initialDoorPlacements,
+    baseHingeQuantity,
+    placementIssues,
+  )
+  const components = [
+    ...baseComponents.filter((component) => component.item.sectionId !== 'hinges'),
+    ...createHingeComponents(catalog, doorPlacements, glassThickness),
+  ]
+  const resolvedChecks = components.map((component) => ({
+    component,
+    ...createTemplateCheck(component, glassThickness),
+  }))
   const connectorPlacements = createConnectorPlacements(resolvedChecks, panels, designOverrides?.connectors)
   const magneticPlacements = createMagneticPlacements(
     resolvedChecks,
@@ -1141,7 +1315,7 @@ export const createProductionPackage = (
 
   resolvedChecks.forEach(({ component, template, check }) => {
     if (!template || check.status !== 'verified') return
-    if (template.pattern !== 'none') applyMachiningPattern(template.pattern, component, template, panels, placementIssues, connectorPlacements, doorPlacements, openingSegments)
+    if (template.pattern !== 'none') applyMachiningPattern(template.pattern, component, template, panels, placementIssues, connectorPlacements, doorPlacements, openingSegments, construction.sketch)
   })
 
   const purchases = components.map((component) => {
