@@ -3,6 +3,7 @@ import type { MirrorPricingCatalog } from './mirrorPricing'
 import type { PricingCatalog } from './pricing'
 
 const sessionKey = 'shower-calc.server-session.v1'
+const quoteOutboxKey = 'shower-calc.quote-outbox.v1'
 
 export type ServerSession = {
   username: string
@@ -18,6 +19,11 @@ export type ServerCatalogs = {
 
 export type ServerQuoteArchive = {
   quotes: Quote[]
+}
+
+export type QuoteSyncOutbox = {
+  upserts: Quote[]
+  deletions: string[]
 }
 
 export class ServerSyncError extends Error {
@@ -62,6 +68,69 @@ const saveServerSession = (session: ServerSession) => {
 
 export const clearServerSession = () => {
   localStorage.removeItem(sessionKey)
+}
+
+const emptyQuoteOutbox = (): QuoteSyncOutbox => ({ upserts: [], deletions: [] })
+
+export const loadQuoteSyncOutbox = (): QuoteSyncOutbox => {
+  try {
+    const value = localStorage.getItem(quoteOutboxKey)
+    if (!value) return emptyQuoteOutbox()
+    const parsed = JSON.parse(value) as Partial<QuoteSyncOutbox>
+    return {
+      upserts: Array.isArray(parsed.upserts) ? parsed.upserts : [],
+      deletions: Array.isArray(parsed.deletions) ? parsed.deletions.filter((id): id is string => typeof id === 'string') : [],
+    }
+  } catch {
+    return emptyQuoteOutbox()
+  }
+}
+
+const saveQuoteSyncOutbox = (outbox: QuoteSyncOutbox) => {
+  if (outbox.upserts.length === 0 && outbox.deletions.length === 0) {
+    localStorage.removeItem(quoteOutboxKey)
+    return
+  }
+  localStorage.setItem(quoteOutboxKey, JSON.stringify(outbox))
+}
+
+export const queueServerQuoteUpserts = (quotes: Quote[]) => {
+  const outbox = loadQuoteSyncOutbox()
+  const byId = new Map(outbox.upserts.map((quote) => [quote.id, quote]))
+  quotes.forEach((quote) => byId.set(quote.id, quote))
+  const upsertIds = new Set(quotes.map((quote) => quote.id))
+  saveQuoteSyncOutbox({
+    upserts: [...byId.values()],
+    deletions: outbox.deletions.filter((id) => !upsertIds.has(id)),
+  })
+}
+
+export const queueServerQuoteDeletion = (quoteId: string) => {
+  const outbox = loadQuoteSyncOutbox()
+  saveQuoteSyncOutbox({
+    upserts: outbox.upserts.filter((quote) => quote.id !== quoteId),
+    deletions: [...new Set([...outbox.deletions, quoteId])],
+  })
+}
+
+const quoteVersion = (quote: Quote) => quote.updatedAt || quote.createdAt
+
+const clearProcessedQuoteOutbox = (processed: QuoteSyncOutbox) => {
+  const current = loadQuoteSyncOutbox()
+  const processedUpserts = new Map(processed.upserts.map((quote) => [quote.id, quoteVersion(quote)]))
+  const processedDeletions = new Set(processed.deletions)
+  saveQuoteSyncOutbox({
+    upserts: current.upserts.filter((quote) => processedUpserts.get(quote.id) !== quoteVersion(quote)),
+    deletions: current.deletions.filter((id) => !processedDeletions.has(id)),
+  })
+}
+
+export const mergeServerQuoteArchive = (serverQuotes: Quote[], outbox = loadQuoteSyncOutbox()) => {
+  const byId = new Map(serverQuotes.map((quote) => [quote.id, quote]))
+  outbox.deletions.forEach((id) => byId.delete(id))
+  outbox.upserts.forEach((quote) => byId.set(quote.id, quote))
+  return [...byId.values()]
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
 }
 
 export const loginToServer = async (username: string, password: string): Promise<ServerSession> => {
@@ -193,4 +262,14 @@ export const deleteServerQuote = async (quoteId: string) => {
   await authenticatedRequest(`/calculator-quotes/${encodeURIComponent(quoteId)}/`, {
     method: 'DELETE',
   })
+}
+
+export const synchronizeServerQuotes = async (): Promise<ServerQuoteArchive> => {
+  const processed = loadQuoteSyncOutbox()
+  for (const quoteId of processed.deletions) await deleteServerQuote(quoteId)
+  const remote = processed.upserts.length > 0
+    ? await syncServerQuotes(processed.upserts)
+    : await loadServerQuotes()
+  clearProcessedQuoteOutbox(processed)
+  return remote
 }

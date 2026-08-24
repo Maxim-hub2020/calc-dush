@@ -154,6 +154,7 @@ type QuoteMetadata = {
   id: string
   number: string
   createdAt: string
+  updatedAt: string
   status: 'new' | 'sent' | 'accepted' | 'archived'
   items?: QuoteItem[]
   variants?: QuoteVariant[]
@@ -765,6 +766,7 @@ export const createQuote = (
     id,
     number,
     createdAt,
+    updatedAt: createdAt,
     status: 'new',
     result: applyQuoteDelivery(itemResult, calculateQuoteDelivery(catalog, normalizedDelivery)),
     items,
@@ -867,6 +869,7 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
     id: quote.id,
     number: quote.number,
     createdAt: quote.createdAt,
+    updatedAt: new Date().toISOString(),
     status: quote.status,
     result,
     items: updatedItems,
