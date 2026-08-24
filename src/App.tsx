@@ -3862,18 +3862,35 @@ function PricesScreen({
   const [openSection, setOpenSection] = useState<PriceSectionId | null>(null)
   const [openShowerHardwareSection, setOpenShowerHardwareSection] = useState<ShowerHardwareSectionId | null>(null)
   const [showerHardwareQuery, setShowerHardwareQuery] = useState('')
+  const [mirrorServiceQuery, setMirrorServiceQuery] = useState('')
   const [priceSearchQuery, setPriceSearchQuery] = useState('')
   const [priceTab, setPriceTab] = useState<PriceTabId>('shower')
   const dirtyCount = useMemo(
     () => countChangedValues(catalog, savedCatalog) + countChangedValues(mirrorCatalog, savedMirrorCatalog),
     [catalog, mirrorCatalog, savedCatalog, savedMirrorCatalog],
   )
+  const normalizedMirrorServiceQuery = mirrorServiceQuery
+    .toLocaleLowerCase('ru')
+    .replaceAll('ё', 'е')
+    .trim()
   const mirrorPriceSections = useMemo(() => mirrorServiceSections
-    .map((section) => ({
-      ...section,
-      items: mirrorCatalog.services.filter((item) => item.sectionId === section.id),
-    }))
-    .filter((section) => section.items.length > 0), [mirrorCatalog.services])
+    .map((section) => {
+      const sectionMatches = section.label
+        .toLocaleLowerCase('ru')
+        .replaceAll('ё', 'е')
+        .includes(normalizedMirrorServiceQuery)
+      const items = mirrorCatalog.services.filter((item) => {
+        if (item.sectionId !== section.id) return false
+        if (!normalizedMirrorServiceQuery || sectionMatches) return true
+        return `${item.label} ${item.sku ?? ''} ${item.price} ${mirrorUnitLabels[item.unit]}`
+          .toLocaleLowerCase('ru')
+          .replaceAll('ё', 'е')
+          .includes(normalizedMirrorServiceQuery)
+      })
+      return { ...section, items }
+    })
+    .filter((section) => section.items.length > 0), [mirrorCatalog.services, normalizedMirrorServiceQuery])
+  const mirrorServiceMatchCount = mirrorPriceSections.reduce((sum, section) => sum + section.items.length, 0)
   const showerPriceSections = useMemo(() => {
     const query = showerHardwareQuery.trim().toLocaleLowerCase('ru')
     return showerHardwareSections
@@ -4525,7 +4542,7 @@ function PricesScreen({
           ['works', 'Работы'],
           ['delivery', 'Доставка'],
         ] as const).map(([id, label]) => (
-          <button className={priceTab === id ? 'is-active' : ''} key={id} type="button" onClick={() => { setPriceTab(id); setOpenSection(null) }}>
+          <button className={priceTab === id ? 'is-active' : ''} key={id} type="button" onClick={() => { setPriceTab(id); setOpenSection(id === 'works' ? 'mirrorServices' : null) }}>
             {label}
           </button>
         ))}
@@ -4768,8 +4785,20 @@ function PricesScreen({
         />
         {openSection === 'mirrorServices' ? (
           <div className="price-accordion-body mirror-price-section-list" id="price-mirror-services">
+            <label className="shower-hardware-search">
+              <Search size={17} aria-hidden="true" />
+              <span className="sr-only">Поиск по работам и комплектующим зеркал</span>
+              <input
+                aria-label="Поиск по работам и комплектующим зеркал"
+                placeholder="Название, артикул или цена"
+                type="search"
+                value={mirrorServiceQuery}
+                onChange={(event) => setMirrorServiceQuery(event.target.value)}
+              />
+              {mirrorServiceQuery ? <small>{formatPositionCount(mirrorServiceMatchCount)}</small> : null}
+            </label>
             {mirrorPriceSections.map((section) => (
-              <details className="mirror-price-section" key={section.id}>
+              <details className="mirror-price-section" key={`${section.id}-${normalizedMirrorServiceQuery ? 'search' : 'browse'}`} open={normalizedMirrorServiceQuery ? true : undefined}>
                 <summary>
                   <span>
                     <strong>{section.label}</strong>
@@ -4790,6 +4819,12 @@ function PricesScreen({
                 </div>
               </details>
             ))}
+            {normalizedMirrorServiceQuery && mirrorPriceSections.length === 0 ? (
+              <div className="price-editor-empty">
+                <strong>Ничего не найдено</strong>
+                <span>Попробуйте изменить название, артикул или цену.</span>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>
