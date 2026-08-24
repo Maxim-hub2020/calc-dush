@@ -356,7 +356,11 @@ function App() {
   const isAdmin = Boolean(serverSession) || import.meta.env.DEV
 
   const synchronizeQuoteArchive = useCallback(async (showLoading = false) => {
-    if (!serverSession || !navigator.onLine) return
+    if (!serverSession) return
+    if (!navigator.onLine) {
+      setQuoteSyncStatus('local')
+      return
+    }
     if (quoteSyncRunningRef.current) {
       quoteSyncRequestedRef.current = true
       return
