@@ -97,7 +97,7 @@ export const mirrorUnitLabels: Record<MirrorUnit, string> = {
 }
 
 export const defaultMirrorCatalog: MirrorPricingCatalog = {
-  revision: 2,
+  revision: 3,
   materials: [
     material('glass-4', 'Бесцветное M1, 4 мм', 930),
     material('glass-5', 'Бесцветное M1, 5 мм', 1340),

@@ -174,10 +174,14 @@ export const mergeMirrorCatalog = (saved: Partial<MirrorPricingCatalog> = {}): M
     'glass-tempered-8',
   ])
   const defaultMaterialIds = new Set(defaultMirrorCatalog.materials.map((item) => item.id))
-  const materials = savedRevision < 2
+  const isReplacedMaterial = (item: { id: string; label: string }) => {
+    const label = item.label.toLocaleLowerCase('ru').replaceAll('ё', 'е')
+    return legacyMaterialIds.has(item.id) || (label.includes('зеркало') && label.includes('состар'))
+  }
+  const materials = savedRevision < 3
     ? [
         ...defaultMirrorCatalog.materials,
-        ...savedMaterials.filter((item) => !legacyMaterialIds.has(item.id) && !defaultMaterialIds.has(item.id)),
+        ...savedMaterials.filter((item) => !isReplacedMaterial(item) && !defaultMaterialIds.has(item.id)),
       ]
     : mergeItems(defaultMirrorCatalog.materials, saved.materials)
 
@@ -189,7 +193,7 @@ export const mergeMirrorCatalog = (saved: Partial<MirrorPricingCatalog> = {}): M
   const savedServices = Array.isArray(saved.services) ? saved.services : []
   const savedServicesById = new Map(savedServices.map((item) => [item.id, item]))
   const defaultServiceIds = new Set(defaultMirrorCatalog.services.map((item) => item.id))
-  const services = (savedRevision < 2
+  const services = (savedRevision < 3
     ? [
         ...defaultMirrorCatalog.services.map((item) => (
           item.id.startsWith('yugros-') ? item : { ...item, ...savedServicesById.get(item.id) }
