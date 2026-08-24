@@ -150,12 +150,51 @@ export const mergeMirrorCatalog = (saved: Partial<MirrorPricingCatalog> = {}): M
     return items.map((item) => ({ ...defaults.find((entry) => entry.id === item.id), ...item } as T))
   }
 
+  const savedMaterials = Array.isArray(saved.materials) ? saved.materials : []
+  const legacyMaterialIds = new Set([
+    'glass-4',
+    'glass-5',
+    'glass-6',
+    'glass-8',
+    'glass-10',
+    'clearvision-4',
+    'clearvision-6',
+    'clearvision-8',
+    'clearvision-10',
+    'matelux-white-4',
+    'matelux-bronze-4',
+    'matelux-white-6',
+    'matelux-white-8',
+    'lacobel-basic-4',
+    'lacobel-clear-white-4',
+    'mirror-graphite-4',
+    'mirror-silver-4',
+    'mirror-clear-4',
+    'glass-graphite-4',
+    'glass-tempered-8',
+  ])
+  const defaultMaterialIds = new Set(defaultMirrorCatalog.materials.map((item) => item.id))
+  const materials = savedRevision < 2
+    ? [
+        ...defaultMirrorCatalog.materials,
+        ...savedMaterials.filter((item) => !legacyMaterialIds.has(item.id) && !defaultMaterialIds.has(item.id)),
+      ]
+    : mergeItems(defaultMirrorCatalog.materials, saved.materials)
+
+  const legacyServiceIdMap = new Map([
+    ['euro-edge-4', 'yugros-edge-straight-4'],
+    ['euro-edge-shaped-4', 'yugros-edge-cnc-4'],
+    ['bevel-10', 'yugros-bevel-5-10'],
+  ])
   const savedServices = Array.isArray(saved.services) ? saved.services : []
   const savedServicesById = new Map(savedServices.map((item) => [item.id, item]))
-  const services = (savedRevision < 1
+  const defaultServiceIds = new Set(defaultMirrorCatalog.services.map((item) => item.id))
+  const services = (savedRevision < 2
     ? [
-        ...defaultMirrorCatalog.services.map((item) => ({ ...item, ...savedServicesById.get(item.id) })),
-        ...savedServices.filter((item) => !defaultMirrorCatalog.services.some((entry) => entry.id === item.id)),
+        ...defaultMirrorCatalog.services.map((item) => (
+          item.id.startsWith('yugros-') ? item : { ...item, ...savedServicesById.get(item.id) }
+        )),
+        ...savedServices.filter((item) => !defaultServiceIds.has(item.id) && !legacyServiceIdMap.has(item.id)),
       ]
     : mergeItems(defaultMirrorCatalog.services, saved.services))
     .filter((item) => item.category !== 'delivery')
@@ -165,13 +204,14 @@ export const mergeMirrorCatalog = (saved: Partial<MirrorPricingCatalog> = {}): M
     ...group,
     visibleInQuote: group.visibleInQuote !== false,
     items: (group.items ?? [])
+      .map((item) => ({ ...item, serviceId: legacyServiceIdMap.get(item.serviceId) ?? item.serviceId }))
       .filter((item) => serviceIds.has(item.serviceId))
       .map((item) => ({ ...item, quantity: Math.max(0, Number(item.quantity) || 0) })),
   }))
 
   return {
     revision: defaultMirrorCatalog.revision,
-    materials: mergeItems(defaultMirrorCatalog.materials, saved.materials),
+    materials,
     services,
     groups,
     settings: { ...defaultMirrorCatalog.settings, ...saved.settings },
