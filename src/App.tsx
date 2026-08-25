@@ -398,6 +398,25 @@ function App() {
   }, [serverSession])
 
   const activePosition = positions.find((position) => position.id === activePositionId) ?? positions[0]
+  const quoteAdjustmentState = useMemo(() => {
+    const designerEnabledCount = positions.filter((position) => position.form.designerEnabled).length
+    const discountEnabledPositions = positions.filter((position) => position.form.discountEnabled)
+    const firstDiscountPercent = discountEnabledPositions[0]?.form.discountPercent
+      ?? positions[0].form.discountPercent
+    const sameDiscountPercent = discountEnabledPositions.every(
+      (position) => position.form.discountPercent === firstDiscountPercent,
+    )
+    return {
+      adjustments: {
+        designerEnabled: designerEnabledCount === positions.length,
+        discountEnabled: discountEnabledPositions.length === positions.length && sameDiscountPercent,
+        discountPercent: firstDiscountPercent,
+      } satisfies SharedFormPatch,
+      designerMixed: designerEnabledCount > 0 && designerEnabledCount < positions.length,
+      discountMixed: discountEnabledPositions.length > 0
+        && (discountEnabledPositions.length < positions.length || !sameDiscountPercent),
+    }
+  }, [positions])
   const positionResults = useMemo(
     () => positions.map((position) => {
       const unitResult = position.kind === 'mirror'
@@ -778,29 +797,15 @@ function App() {
   )
 
   const updateForm = (patch: Partial<CalculatorForm>) => {
-    const sharedPatch = pickSharedPatch(patch)
-    setPositions((current) => current.map((position) => {
-      if (position.id === activePositionId && position.kind === 'shower') {
-        return { ...position, form: { ...position.form, ...patch } }
-      }
-      if (Object.keys(sharedPatch).length > 0) {
-        return mergeSharedPatch(position, sharedPatch)
-      }
-      return position
-    }))
+    setPositions((current) => current.map((position) => position.id === activePositionId && position.kind === 'shower'
+      ? { ...position, form: { ...position.form, ...patch } }
+      : position))
   }
 
   const updateMirrorForm = (patch: Partial<MirrorForm>) => {
-    const sharedPatch = pickSharedPatch(patch)
-    setPositions((current) => current.map((position) => {
-      if (position.id === activePositionId && position.kind === 'mirror') {
-        return { ...position, form: { ...position.form, ...patch } }
-      }
-      if (Object.keys(sharedPatch).length > 0) {
-        return mergeSharedPatch(position, sharedPatch)
-      }
-      return position
-    }))
+    setPositions((current) => current.map((position) => position.id === activePositionId && position.kind === 'mirror'
+      ? { ...position, form: { ...position.form, ...patch } }
+      : position))
   }
 
   const updateQuoteAdjustments = (patch: Partial<SharedFormPatch>) => {
@@ -1014,16 +1019,9 @@ function App() {
       form.note = ''
       return { id: positionId, kind: 'shower', quantity: getQuoteItemQuantity(item), form }
     })
-    const discountSource = nextPositions.find((position) => position.form.discountEnabled)
-    const sharedAdjustments: SharedFormPatch = {
-      designerEnabled: nextPositions.some((position) => position.form.designerEnabled),
-      discountEnabled: Boolean(discountSource),
-      discountPercent: discountSource?.form.discountPercent ?? nextPositions[0].form.discountPercent,
-    }
-    const normalizedPositions = nextPositions.map((position) => mergeSharedPatch(position, sharedAdjustments))
     const selectedIndex = itemId ? Math.max(0, items.findIndex((item) => item.id === itemId)) : 0
-    const selected = normalizedPositions[selectedIndex]
-    setPositions(normalizedPositions)
+    const selected = nextPositions[selectedIndex]
+    setPositions(nextPositions)
     setOrderDelivery(getQuoteDelivery(quote))
     setOrderCustomer(getQuoteCustomer(quote))
     setEditingQuoteId(quote.id)
@@ -1214,7 +1212,7 @@ function App() {
           <PositionSwitcher
             activeId={activePositionId}
             activeQuantity={activePosition.quantity}
-            adjustments={pickSharedPatch(activePosition.form) as SharedFormPatch}
+            adjustments={quoteAdjustmentState.adjustments}
             customer={orderCustomer}
             delivery={orderDelivery}
             deliveryKmRate={catalog.services.deliveryKmRate}
@@ -1222,6 +1220,8 @@ function App() {
             designerPercent={catalog.services.designerPercent === mirrorCatalog.settings.designerPercent
               ? catalog.services.designerPercent
               : undefined}
+            designerMixed={quoteAdjustmentState.designerMixed}
+            discountMixed={quoteAdjustmentState.discountMixed}
             positions={positionSummaries}
             quoteNumber={quotes.find((quote) => quote.id === editingQuoteId)?.number}
             onAdd={() => addPosition(activePosition.kind)}
@@ -1633,6 +1633,33 @@ function CalculatorScreen({
             value={money(construction.installationPrice)}
             onChange={(installation) => onForm({ installation })}
           />
+          <ToggleRow
+            checked={form.designerEnabled}
+            label="Дизайнер на изделие"
+            value={form.designerEnabled ? `Надбавка +${catalog.services.designerPercent}%` : 'Без надбавки'}
+            onChange={(designerEnabled) => onForm({ designerEnabled })}
+          />
+          <ToggleRow
+            checked={form.discountEnabled}
+            label="Скидка на изделие"
+            value={form.discountEnabled ? `${form.discountPercent}%` : 'Без скидки'}
+            onChange={(discountEnabled) => onForm({ discountEnabled })}
+          />
+          {form.discountEnabled ? (
+            <div className="delivery-box service-number-box">
+              <label className="km-field">
+                <span>Размер скидки, %</span>
+                <input
+                  inputMode="decimal"
+                  max={100}
+                  min={0}
+                  type="number"
+                  value={form.discountPercent}
+                  onChange={(event) => onForm({ discountPercent: Number(event.target.value) })}
+                />
+              </label>
+            </div>
+          ) : null}
         </div>
       </section>
       ) : null}
@@ -2070,6 +2097,32 @@ function MirrorCalculatorScreen({
                   value={`+${catalog.settings.managerPercent}%`}
                   onChange={(managerEnabled) => onForm({ managerEnabled })}
                 />
+                <ToggleRow
+                  checked={form.designerEnabled}
+                  label="Дизайнер на изделие"
+                  value={`+${catalog.settings.designerPercent}%`}
+                  onChange={(designerEnabled) => onForm({ designerEnabled })}
+                />
+                <ToggleRow
+                  checked={form.discountEnabled}
+                  label="Скидка на изделие"
+                  value={`${form.discountPercent}%`}
+                  onChange={(discountEnabled) => onForm({ discountEnabled })}
+                />
+                {form.discountEnabled ? (
+                  <label className="delivery-distance">
+                    <span>Размер скидки</span>
+                    <input
+                      inputMode="decimal"
+                      min={0}
+                      max={100}
+                      type="number"
+                      value={form.discountPercent}
+                      onChange={(event) => onForm({ discountPercent: Number(event.target.value) })}
+                    />
+                    <small>%</small>
+                  </label>
+                ) : null}
               </div>
             </section>
           ) : null}
@@ -2216,6 +2269,8 @@ type PositionSwitcherProps = {
   deliveryKmRate: number
   deliveryPrice: number
   designerPercent?: number
+  designerMixed: boolean
+  discountMixed: boolean
   positions: PositionSummary[]
   quoteNumber?: string
   onAdd: () => void
@@ -2240,6 +2295,8 @@ function PositionSwitcher({
   deliveryKmRate,
   deliveryPrice,
   designerPercent,
+  designerMixed,
+  discountMixed,
   positions,
   quoteNumber,
   onAdd,
@@ -2365,12 +2422,14 @@ function PositionSwitcher({
           )
           })}
         </div>
-        <QuoteAdjustmentsControl
-          adjustments={adjustments}
-          designerPercent={designerPercent}
-          onChange={onAdjustments}
-        />
       </div>
+      <QuoteAdjustmentsControl
+        adjustments={adjustments}
+        designerPercent={designerPercent}
+        designerMixed={designerMixed}
+        discountMixed={discountMixed}
+        onChange={onAdjustments}
+      />
       <DeliveryControl
         delivery={delivery}
         kmRate={deliveryKmRate}
@@ -2385,10 +2444,18 @@ function PositionSwitcher({
 type QuoteAdjustmentsControlProps = {
   adjustments: SharedFormPatch
   designerPercent?: number
+  designerMixed: boolean
+  discountMixed: boolean
   onChange: (patch: Partial<SharedFormPatch>) => void
 }
 
-function QuoteAdjustmentsControl({ adjustments, designerPercent, onChange }: QuoteAdjustmentsControlProps) {
+function QuoteAdjustmentsControl({
+  adjustments,
+  designerPercent,
+  designerMixed,
+  discountMixed,
+  onChange,
+}: QuoteAdjustmentsControlProps) {
   return (
     <div className="order-adjustments-control">
       <div className="order-adjustments-title">
@@ -2397,23 +2464,28 @@ function QuoteAdjustmentsControl({ adjustments, designerPercent, onChange }: Quo
         <small>Для всех позиций</small>
       </div>
       <div className="order-adjustments-fields">
-        <label className="order-adjustment-toggle">
+        <label className={designerMixed ? 'order-adjustment-toggle is-mixed' : 'order-adjustment-toggle'}>
           <input
+            aria-checked={designerMixed ? 'mixed' : adjustments.designerEnabled}
             checked={adjustments.designerEnabled}
             type="checkbox"
             onChange={(event) => onChange({ designerEnabled: event.target.checked })}
           />
           <span>Дизайнер</span>
-          <strong>{designerPercent === undefined ? 'По ставкам цен' : `+${designerPercent}%`}</strong>
+          <strong>{designerMixed ? 'Разные' : designerPercent === undefined ? 'По ставкам цен' : `+${designerPercent}%`}</strong>
         </label>
-        <label className="order-adjustment-toggle">
+        <label className={discountMixed ? 'order-adjustment-toggle is-mixed' : 'order-adjustment-toggle'}>
           <input
+            aria-checked={discountMixed ? 'mixed' : adjustments.discountEnabled}
             checked={adjustments.discountEnabled}
             type="checkbox"
-            onChange={(event) => onChange({ discountEnabled: event.target.checked })}
+            onChange={(event) => onChange({
+              discountEnabled: event.target.checked,
+              ...(event.target.checked ? { discountPercent: adjustments.discountPercent } : {}),
+            })}
           />
           <span>Скидка</span>
-          <strong>{adjustments.discountEnabled ? `${adjustments.discountPercent}%` : 'Нет'}</strong>
+          <strong>{discountMixed ? 'Разные' : adjustments.discountEnabled ? `${adjustments.discountPercent}%` : 'Нет'}</strong>
         </label>
         {adjustments.discountEnabled ? (
           <label className="order-discount-value">
