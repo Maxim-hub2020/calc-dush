@@ -17,7 +17,8 @@ import {
   createInitialMirrorForm,
   MIRROR_MAX_HEIGHT_MM,
   MIRROR_MAX_WIDTH_MM,
-  MIRROR_MIN_SIZE_MM,
+  MIRROR_MIN_HEIGHT_MM,
+  MIRROR_MIN_WIDTH_MM,
   type MirrorForm,
 } from './mirrorCalculator'
 import { defaultMirrorCatalog } from './mirrorPricing'
@@ -197,10 +198,11 @@ export default function PublicCalculator() {
   }
 
   const setMirrorDimension = (key: 'width' | 'height', value: number) => {
+    const minimum = key === 'width' ? MIRROR_MIN_WIDTH_MM : MIRROR_MIN_HEIGHT_MM
     const maximum = key === 'width' ? MIRROR_MAX_WIDTH_MM : MIRROR_MAX_HEIGHT_MM
     setMirrorForm((current) => ({
       ...current,
-      [key]: Math.max(MIRROR_MIN_SIZE_MM, Math.min(maximum, value || 0)),
+      [key]: Math.max(minimum, Math.min(maximum, value || 0)),
     }))
   }
 
@@ -392,8 +394,8 @@ export default function PublicCalculator() {
 
                 {product === 'mirror' && step === 0 ? (
                   <div className="public-dimensions">
-                    <DimensionStepper label="Ширина" max={MIRROR_MAX_WIDTH_MM} min={MIRROR_MIN_SIZE_MM} value={mirrorForm.width} onChange={(value) => setMirrorDimension('width', value)} />
-                    <DimensionStepper label="Высота" max={MIRROR_MAX_HEIGHT_MM} min={MIRROR_MIN_SIZE_MM} value={mirrorForm.height} onChange={(value) => setMirrorDimension('height', value)} />
+                    <DimensionStepper label="Ширина" max={MIRROR_MAX_WIDTH_MM} min={MIRROR_MIN_WIDTH_MM} value={mirrorForm.width} onChange={(value) => setMirrorDimension('width', value)} />
+                    <DimensionStepper label="Высота" max={MIRROR_MAX_HEIGHT_MM} min={MIRROR_MIN_HEIGHT_MM} value={mirrorForm.height} onChange={(value) => setMirrorDimension('height', value)} />
                   </div>
                 ) : null}
 
