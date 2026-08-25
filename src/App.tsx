@@ -238,6 +238,7 @@ type MirrorDraftPosition = {
   id: string
   kind: 'mirror'
   quantity: number
+  positionName: string
   form: MirrorForm
 }
 
@@ -248,6 +249,7 @@ type PositionSummary = {
   index: number
   kind: ProductKind
   title: string
+  positionName?: string
   quantity: number
   total: number
   hasErrors: boolean
@@ -289,6 +291,7 @@ const createMirrorDraftPosition = (
   id: crypto.randomUUID(),
   kind: 'mirror',
   quantity: 1,
+  positionName: '',
   form: createInitialMirrorForm(catalog, customer),
 })
 
@@ -433,6 +436,7 @@ function App() {
       title: position.kind === 'mirror'
         ? getMirrorTitle(position.form)
         : getConstruction(catalog, position.form.constructionId).shortTitle,
+      positionName: position.kind === 'mirror' ? position.positionName : undefined,
       quantity: position.quantity,
       total: position.result.total,
       hasErrors: Object.keys(position.result.errors).length > 0,
@@ -447,7 +451,7 @@ function App() {
     const orderSection = buildOrderCalculationSection(
       positionResults.map((position, index) => ({
         label: `Позиция ${index + 1}: ${position.kind === 'mirror'
-          ? getMirrorTitle(position.form)
+          ? position.positionName.trim() || getMirrorTitle(position.form)
           : getConstruction(catalog, position.form.constructionId).shortTitle}`,
         total: position.result.total,
       })),
@@ -826,7 +830,13 @@ function App() {
 
   const createQuoteFromPositions = () => {
     const drafts: QuoteDraftItem[] = positionResults.map((position) => position.kind === 'mirror'
-      ? { kind: 'mirror', quantity: position.quantity, form: cloneMirrorForm(position.form), result: position.unitResult }
+      ? {
+          kind: 'mirror',
+          quantity: position.quantity,
+          positionName: position.positionName,
+          form: cloneMirrorForm(position.form),
+          result: position.unitResult,
+        }
       : { kind: 'shower', quantity: position.quantity, form: cloneForm(position.form), result: position.unitResult })
     const editingQuote = quotes.find((item) => item.id === editingQuoteId)
     const quoteNumber = editingQuote?.number ?? getNextQuoteNumber(quotes)
@@ -935,7 +945,13 @@ function App() {
 
   const duplicatePosition = () => {
     const next: DraftPosition = activePosition.kind === 'mirror'
-      ? { id: crypto.randomUUID(), kind: 'mirror', quantity: activePosition.quantity, form: cloneMirrorForm(activePosition.form) }
+      ? {
+          id: crypto.randomUUID(),
+          kind: 'mirror',
+          quantity: activePosition.quantity,
+          positionName: activePosition.positionName,
+          form: cloneMirrorForm(activePosition.form),
+        }
       : { id: crypto.randomUUID(), kind: 'shower', quantity: activePosition.quantity, form: cloneForm(activePosition.form) }
     const activeIndex = positions.findIndex((position) => position.id === activePositionId)
     setPositions((current) => [
@@ -973,7 +989,9 @@ function App() {
         form.clientName = ''
         form.clientPhone = ''
         form.note = ''
-        return { id: positionId, kind: 'mirror', quantity: getQuoteItemQuantity(item), form }
+        const generatedTitle = getMirrorTitle(form)
+        const positionName = item.positionName ?? (item.mirrorTitle !== generatedTitle ? item.mirrorTitle : '')
+        return { id: positionId, kind: 'mirror', quantity: getQuoteItemQuantity(item), positionName, form }
       }
       const form = cloneForm(item.form)
       form.delivery = false
@@ -1006,6 +1024,12 @@ function App() {
   const updatePositionQuantity = (quantity: number) => {
     setPositions((current) => current.map((position) => position.id === activePositionId
       ? { ...position, quantity: normalizeQuoteQuantity(quantity) }
+      : position))
+  }
+
+  const updateMirrorPositionName = (positionId: string, positionName: string) => {
+    setPositions((current) => current.map((position) => position.id === positionId && position.kind === 'mirror'
+      ? { ...position, positionName }
       : position))
   }
 
@@ -1184,6 +1208,7 @@ function App() {
             onDelivery={updateOrderDelivery}
             onDuplicate={duplicatePosition}
             onNew={() => resetCalculatorDraft(activePosition.kind)}
+            onPositionName={updateMirrorPositionName}
             onQuantity={updatePositionQuantity}
             onSelect={selectPosition}
           />
@@ -1791,7 +1816,8 @@ function MirrorCalculatorScreen({
       <section className="parameter-panel workspace-panel">
         <div className="panel-heading">
           <div>
-            <span>Зеркало {positionSummaries.findIndex((position) => position.id === activePositionId) + 1}</span>
+            <span>{positionSummaries.find((position) => position.id === activePositionId)?.positionName?.trim()
+              || `Зеркало ${positionSummaries.findIndex((position) => position.id === activePositionId) + 1}`}</span>
             <h2>Параметры зеркала</h2>
           </div>
           <ScanLine size={20} aria-hidden="true" />
@@ -2189,6 +2215,7 @@ type PositionSwitcherProps = {
   onDelivery: (patch: Partial<QuoteDelivery>) => void
   onDuplicate: () => void
   onNew?: () => void
+  onPositionName: (id: string, positionName: string) => void
   onQuantity: (quantity: number) => void
   onSelect: (id: string) => void
 }
@@ -2209,6 +2236,7 @@ function PositionSwitcher({
   onDelivery,
   onDuplicate,
   onNew,
+  onPositionName,
   onQuantity,
   onSelect,
 }: PositionSwitcherProps) {
@@ -2288,8 +2316,22 @@ function PositionSwitcher({
 
           return (
             <div className={className} key={position.id}>
+              {position.kind === 'mirror' ? (
+                <label className="position-tab-name">
+                  <span className="sr-only">Название комнаты для зеркала {position.index + 1}</span>
+                  <input
+                    aria-label={`Название комнаты для зеркала ${position.index + 1}`}
+                    maxLength={80}
+                    placeholder={`Зеркало · ${position.index + 1}`}
+                    value={position.positionName ?? ''}
+                    onChange={(event) => onPositionName(position.id, event.target.value)}
+                    onFocus={() => onSelect(position.id)}
+                  />
+                  <Pencil size={12} aria-hidden="true" />
+                </label>
+              ) : null}
               <button className="position-tab-select" type="button" onClick={() => onSelect(position.id)}>
-                <span>{position.kind === 'mirror' ? 'Зеркало' : 'Душевая'} · {position.index + 1}</span>
+                {position.kind === 'shower' ? <span>Душевая · {position.index + 1}</span> : null}
                 <strong>{position.title}</strong>
                 <small>{position.quantity} шт. · {shortMoney(position.total)} ₽</small>
               </button>
@@ -2626,7 +2668,12 @@ function SummaryDock({
         <span>Состав КП</span>
         {positions.map((position) => (
           <div className={position.index === positionIndex ? 'is-active' : ''} key={position.id}>
-            <span>{position.index + 1}. {position.title}<small>{position.quantity} шт.</small></span>
+            <span>
+              {position.index + 1}. {position.positionName?.trim() || position.title}
+              <small>{position.kind === 'mirror' && position.positionName?.trim()
+                ? `${position.title} · ${position.quantity} шт.`
+                : `${position.quantity} шт.`}</small>
+            </span>
             <strong>{money(position.total)}</strong>
           </div>
         ))}

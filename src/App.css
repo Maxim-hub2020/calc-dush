@@ -247,6 +247,60 @@
   padding-right: 42px;
 }
 
+.position-tab-name {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  right: 10px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+}
+
+.position-tab.can-delete .position-tab-name {
+  right: 43px;
+}
+
+.position-tab-name input {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  box-sizing: border-box;
+  padding: 2px 3px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  outline: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--type-caption);
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.position-tab-name input::placeholder {
+  color: var(--accent);
+  opacity: 1;
+  text-transform: uppercase;
+}
+
+.position-tab-name input:focus {
+  border-color: #93b4fa;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.position-tab-name svg {
+  pointer-events: none;
+}
+
+.position-tab:has(.position-tab-name) .position-tab-select {
+  padding-top: 34px;
+}
+
 .position-tab-delete {
   position: absolute;
   top: 8px;

@@ -143,6 +143,7 @@ export type MirrorQuoteItem = {
   form: MirrorForm
   result: CalculationResult
   mirrorTitle: string
+  positionName?: string
   materialLabel: string
   serviceLines: MirrorQuoteServiceLine[]
   details?: QuoteDetailLine[]
@@ -175,6 +176,7 @@ export type ShowerQuoteDraftItem = {
 export type MirrorQuoteDraftItem = {
   kind: 'mirror'
   quantity?: number
+  positionName?: string
   form: MirrorForm
   result: CalculationResult
 }
@@ -587,6 +589,7 @@ const createMirrorQuoteItem = (
     form: draft.form,
     result: draft.result,
     mirrorTitle: getMirrorTitle(draft.form),
+    positionName: draft.positionName?.trim() || undefined,
     materialLabel: getMirrorMaterial(catalog, draft.form.materialId).label,
     serviceLines: [...directServiceLines, ...groupServiceLines],
   }
@@ -596,7 +599,7 @@ export const isMirrorQuoteItem = (item: QuoteItem): item is MirrorQuoteItem => i
 export const isShowerQuoteItem = (item: QuoteItem): item is ShowerQuoteItem => item.kind !== 'mirror'
 
 export const getQuoteItemTitle = (item: QuoteItem) =>
-  isMirrorQuoteItem(item) ? item.mirrorTitle : item.constructionTitle
+  isMirrorQuoteItem(item) ? item.positionName?.trim() || item.mirrorTitle : item.constructionTitle
 
 export const getQuoteItemDetails = (item: QuoteItem): QuoteDetailLine[] => {
   if (Array.isArray(item.details)) return item.details
@@ -811,7 +814,7 @@ export const updateQuoteManually = (quote: Quote, patch: ManualQuotePatch): Quot
 
     if (isMirrorQuoteItem(item)) {
       const form: MirrorForm = { ...item.form, ...sharedForm }
-      return [{ ...item, quantity, form, result, mirrorTitle: itemPatch.title, details: itemPatch.details }]
+      return [{ ...item, quantity, form, result, positionName: itemPatch.title.trim() || undefined, details: itemPatch.details }]
     }
     const form: CalculatorForm = {
       ...item.form,
