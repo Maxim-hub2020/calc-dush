@@ -8,8 +8,8 @@ import {
 import {
   getMirrorCalculatedOptions,
   getMirrorMaterial,
+  getMirrorProductTitle,
   getMirrorServiceGroup,
-  getMirrorTitle,
   type MirrorForm,
 } from './mirrorCalculator'
 import type { MirrorPricingCatalog, MirrorUnit } from './mirrorPricing'
@@ -588,7 +588,7 @@ const createMirrorQuoteItem = (
     quantity: normalizeQuoteQuantity(draft.quantity),
     form: draft.form,
     result: draft.result,
-    mirrorTitle: getMirrorTitle(draft.form),
+    mirrorTitle: getMirrorProductTitle(catalog, draft.form),
     positionName: draft.positionName?.trim() || undefined,
     materialLabel: getMirrorMaterial(catalog, draft.form.materialId).label,
     serviceLines: [...directServiceLines, ...groupServiceLines],

@@ -154,6 +154,11 @@ export const getMirrorCalculatedGroupTotal = (
 export const getMirrorTitle = (form: Pick<MirrorForm, 'width' | 'height'>) =>
   `Зеркало ${Math.max(0, Number(form.width) || 0)} × ${Math.max(0, Number(form.height) || 0)} мм`
 
+export const getMirrorProductTitle = (
+  catalog: MirrorPricingCatalog,
+  form: Pick<MirrorForm, 'width' | 'height' | 'materialId'>,
+) => `${getMirrorMaterial(catalog, form.materialId).label} · ${Math.max(0, Number(form.width) || 0)} × ${Math.max(0, Number(form.height) || 0)} мм`
+
 export const calculateMirrorQuote = (catalog: MirrorPricingCatalog, form: MirrorForm): CalculationResult => {
   const errors: Record<string, string> = {}
   const width = Number(form.width)

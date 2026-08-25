@@ -12,6 +12,7 @@ import {
 import {
   getMirrorCalculatedOptions,
   getMirrorMaterial,
+  getMirrorProductTitle,
   mirrorArea,
   type MirrorForm,
 } from './mirrorCalculator'
@@ -302,7 +303,7 @@ export const buildMirrorCalculationBreakdown = (
   )
 
   return {
-    title: `Зеркало ${number(form.width, 0)} × ${number(form.height, 0)} мм`,
+    title: getMirrorProductTitle(catalog, form),
     sections: [
       {
         title: 'Материал',

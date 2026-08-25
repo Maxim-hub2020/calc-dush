@@ -90,6 +90,7 @@ import {
   getMirrorCalculatedGroupTotal,
   getMirrorCalculatedOptions,
   getMirrorMaterial,
+  getMirrorProductTitle,
   getMirrorService,
   getMirrorTitle,
   MIRROR_MAX_HEIGHT_MM,
@@ -437,14 +438,14 @@ function App() {
       index,
       kind: position.kind,
       title: position.kind === 'mirror'
-        ? getMirrorTitle(position.form)
+        ? getMirrorProductTitle(mirrorCatalog, position.form)
         : getConstruction(catalog, position.form.constructionId).shortTitle,
       positionName: position.kind === 'mirror' ? position.positionName : undefined,
       quantity: position.quantity,
       total: position.result.total,
       hasErrors: Object.keys(position.result.errors).length > 0,
     })),
-    [catalog, positionResults],
+    [catalog, mirrorCatalog, positionResults],
   )
   const adminCalculationBreakdown = useMemo<AdminCalculationBreakdown | null>(() => {
     if (!isAdmin) return null
@@ -454,7 +455,7 @@ function App() {
     const orderSection = buildOrderCalculationSection(
       positionResults.map((position, index) => ({
         label: `Позиция ${index + 1}: ${position.kind === 'mirror'
-          ? position.positionName.trim() || getMirrorTitle(position.form)
+          ? position.positionName.trim() || getMirrorProductTitle(mirrorCatalog, position.form)
           : getConstruction(catalog, position.form.constructionId).shortTitle}`,
         total: position.result.total,
       })),
@@ -992,8 +993,10 @@ function App() {
         form.clientName = ''
         form.clientPhone = ''
         form.note = ''
-        const generatedTitle = getMirrorTitle(form)
-        const positionName = item.positionName ?? (item.mirrorTitle !== generatedTitle ? item.mirrorTitle : '')
+        const generatedTitle = getMirrorProductTitle(mirrorCatalog, form)
+        const legacyGeneratedTitle = getMirrorTitle(form)
+        const positionName = item.positionName
+          ?? (![generatedTitle, legacyGeneratedTitle].includes(item.mirrorTitle) ? item.mirrorTitle : '')
         return { id: positionId, kind: 'mirror', quantity: getQuoteItemQuantity(item), positionName, form }
       }
       const form = cloneForm(item.form)
@@ -2123,7 +2126,7 @@ function MirrorCalculatorScreen({
         <figure className="visualization-figure">
           <img src={mirrorVisualization} alt="Прямоугольное зеркало в светлом интерьере ванной" />
           <figcaption>
-            <strong>{getMirrorTitle(form)}</strong>
+            <strong>{getMirrorProductTitle(catalog, form)}</strong>
             <span>{material.label}</span>
           </figcaption>
         </figure>
