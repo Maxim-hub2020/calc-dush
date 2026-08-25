@@ -92,6 +92,9 @@ import {
   getMirrorMaterial,
   getMirrorService,
   getMirrorTitle,
+  MIRROR_MAX_HEIGHT_MM,
+  MIRROR_MAX_WIDTH_MM,
+  MIRROR_MIN_SIZE_MM,
   type MirrorForm,
 } from './mirrorCalculator'
 import {
@@ -1846,11 +1849,11 @@ function MirrorCalculatorScreen({
               </div>
               <div className="dimension-list mirror-dimensions">
                 <label className="field-row">
-                  <span>Ширина<small>100-4000 мм</small></span>
+                  <span>Ширина<small>{MIRROR_MIN_SIZE_MM}-{MIRROR_MAX_WIDTH_MM} мм</small></span>
                   <input
                     inputMode="numeric"
-                    min={100}
-                    max={4000}
+                    min={MIRROR_MIN_SIZE_MM}
+                    max={MIRROR_MAX_WIDTH_MM}
                     type="number"
                     value={form.width}
                     onChange={(event) => onForm({ width: Number(event.target.value) })}
@@ -1858,11 +1861,11 @@ function MirrorCalculatorScreen({
                   {result.errors.width ? <em>{result.errors.width}</em> : null}
                 </label>
                 <label className="field-row">
-                  <span>Высота<small>100-4000 мм</small></span>
+                  <span>Высота<small>{MIRROR_MIN_SIZE_MM}-{MIRROR_MAX_HEIGHT_MM} мм</small></span>
                   <input
                     inputMode="numeric"
-                    min={100}
-                    max={4000}
+                    min={MIRROR_MIN_SIZE_MM}
+                    max={MIRROR_MAX_HEIGHT_MM}
                     type="number"
                     value={form.height}
                     onChange={(event) => onForm({ height: Number(event.target.value) })}

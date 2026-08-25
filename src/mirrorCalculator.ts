@@ -50,6 +50,10 @@ export type MirrorCalculatedOption = {
   groupSelectionId?: string
 }
 
+export const MIRROR_MIN_SIZE_MM = 100
+export const MIRROR_MAX_WIDTH_MM = 2070
+export const MIRROR_MAX_HEIGHT_MM = 3140
+
 const roundToTen = (value: number) => Math.round(value / 10) * 10
 
 export const getMirrorMaterial = (catalog: MirrorPricingCatalog, id: string): MirrorMaterial =>
@@ -152,10 +156,10 @@ export const calculateMirrorQuote = (catalog: MirrorPricingCatalog, form: Mirror
   const errors: Record<string, string> = {}
   const width = Number(form.width)
   const height = Number(form.height)
-  if (!Number.isFinite(width) || width < 100) errors.width = 'Минимум 100 мм'
-  if (width > 4000) errors.width = 'Максимум 4000 мм'
-  if (!Number.isFinite(height) || height < 100) errors.height = 'Минимум 100 мм'
-  if (height > 4000) errors.height = 'Максимум 4000 мм'
+  if (!Number.isFinite(width) || width < MIRROR_MIN_SIZE_MM) errors.width = `Минимум ${MIRROR_MIN_SIZE_MM} мм`
+  if (width > MIRROR_MAX_WIDTH_MM) errors.width = `Максимум ${MIRROR_MAX_WIDTH_MM} мм`
+  if (!Number.isFinite(height) || height < MIRROR_MIN_SIZE_MM) errors.height = `Минимум ${MIRROR_MIN_SIZE_MM} мм`
+  if (height > MIRROR_MAX_HEIGHT_MM) errors.height = `Максимум ${MIRROR_MAX_HEIGHT_MM} мм`
 
   const area = mirrorArea(form)
   const material = getMirrorMaterial(catalog, form.materialId)

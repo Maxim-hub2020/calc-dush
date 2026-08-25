@@ -12,7 +12,14 @@ import {
   Truck,
 } from 'lucide-react'
 import { calculateQuote, calculateQuoteDelivery, money, normalizeQuoteDelivery, type CalculatorForm, type QuoteDelivery } from './calculator'
-import { calculateMirrorQuote, createInitialMirrorForm, type MirrorForm } from './mirrorCalculator'
+import {
+  calculateMirrorQuote,
+  createInitialMirrorForm,
+  MIRROR_MAX_HEIGHT_MM,
+  MIRROR_MAX_WIDTH_MM,
+  MIRROR_MIN_SIZE_MM,
+  type MirrorForm,
+} from './mirrorCalculator'
 import { defaultMirrorCatalog } from './mirrorPricing'
 import { defaultCatalog } from './pricing'
 import { getConstructionThumbnailStyle } from './constructionThumbnails'
@@ -190,7 +197,11 @@ export default function PublicCalculator() {
   }
 
   const setMirrorDimension = (key: 'width' | 'height', value: number) => {
-    setMirrorForm((current) => ({ ...current, [key]: Math.max(100, Math.min(4000, value || 0)) }))
+    const maximum = key === 'width' ? MIRROR_MAX_WIDTH_MM : MIRROR_MAX_HEIGHT_MM
+    setMirrorForm((current) => ({
+      ...current,
+      [key]: Math.max(MIRROR_MIN_SIZE_MM, Math.min(maximum, value || 0)),
+    }))
   }
 
   const toggleMirrorService = (serviceId: string) => {
@@ -381,8 +392,8 @@ export default function PublicCalculator() {
 
                 {product === 'mirror' && step === 0 ? (
                   <div className="public-dimensions">
-                    <DimensionStepper label="Ширина" value={mirrorForm.width} onChange={(value) => setMirrorDimension('width', value)} />
-                    <DimensionStepper label="Высота" value={mirrorForm.height} onChange={(value) => setMirrorDimension('height', value)} />
+                    <DimensionStepper label="Ширина" max={MIRROR_MAX_WIDTH_MM} min={MIRROR_MIN_SIZE_MM} value={mirrorForm.width} onChange={(value) => setMirrorDimension('width', value)} />
+                    <DimensionStepper label="Высота" max={MIRROR_MAX_HEIGHT_MM} min={MIRROR_MIN_SIZE_MM} value={mirrorForm.height} onChange={(value) => setMirrorDimension('height', value)} />
                   </div>
                 ) : null}
 
@@ -446,16 +457,23 @@ export default function PublicCalculator() {
   )
 }
 
-type DimensionStepperProps = { label: string; value: number; step?: number; onChange: (value: number) => void }
+type DimensionStepperProps = {
+  label: string
+  max?: number
+  min?: number
+  value: number
+  step?: number
+  onChange: (value: number) => void
+}
 
-function DimensionStepper({ label, value, step = 50, onChange }: DimensionStepperProps) {
+function DimensionStepper({ label, max, min, value, step = 50, onChange }: DimensionStepperProps) {
   return (
     <label className="public-stepper">
       <span>{label}</span>
       <div>
-        <button aria-label={`Уменьшить: ${label}`} type="button" onClick={() => onChange(value - step)}><Minus /></button>
-        <input aria-label={label} inputMode="numeric" type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
-        <button aria-label={`Увеличить: ${label}`} type="button" onClick={() => onChange(value + step)}><Plus /></button>
+        <button aria-label={`Уменьшить: ${label}`} disabled={min !== undefined && value <= min} type="button" onClick={() => onChange(value - step)}><Minus /></button>
+        <input aria-label={label} inputMode="numeric" max={max} min={min} type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+        <button aria-label={`Увеличить: ${label}`} disabled={max !== undefined && value >= max} type="button" onClick={() => onChange(value + step)}><Plus /></button>
       </div>
     </label>
   )
