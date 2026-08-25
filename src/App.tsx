@@ -1709,6 +1709,7 @@ function MirrorCalculatorScreen({
   onSave,
 }: MirrorCalculatorScreenProps) {
   const [activeSection, setActiveSection] = useState<MirrorSectionId>('dimensions')
+  const [serviceQuery, setServiceQuery] = useState('')
   const material = getMirrorMaterial(catalog, form.materialId)
   const calculatedOptions = getMirrorCalculatedOptions(catalog, form)
   const selectedServices = new Set(form.options.map((option) => option.serviceId))
@@ -1720,6 +1721,43 @@ function MirrorCalculatorScreen({
       items: catalog.services.filter((item) => item.category !== 'delivery' && item.sectionId === section.id),
     }))
     .filter((section) => section.items.length > 0), [catalog.services])
+  const normalizedServiceQuery = serviceQuery
+    .toLocaleLowerCase('ru')
+    .replaceAll('ё', 'е')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const filteredServiceSections = useMemo(() => serviceSections
+    .map((section) => {
+      if (!normalizedServiceQuery) return section
+      const sectionMatches = section.label
+        .toLocaleLowerCase('ru')
+        .replaceAll('ё', 'е')
+        .includes(normalizedServiceQuery)
+      return {
+        ...section,
+        items: sectionMatches ? section.items : section.items.filter((item) => (
+          `${item.label} ${item.sku ?? ''} ${item.price} ${mirrorUnitLabels[item.unit]}`
+            .toLocaleLowerCase('ru')
+            .replaceAll('ё', 'е')
+            .includes(normalizedServiceQuery)
+        )),
+      }
+    })
+    .filter((section) => section.items.length > 0), [normalizedServiceQuery, serviceSections])
+  const filteredGroups = useMemo(() => {
+    if (!normalizedServiceQuery) return catalog.groups
+    const servicesById = new Map(catalog.services.map((service) => [service.id, service]))
+    return catalog.groups.filter((group) => {
+      const includedServices = group.items
+        .map((item) => servicesById.get(item.serviceId))
+        .filter((service): service is MirrorService => Boolean(service))
+      return `${group.label} ${includedServices.map((service) => `${service.label} ${service.sku ?? ''}`).join(' ')}`
+        .toLocaleLowerCase('ru')
+        .replaceAll('ё', 'е')
+        .includes(normalizedServiceQuery)
+    })
+  }, [catalog.groups, catalog.services, normalizedServiceQuery])
+  const filteredServiceCount = filteredServiceSections.reduce((total, section) => total + section.items.length, 0)
 
   const addOption = (serviceId?: string) => {
     const service = availableServices.find((item) => item.id === serviceId)
@@ -1830,9 +1868,19 @@ function MirrorCalculatorScreen({
                 <h2>Работы и комплекты</h2>
                 <span>{selectedGroups.length + form.options.length} выбрано</span>
               </div>
-              {catalog.groups.length > 0 ? (
+              <label className="search-field mirror-catalog-search">
+                <Search size={18} aria-hidden="true" />
+                <span className="sr-only">Поиск по каталогу работ</span>
+                <input
+                  placeholder="Название, артикул или цена"
+                  type="search"
+                  value={serviceQuery}
+                  onChange={(event) => setServiceQuery(event.target.value)}
+                />
+              </label>
+              {filteredGroups.length > 0 ? (
                 <div className="mirror-group-options" aria-label="Группы работ">
-                  {catalog.groups.map((group) => {
+                  {filteredGroups.map((group) => {
                     const selection = selectedGroups.find((item) => item.groupId === group.id)
                     return (
                       <button
@@ -1853,8 +1901,8 @@ function MirrorCalculatorScreen({
                 </div>
               ) : null}
               <div className="mirror-service-catalog" aria-label="Каталог работ и комплектующих">
-                {serviceSections.map((section) => (
-                  <details className="mirror-service-section" key={section.id}>
+                {filteredServiceSections.map((section) => (
+                  <details className="mirror-service-section" key={section.id} open={normalizedServiceQuery ? true : undefined}>
                     <summary>
                       <span>
                         <strong>{section.label}</strong>
@@ -1885,6 +1933,11 @@ function MirrorCalculatorScreen({
                     </div>
                   </details>
                 ))}
+                {normalizedServiceQuery && filteredGroups.length === 0 && filteredServiceCount === 0 ? (
+                  <div className="mirror-catalog-empty" role="status">
+                    Ничего не найдено
+                  </div>
+                ) : null}
               </div>
               <div className="mirror-options-subhead">
                 <strong>Выбранные работы и комплектующие</strong>

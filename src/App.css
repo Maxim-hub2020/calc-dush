@@ -3423,6 +3423,20 @@
   margin-bottom: 14px;
 }
 
+.mirror-catalog-search {
+  margin-bottom: 12px;
+}
+
+.mirror-catalog-empty {
+  padding: 18px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .mirror-service-section,
 .mirror-price-section {
   overflow: hidden;
