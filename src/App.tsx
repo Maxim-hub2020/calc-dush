@@ -1975,6 +1975,40 @@ function MirrorCalculatorScreen({
                 <strong>Выбранные работы и комплектующие</strong>
               </div>
               <div className="mirror-option-list">
+                {selectedGroups.map((selection) => {
+                  const group = catalog.groups.find((item) => item.id === selection.groupId)
+                  if (!group) return null
+                  const groupOptions = calculatedOptions.filter((option) => option.groupSelectionId === selection.id)
+                  return (
+                    <section className="mirror-selected-group" key={selection.id}>
+                      <header>
+                        <span>
+                          <strong>{group.label}</strong>
+                          <small>{formatPositionCount(groupOptions.length)} в составе</small>
+                        </span>
+                        <b>{money(getMirrorCalculatedGroupTotal(catalog, form, selection.id))}</b>
+                        <button aria-label={`Удалить комплект ${group.label}`} type="button" onClick={() => toggleGroup(group.id)}>
+                          <Trash2 size={16} />
+                        </button>
+                      </header>
+                      <div className="mirror-selected-group-items">
+                        {groupOptions.map((option) => {
+                          const service = getMirrorService(catalog, option.serviceId)
+                          return (
+                            <div className="mirror-selected-group-item" key={option.id}>
+                              <span>
+                                <strong>{option.label}</strong>
+                                {service.sku ? <small>VDSF · арт. {service.sku}</small> : null}
+                              </span>
+                              <b>{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(option.quantity)} {option.unitLabel}</b>
+                              <strong>{money(option.total)}</strong>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  )
+                })}
                 {form.options.map((option, index) => {
                   const service = getMirrorService(catalog, option.serviceId)
                   const calculated = calculatedOptions[index]
@@ -2019,7 +2053,7 @@ function MirrorCalculatorScreen({
                     </div>
                   )
                 })}
-                {form.options.length === 0 ? (
+                {selectedGroups.length === 0 && form.options.length === 0 ? (
                   <div className="mirror-options-empty">
                     <ListPlus size={22} />
                     <span>Выберите позицию в одном из разделов выше</span>

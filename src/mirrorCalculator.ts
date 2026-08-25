@@ -37,6 +37,7 @@ export type MirrorForm = {
 
 export type MirrorCalculatedOption = {
   id: string
+  serviceId: string
   label: string
   unit: MirrorUnit
   unitLabel: string
@@ -109,6 +110,7 @@ const calculateMirrorOption = (
   const quantity = getMirrorOptionQuantity(form, service, selection.quantity)
   return {
     id: selection.id,
+    serviceId: service.id,
     label: service.label,
     unit: service.unit,
     unitLabel: mirrorUnitLabels[service.unit],
