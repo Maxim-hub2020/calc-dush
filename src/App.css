@@ -5439,10 +5439,11 @@ body { padding: 0; background: #f7f7f4; }
 .config-tabs button.is-active { color: #2563eb; background: white; box-shadow: 0 2px 8px rgba(15,23,42,.08); }
 .config-panel { min-height: 480px; display: flex; flex-direction: column; }
 .config-panel > .section-block { flex: 1; padding: 18px 0 8px; border: 0; }
-.construction-strip { grid-template-columns: repeat(3,minmax(0,1fr)); grid-auto-flow: row; max-height: 430px; overflow-y: auto; gap: 9px; padding: 2px; }
-.construction-card { min-width: 0; min-height: 126px; padding: 8px 6px; border-radius: 10px; }
-.construction-card .construction-preview { width: 100%; min-height: 84px; }
-.construction-card span { width: 100%; overflow-wrap: anywhere; font-size: 12px; line-height: 1.25; }
+.construction-strip { grid-template-columns: repeat(4,minmax(0,1fr)); grid-auto-flow: row; max-height: 430px; overflow-y: auto; gap: 9px; padding: 2px; }
+.construction-card { min-width: 0; min-height: 148px; grid-template-rows: 104px minmax(34px,auto); gap: 4px; padding: 6px; border-radius: 10px; text-align: center; }
+.construction-card .construction-preview { width: 100%; height: 104px; min-height: 104px; overflow: visible; border-radius: 0; background: transparent; }
+.construction-card .reference-shower-thumbnail { height: 104px; max-width: 104px; border-radius: 6px; }
+.construction-card > span:last-child { width: 100%; display: flex; align-items: center; justify-content: center; overflow-wrap: anywhere; color: #0f172a; font-size: 14px; font-weight: 800; line-height: 1.2; text-align: center; }
 .construction-card.is-selected { border-color: #2563eb; background: #eff6ff; box-shadow: inset 0 0 0 1px #2563eb; }
 .dimension-list { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .field-row { min-width: 0; padding: 12px; border-radius: 11px; }
