@@ -1787,11 +1787,15 @@ function MirrorCalculatorScreen({
   }, [catalog.groups, catalog.services, normalizedServiceQuery])
   const filteredServiceCount = filteredServiceSections.reduce((total, section) => total + section.items.length, 0)
 
-  const addOption = (serviceId?: string) => {
+  const toggleOption = (serviceId?: string) => {
     const service = availableServices.find((item) => item.id === serviceId)
       ?? availableServices.find((item) => !selectedServices.has(item.id))
       ?? availableServices[0]
     if (!service) return
+    if (selectedServices.has(service.id)) {
+      onForm({ options: form.options.filter((option) => option.serviceId !== service.id) })
+      return
+    }
     onForm({
       options: [...form.options, { id: crypto.randomUUID(), serviceId: service.id, quantity: 1 }],
     })
@@ -1946,10 +1950,9 @@ function MirrorCalculatorScreen({
                           <button
                             aria-pressed={selected}
                             className={selected ? 'is-selected' : ''}
-                            disabled={selected}
                             key={item.id}
                             type="button"
-                            onClick={() => addOption(item.id)}
+                            onClick={() => toggleOption(item.id)}
                           >
                             <span>
                               <strong>{item.label}</strong>
