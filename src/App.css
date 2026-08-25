@@ -5428,9 +5428,9 @@ body { padding: 0; background: #f7f7f4; }
 .order-customer-fields { grid-template-columns: repeat(auto-fit,minmax(96px,1fr)); padding: 12px; border-top: 1px solid #e2e8f0; }
 .order-customer-fields .is-wide { grid-column: 1 / -1; }
 
-.calculator-screen { display: grid; grid-template-columns: minmax(390px, 42fr) minmax(330px, 35fr) minmax(280px, 23fr); gap: 18px; align-items: start; }
+.calculator-screen { display: grid; grid-template-columns: minmax(520px, 1fr) minmax(300px, 380px); gap: 18px; align-items: start; }
 .workspace-panel, .summary-dock, .recent-panel { min-width: 0; border: 1px solid #e2e8f0; border-radius: 14px; background: white; box-shadow: 0 10px 28px rgba(15,23,42,.04); }
-.parameter-panel, .visualization-panel { padding: 18px; }
+.parameter-panel { padding: 18px; }
 .panel-heading { margin-bottom: 16px; }
 .panel-heading span { font-size: 12px; text-transform: uppercase; }
 .panel-heading h2 { font-size: 20px; }
@@ -5463,17 +5463,7 @@ body { padding: 0; background: #f7f7f4; }
 .step-navigation > span { color: #64748b; font-size: 12px; font-weight: 700; }
 .step-back-icon { transform: rotate(180deg); }
 
-.visualization-panel { min-height: 620px; }
-.visualization-figure { min-height: 0; aspect-ratio: 3/4; max-height: 610px; border-radius: 10px; }
-.visualization-figure img { width: 100%; height: 100%; object-fit: cover; }
-.visualization-figure figcaption { padding: 14px; }
-.visualization-specs { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-.visualization-specs div { min-width: 0; padding: 9px; border-radius: 9px; }
-.visualization-specs span { font-size: 11px; }
-.visualization-specs strong { overflow-wrap: anywhere; font-size: 13px; }
-.mirror-visualization-panel .visualization-figure { aspect-ratio: 4/5; }
-
-.summary-column { position: sticky; top: 96px; display: grid; gap: 14px; }
+.summary-column { position: sticky; top: 96px; grid-column: 2; display: grid; gap: 14px; }
 .summary-dock { position: static; padding: 18px; border-radius: 14px; background: #fff; }
 .summary-headline > span { font-size: 13px; }
 .summary-headline > strong { margin: 7px 0 3px; color: #2563eb; font-size: clamp(32px, 3vw, 40px); }
@@ -5588,7 +5578,7 @@ body { padding: 0; background: #f7f7f4; }
   .position-section > .order-adjustments-control { grid-column: 1; grid-row: 3; }
   .order-delivery-control { grid-column: 2; grid-row: 2; }
   .order-customer-control { grid-column: 2; grid-row: 3; }
-  .calculator-screen { grid-template-columns: minmax(360px,1fr) minmax(320px,.86fr); }
+  .calculator-screen { grid-template-columns: 1fr; }
   .summary-column { grid-column: 1/-1; position: sticky; bottom: 12px; top: auto; z-index: 15; }
   .summary-dock { padding: 12px 14px; display: grid; grid-template-columns: minmax(220px,.7fr) minmax(280px,1fr) auto; align-items: center; gap: 14px; box-shadow: 0 14px 34px rgba(15,23,42,.16); }
   .summary-headline > strong { font-size: 30px; }
@@ -5642,7 +5632,7 @@ body { padding: 0; background: #f7f7f4; }
   .order-delivery-body { padding: 10px; border-top: 1px solid #e2e8f0; }
   .order-customer-title small { display: none; }
   .calculator-screen { display: block; }
-  .parameter-panel, .visualization-panel { padding: 14px; }
+  .parameter-panel { padding: 14px; }
   .parameter-panel { border-radius: 12px; }
   .panel-heading { margin-bottom: 12px; }
   .config-tabs { position: relative; grid-template-columns: repeat(4,minmax(0,1fr)); overflow: visible; }
@@ -5656,9 +5646,6 @@ body { padding: 0; background: #f7f7f4; }
   .option-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .inline-selects { grid-template-columns: 1fr; }
   .step-navigation { position: sticky; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 8; margin-inline: -14px; padding: 12px 14px; background: rgba(255,255,255,.97); }
-  .visualization-panel { min-height: 0; margin-top: 12px; }
-  .visualization-panel .panel-heading, .visualization-specs, .visualization-guarantee { display: none; }
-  .visualization-figure, .mirror-visualization-panel .visualization-figure { aspect-ratio: 16/9; max-height: 240px; }
   .summary-column { position: fixed; left: 0; right: 0; bottom: 0; z-index: 18; }
   .summary-dock { border-radius: 12px 12px 0 0; padding: 9px 10px calc(9px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; box-shadow: 0 -10px 30px rgba(15,23,42,.14); }
   .summary-headline > span, .summary-headline > small, .summary-headline del { display: none; }

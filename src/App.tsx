@@ -12,7 +12,6 @@ import {
   ExternalLink,
   FileDown,
   GripVertical,
-  Image,
   MoreHorizontal,
   Layers3,
   ListPlus,
@@ -146,7 +145,6 @@ import {
 } from './serverSync'
 import { shareQuotePdf, type QuotePdfPreview } from './quotePdf'
 import { ProductionWorkspace } from './ProductionWorkspace'
-import mirrorVisualization from './assets/mirror-visualization.png'
 
 type ProductKind = 'shower' | 'mirror'
 type TabId = 'showers' | 'mirrors' | 'archive' | 'prices'
@@ -1673,14 +1671,6 @@ function CalculatorScreen({
         </div>
       </section>
 
-      <ProductVisualization
-        construction={construction}
-        form={form}
-        glass={glass}
-        hardware={hardware}
-        hardwareClass={hardwareClass}
-      />
-
       <div className="summary-column">
         <SummaryDock
           adminBreakdown={adminBreakdown}
@@ -2136,24 +2126,6 @@ function MirrorCalculatorScreen({
         </div>
       </section>
 
-      <section className="visualization-panel workspace-panel mirror-visualization-panel">
-        <div className="panel-heading">
-          <div><span>Предпросмотр</span><h2>Визуализация зеркала</h2></div>
-          <Image size={20} aria-hidden="true" />
-        </div>
-        <figure className="visualization-figure">
-          <img src={mirrorVisualization} alt="Прямоугольное зеркало в светлом интерьере ванной" />
-          <figcaption>
-            <strong>{getMirrorProductTitle(catalog, form)}</strong>
-            <span>{material.label}</span>
-          </figcaption>
-        </figure>
-        <div className="visualization-guarantee">
-          <ShieldCheck size={18} aria-hidden="true" />
-          <span>Размеры и особенности монтажа уточняются после замера</span>
-        </div>
-      </section>
-
       <div className="summary-column">
         <SummaryDock
           adminBreakdown={adminBreakdown}
@@ -2170,47 +2142,6 @@ function MirrorCalculatorScreen({
         />
       </div>
     </div>
-  )
-}
-
-type ProductVisualizationProps = {
-  construction: Construction
-  form: CalculatorForm
-  glass: PriceOption
-  hardware: PriceOption
-  hardwareClass: PriceOption
-}
-
-function ProductVisualization({ construction, form, glass, hardware, hardwareClass }: ProductVisualizationProps) {
-  return (
-    <section className="visualization-panel workspace-panel">
-      <div className="panel-heading">
-        <div>
-          <span>Предпросмотр</span>
-          <h2>Визуализация</h2>
-        </div>
-        <Ruler size={20} aria-hidden="true" />
-      </div>
-      <figure className="visualization-figure">
-        <img src={construction.imageUrl} alt={`Душевая: ${construction.title}`} />
-        <figcaption>
-          <strong>{construction.title}</strong>
-          <span>{glass.label} · {hardwareClass.label} · {hardware.label}</span>
-        </figcaption>
-      </figure>
-      <div className="visualization-specs" aria-label="Размеры выбранной конструкции">
-        {construction.fields.map((field) => (
-          <div key={field.key}>
-            <span>{field.label}</span>
-            <strong>{form.dimensions[field.key] ?? 0} мм</strong>
-          </div>
-        ))}
-      </div>
-      <div className="visualization-guarantee">
-        <ShieldCheck size={18} aria-hidden="true" />
-        <span>Точные размеры уточняются после замера</span>
-      </div>
-    </section>
   )
 }
 
