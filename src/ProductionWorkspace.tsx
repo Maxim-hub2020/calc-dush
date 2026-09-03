@@ -33,6 +33,7 @@ import {
   type ProductionTemplateStatus,
 } from './productionPlanning'
 import { shareProductionPdf, type ProductionPdfPreview } from './productionPdf'
+import { ProductionAssemblyPreview } from './ProductionAssemblyPreview'
 import './ProductionWorkspace.css'
 
 type ProductionWorkspaceProps = {
@@ -716,6 +717,8 @@ export function ProductionWorkspace({ catalog, form, itemIndex, quoteNumber, onC
               {draft.blockingIssues.map((issue) => <p key={issue}><AlertTriangle size={16} /> {issue}</p>)}
             </section>
           ) : null}
+
+          <ProductionAssemblyPreview catalog={catalog} draft={draft} />
 
           <ProductionConstructor
             catalog={catalog}
