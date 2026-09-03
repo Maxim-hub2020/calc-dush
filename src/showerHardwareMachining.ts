@@ -109,7 +109,21 @@ const templates: ShowerHardwareMachiningTemplate[] = [
     pattern: 'none',
     drawingUrl: 'https://av24.su/wa-data/public/shop/img/fdc-35-av24.jpg',
     supportedThicknesses: [8],
-    sourceNote: 'Сквозное зажимное крепление, обработка стекла не требуется',
+    sourceNote: 'Зажимное крепление к кромке стекла, обработка стекла не требуется',
+  },
+  {
+    skuPrefix: 'FDC-14',
+    pattern: 'none',
+    drawingUrl: 'https://av24.su/wa-data/public/site/drawings/FDC-14-BR.pdf',
+    supportedThicknesses: [6, 8],
+    sourceNote: 'Крепление трубы Ø18/19 мм к стене; со стеклом не соединяется',
+  },
+  {
+    skuPrefix: 'FDC-30',
+    pattern: 'none',
+    drawingUrl: 'https://av24.su/wa-data/public/site/drawings/FDC-30-SUS304.pdf',
+    supportedThicknesses: [6, 8],
+    sourceNote: 'Крепление трека 30 × 10 мм к стене; со стеклом не соединяется',
   },
 ]
 
@@ -124,5 +138,8 @@ export const hardwareSectionNeedsMachiningTemplate = (sectionId: string) => [
   'hinges',
   'connectors',
   'handles',
+  'bar-connectors',
+  'sets',
+  'sliding',
   'sliding-systems',
 ].includes(sectionId)
