@@ -4,6 +4,47 @@ import type { PricingCatalog } from './pricing'
 
 const sessionKey = 'shower-calc.server-session.v1'
 const quoteOutboxKey = 'shower-calc.quote-outbox.v1'
+const quoteOwnerKey = 'shower-calc.quote-owner.v1'
+
+const activeOutboxKey = () => {
+  let owner = localStorage.getItem(quoteOwnerKey)
+  if (!owner) {
+    const session = loadServerSession()
+    owner = session ? `user:${session.username.toLocaleLowerCase()}` : 'unassigned'
+    localStorage.setItem(quoteOwnerKey, owner)
+  }
+  const key = `${quoteOutboxKey}:${owner}`
+  const legacy = localStorage.getItem(quoteOutboxKey)
+  if (legacy && !localStorage.getItem(key)) {
+    localStorage.setItem(key, legacy)
+    localStorage.removeItem(quoteOutboxKey)
+  }
+  return key
+}
+
+const bindQuoteOwner = (identity: CrmIdentity) => {
+  const previousKey = activeOutboxKey()
+  const owner = localStorage.getItem(quoteOwnerKey)
+  const nextOwner = `company:${identity.workspace.id}`
+  const nextKey = `${quoteOutboxKey}:${nextOwner}`
+  // Only adopt first-time local drafts or the authenticated legacy user's queue.
+  // A different company's pending changes stay in that company's queue.
+  if (owner === 'unassigned' || owner === `user:${identity.username.toLocaleLowerCase()}`) {
+    const previous = loadQuoteSyncOutbox()
+    localStorage.setItem(quoteOwnerKey, nextOwner)
+    const next = loadQuoteSyncOutbox()
+    const byId = new Map(next.upserts.map((quote) => [quote.id, quote]))
+    previous.upserts.forEach((quote) => {
+      const existing = byId.get(quote.id)
+      if (!existing || quoteVersion(quote) >= quoteVersion(existing)) byId.set(quote.id, quote)
+    })
+    const deletions = [...new Set([...next.deletions, ...previous.deletions])]
+    saveQuoteSyncOutbox({ upserts: [...byId.values()].filter((quote) => !deletions.includes(quote.id)), deletions })
+    if (previousKey !== nextKey) localStorage.removeItem(previousKey)
+  } else {
+    localStorage.setItem(quoteOwnerKey, nextOwner)
+  }
+}
 
 export type ServerSession = {
   username: string
@@ -67,6 +108,7 @@ const saveServerSession = (session: ServerSession) => {
 }
 
 export const clearServerSession = () => {
+  activeOutboxKey()
   localStorage.removeItem(sessionKey)
 }
 
@@ -74,7 +116,7 @@ const emptyQuoteOutbox = (): QuoteSyncOutbox => ({ upserts: [], deletions: [] })
 
 export const loadQuoteSyncOutbox = (): QuoteSyncOutbox => {
   try {
-    const value = localStorage.getItem(quoteOutboxKey)
+    const value = localStorage.getItem(activeOutboxKey())
     if (!value) return emptyQuoteOutbox()
     const parsed = JSON.parse(value) as Partial<QuoteSyncOutbox>
     return {
@@ -88,10 +130,10 @@ export const loadQuoteSyncOutbox = (): QuoteSyncOutbox => {
 
 const saveQuoteSyncOutbox = (outbox: QuoteSyncOutbox) => {
   if (outbox.upserts.length === 0 && outbox.deletions.length === 0) {
-    localStorage.removeItem(quoteOutboxKey)
+    localStorage.removeItem(activeOutboxKey())
     return
   }
-  localStorage.setItem(quoteOutboxKey, JSON.stringify(outbox))
+  localStorage.setItem(activeOutboxKey(), JSON.stringify(outbox))
 }
 
 export const queueServerQuoteUpserts = (quotes: Quote[]) => {
@@ -134,6 +176,7 @@ export const mergeServerQuoteArchive = (serverQuotes: Quote[], outbox = loadQuot
 }
 
 export const loginToServer = async (username: string, password: string): Promise<ServerSession> => {
+  activeOutboxKey()
   let response: Response
   try {
     response = await fetch(`${apiBase()}/auth/token/`, {
@@ -159,12 +202,17 @@ export const loginToServer = async (username: string, password: string): Promise
   if (!tokens.access || !tokens.refresh) {
     throw new ServerSyncError('server', 'Сервер не вернул данные для входа')
   }
-  const session = { username: username.trim(), access: tokens.access, refresh: tokens.refresh }
+  const profile = await fetch(`${apiBase()}/me/`, { headers: { Authorization: `Bearer ${tokens.access}` }, cache: 'no-store' })
+  if (!profile.ok) throw new ServerSyncError('server', 'Не удалось проверить компанию CRM')
+  const identity = await profile.json() as CrmIdentity
+  if (!identity.workspace?.id || !identity.is_admin) throw new ServerSyncError('forbidden', 'Войдите как администратор своей компании CRM')
+  bindQuoteOwner(identity)
+  const session = { username: identity.username, access: tokens.access, refresh: tokens.refresh }
   saveServerSession(session)
   return session
 }
 
-const refreshAccessToken = async (session: ServerSession): Promise<ServerSession> => {
+const requestRefreshedSession = async (session: ServerSession): Promise<ServerSession> => {
   let response: Response
   try {
     response = await fetch(`${apiBase()}/auth/token/refresh/`, {
@@ -177,14 +225,26 @@ const refreshAccessToken = async (session: ServerSession): Promise<ServerSession
   }
 
   if (!response.ok) {
+    if (loadServerSession()?.refresh !== session.refresh) throw new ServerSyncError('server', 'Учётная запись изменена. Повторите синхронизацию.')
     clearServerSession()
     throw new ServerSyncError('auth', 'Сеанс завершён. Войдите снова')
   }
 
   const tokens = await response.json() as { access: string; refresh?: string }
+  if (loadServerSession()?.refresh !== session.refresh) throw new ServerSyncError('server', 'Учётная запись изменена. Повторите синхронизацию.')
   const next = { ...session, access: tokens.access, refresh: tokens.refresh || session.refresh }
   saveServerSession(next)
   return next
+}
+
+let pendingRefresh: { token: string; promise: Promise<ServerSession> } | null = null
+const refreshAccessToken = (session: ServerSession): Promise<ServerSession> => {
+  if (pendingRefresh?.token === session.refresh) return pendingRefresh.promise
+  const promise = requestRefreshedSession(session).finally(() => {
+    if (pendingRefresh?.promise === promise) pendingRefresh = null
+  })
+  pendingRefresh = { token: session.refresh, promise }
+  return promise
 }
 
 const authenticatedRequest = async (path: string, init: RequestInit = {}) => {
@@ -216,6 +276,10 @@ const authenticatedRequest = async (path: string, init: RequestInit = {}) => {
     throw new ServerSyncError('network', 'Нет связи с сервером')
   }
 
+  if (loadServerSession()?.username !== session.username) {
+    throw new ServerSyncError('server', 'Учётная запись изменена. Повторите синхронизацию.')
+  }
+
   if (response.status === 401) {
     clearServerSession()
     throw new ServerSyncError('auth', 'Сеанс завершён. Войдите снова')
@@ -232,6 +296,23 @@ const authenticatedRequest = async (path: string, init: RequestInit = {}) => {
 export const loadServerCatalogs = async (): Promise<ServerCatalogs> => {
   const response = await authenticatedRequest('/calculator-settings/')
   return response.json() as Promise<ServerCatalogs>
+}
+
+export type CrmIdentity = {
+  id: number
+  username: string
+  is_admin: boolean
+  workspace: { id: number; name: string; slug: string }
+}
+
+export const loadCrmIdentity = async (): Promise<CrmIdentity> => {
+  const username = loadServerSession()?.username
+  const response = await authenticatedRequest('/me/')
+  const identity = await response.json() as CrmIdentity
+  if (loadServerSession()?.username !== username) throw new ServerSyncError('server', 'Учётная запись изменена. Повторите синхронизацию.')
+  if (!identity.workspace?.id) throw new ServerSyncError('server', 'В CRM не определена компания')
+  bindQuoteOwner(identity)
+  return identity
 }
 
 export const saveServerCatalogs = async (
@@ -265,11 +346,21 @@ export const deleteServerQuote = async (quoteId: string) => {
 }
 
 export const synchronizeServerQuotes = async (): Promise<ServerQuoteArchive> => {
+  await loadCrmIdentity()
+  const owner = activeOutboxKey()
+  const assertOwner = () => {
+    if (owner !== activeOutboxKey() || !loadServerSession()) throw new ServerSyncError('server', 'Компания изменена. Повторите синхронизацию.')
+  }
   const processed = loadQuoteSyncOutbox()
-  for (const quoteId of processed.deletions) await deleteServerQuote(quoteId)
+  for (const quoteId of processed.deletions) {
+    assertOwner()
+    await deleteServerQuote(quoteId)
+  }
+  assertOwner()
   const remote = processed.upserts.length > 0
     ? await syncServerQuotes(processed.upserts)
     : await loadServerQuotes()
+  assertOwner()
   clearProcessedQuoteOutbox(processed)
   return remote
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
+import { CrmConnectionPanel } from './CrmConnectionPanel'
 import {
   Archive,
   Box,
@@ -1199,6 +1200,13 @@ function App() {
       </header>
 
       <main className="app-main">
+        <CrmConnectionPanel
+          username={serverSession?.username ?? ''}
+          syncStatus={quoteSyncStatus}
+          syncMessage={quoteSyncMessage}
+          onLogin={loginForServerSync}
+          onLogout={logoutFromServerSync}
+        />
         {notice ? (
           <button className="notice" type="button" onClick={() => setNotice('')}>
             <Check size={16} />
