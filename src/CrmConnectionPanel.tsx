@@ -55,8 +55,8 @@ export function CrmConnectionPanel({ username, syncStatus, syncMessage, onLogin,
     <div className="crm-connection-body">
       {identity ? <>
         <strong>Компания: {identity.workspace.name} · ID {identity.workspace.id}</strong>
-        <p>Учётная запись: {identity.username}. Сохранённые КП с именем или телефоном клиента попадают в «Запросы» только этой компании.</p>
-        <a href="https://cehcrm.ru/requests" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Открыть заявки CRM</a>
+        <p>Учётная запись: {identity.username}. Сохранённые КП с именем или телефоном клиента попадают в столбец «Заявки» канбана этой компании.</p>
+        <a href="https://cehcrm.ru/projects" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Открыть проекты CRM</a>
         <p>В CRM войдите под той же учётной записью и сверьте название компании.</p>
         {!identity.is_admin ? <p role="alert">Этой учётной записи не хватает прав на сохранение КП. Войдите как администратор своей компании.</p> : null}
       </> : !username ? <form onSubmit={(event) => void submit(event)}>
