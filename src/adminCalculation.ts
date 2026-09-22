@@ -34,11 +34,24 @@ export type AdminCalculationSection = {
 export type AdminCalculationBreakdown = {
   title: string
   sections: AdminCalculationSection[]
+  finance: {
+    position: AdminProfitSummary
+    order?: AdminProfitSummary
+  }
 }
 
 type OrderCalculationItem = {
   label: string
   total: number
+  cost: number
+}
+
+export type AdminProfitSummary = {
+  cost: number
+  revenue: number
+  profit: number
+  marginPercent: number
+  lowMargin: boolean
 }
 
 const roundToTen = (value: number) => Math.round(value / 10) * 10
@@ -49,6 +62,101 @@ const number = (value: number, maximumFractionDigits = 3) => new Intl.NumberForm
 
 const percentFactor = (value: number) => 1 + Math.max(0, Number(value) || 0) / 100
 const discountPercent = (value: number) => Math.min(100, Math.max(0, Number(value) || 0))
+
+export const buildAdminProfitSummary = (cost: number, revenue: number): AdminProfitSummary => {
+  const normalizedCost = Math.max(0, Number(cost) || 0)
+  const normalizedRevenue = Math.max(0, Number(revenue) || 0)
+  const profit = normalizedRevenue - normalizedCost
+  const marginPercent = normalizedRevenue > 0 ? profit / normalizedRevenue * 100 : 0
+
+  return {
+    cost: normalizedCost,
+    revenue: normalizedRevenue,
+    profit,
+    marginPercent,
+    lowMargin: normalizedRevenue > 0 && marginPercent < 30,
+  }
+}
+
+export const getShowerCostPrice = (
+  catalog: PricingCatalog,
+  form: CalculatorForm,
+  unitResult: CalculationResult,
+) => {
+  if (Object.keys(unitResult.errors).length > 0) return 0
+  const construction = getConstruction(catalog, form.constructionId)
+  const glass = getOption(catalog.glass, form.glassId)
+  const hardware = getOption(catalog.hardware, form.hardwareId)
+  const hardwareClass = getOption(catalog.hardwareClass, form.hardwareClassId)
+  const hardwareComponents = getConstructionHardwareComponents(catalog, construction, glass.thickness)
+  const heightField = construction.fields.find((field) => field.key.startsWith('HEIGHT'))
+  const height = Number(form.dimensions[heightField?.key ?? 'HEIGHT_0'] ?? 0)
+  const glassPrice = construction.fields
+    .filter((field) => field.key.startsWith('WIDTH'))
+    .reduce((sum, field) => {
+      const width = Number(form.dimensions[field.key] ?? 0)
+      return sum + Math.round(width / 1000 * height / 1000 * glass.price)
+    }, 0)
+  const staticHardwareBasePrice = getConstructionHardwareBasePrice(
+    catalog,
+    construction,
+    glass.thickness,
+  )
+  const hardwareBasePrice = Math.max(
+    0,
+    staticHardwareBasePrice + (Number(form.productionPriceAdjustment) || 0),
+  )
+  const hardwarePrice = hardwareBasePrice
+    * percentFactor(hardwareClass.price)
+    * percentFactor(hardware.price)
+  const fallbackConstructionBase = hardwareComponents.length > 0
+    ? 0
+    : Math.max(0, Number(construction.basePrice) || 0)
+  const installationCost = form.installation ? Math.max(0, Number(construction.installationPrice) || 0) : 0
+  const productMarkup = Math.max(0, Number(catalog.services.productMarkupPercent) || 0)
+  const hardwareMarkup = Math.max(0, Number(catalog.services.hardwareMarkupPercent) || 0)
+  const sellingBase = ceilToTen(
+    (glassPrice + fallbackConstructionBase) * percentFactor(productMarkup)
+      + hardwarePrice * percentFactor(hardwareMarkup),
+  )
+  const surchargePercent = height > catalog.services.heightSurchargeAfter
+    ? catalog.services.heightSurchargePercent
+    : 0
+  const productWithSurcharge = roundToTen(sellingBase * percentFactor(surchargePercent))
+  const designerPercent = form.designerEnabled
+    ? Math.max(0, Number(catalog.services.designerPercent) || 0)
+    : 0
+  const designerPayout = form.designerEnabled
+    ? roundToTen(productWithSurcharge * percentFactor(designerPercent)) - productWithSurcharge
+      + roundToTen(installationCost * percentFactor(designerPercent)) - installationCost
+    : 0
+
+  return glassPrice + fallbackConstructionBase + hardwarePrice + installationCost + designerPayout
+}
+
+export const getMirrorCostPrice = (
+  catalog: MirrorPricingCatalog,
+  form: MirrorForm,
+  unitResult: CalculationResult,
+) => {
+  if (Object.keys(unitResult.errors).length > 0) return 0
+  const area = mirrorArea(form)
+  const material = getMirrorMaterial(catalog, form.materialId)
+  const options = getMirrorCalculatedOptions(catalog, form).filter((item) => item.category === 'work')
+  const rawMaterial = area * material.price
+  const rawWork = options.reduce((sum, item) => sum + item.total, 0)
+  const baseProduct = rawMaterial * percentFactor(catalog.settings.materialMarkupPercent)
+  const baseInstallation = rawWork * percentFactor(catalog.settings.serviceMarkupPercent)
+  const baseSubtotal = baseProduct + baseInstallation
+  const managerPayout = form.managerEnabled
+    ? baseSubtotal * Math.max(0, Number(catalog.settings.managerPercent) || 0) / 100
+    : 0
+  const designerPayout = form.designerEnabled
+    ? baseSubtotal * Math.max(0, Number(catalog.settings.designerPercent) || 0) / 100
+    : 0
+
+  return rawMaterial + rawWork + managerPayout + designerPayout
+}
 
 export const buildShowerCalculationBreakdown = (
   catalog: PricingCatalog,
@@ -104,6 +212,7 @@ export const buildShowerCalculationBreakdown = (
     ? roundMoneyUp(subtotal - subtotal / 100 * appliedDiscount)
     : subtotal
   const normalizedQuantity = Math.max(1, Math.floor(Number(quantity) || 1))
+  const positionCost = getShowerCostPrice(catalog, form, unitResult) * normalizedQuantity
 
   const dimensionRows: AdminCalculationRow[] = panelAreas.map((area, index) => ({
     label: `Стекло ${index + 1}`,
@@ -127,6 +236,9 @@ export const buildShowerCalculationBreakdown = (
 
   return {
     title: construction.shortTitle,
+    finance: {
+      position: buildAdminProfitSummary(positionCost, unitResult.total * normalizedQuantity),
+    },
     sections: [
       {
         title: 'Размеры и стекло',
@@ -280,6 +392,7 @@ export const buildMirrorCalculationBreakdown = (
     ? roundMoneyUp(subtotal * (1 - appliedDiscount / 100))
     : subtotal
   const normalizedQuantity = Math.max(1, Math.floor(Number(quantity) || 1))
+  const positionCost = getMirrorCostPrice(catalog, form, unitResult) * normalizedQuantity
   const workRows: AdminCalculationRow[] = options.map((item) => ({
     label: item.label,
     formula: `${number(item.quantity)} ${item.unitLabel} × ${money(item.unitPrice)}`,
@@ -304,6 +417,9 @@ export const buildMirrorCalculationBreakdown = (
 
   return {
     title: getMirrorProductTitle(catalog, form),
+    finance: {
+      position: buildAdminProfitSummary(positionCost, unitResult.total * normalizedQuantity),
+    },
     sections: [
       {
         title: 'Материал',
@@ -407,6 +523,9 @@ export const buildOrderCalculationSection = (
   orderTotal: number,
 ): AdminCalculationSection => {
   const itemsTotal = items.reduce((sum, item) => sum + item.total, 0)
+  const itemsCost = items.reduce((sum, item) => sum + item.cost, 0)
+  const deliveryCost = delivery.enabled ? deliveryPrice : 0
+  const profit = buildAdminProfitSummary(itemsCost + deliveryCost, orderTotal)
   const basePrice = Math.max(0, Number(catalog.services.deliveryBase) || 0)
   const kmRate = Math.max(0, Number(catalog.services.deliveryKmRate) || 0)
   const deliveryFormula = !delivery.enabled
@@ -434,6 +553,24 @@ export const buildOrderCalculationSection = (
         value: money(deliveryPrice),
       },
       {
+        label: 'Себестоимость КП',
+        formula: `${money(itemsCost)} + ${money(deliveryCost)} доставка`,
+        value: money(profit.cost),
+        emphasis: true,
+      },
+      {
+        label: 'Останется компании',
+        formula: `${money(orderTotal)} − ${money(profit.cost)}`,
+        value: money(profit.profit),
+        emphasis: true,
+      },
+      {
+        label: 'Маржа',
+        formula: `${money(profit.profit)} / ${money(orderTotal)} × 100%`,
+        value: `${number(profit.marginPercent, 1)}%${profit.lowMargin ? ' · ниже 30%' : ''}`,
+        emphasis: true,
+      },
+      {
         label: 'Итого по КП',
         formula: `${money(itemsTotal)} + ${money(deliveryPrice)}`,
         value: money(orderTotal),
@@ -442,3 +579,13 @@ export const buildOrderCalculationSection = (
     ],
   }
 }
+
+export const buildOrderProfitSummary = (
+  items: OrderCalculationItem[],
+  delivery: QuoteDelivery,
+  deliveryPrice: number,
+  orderTotal: number,
+) => buildAdminProfitSummary(
+  items.reduce((sum, item) => sum + item.cost, 0) + (delivery.enabled ? deliveryPrice : 0),
+  orderTotal,
+)

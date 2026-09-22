@@ -41,7 +41,10 @@ import './App.css'
 import {
   buildMirrorCalculationBreakdown,
   buildOrderCalculationSection,
+  buildOrderProfitSummary,
   buildShowerCalculationBreakdown,
+  getMirrorCostPrice,
+  getShowerCostPrice,
   type AdminCalculationBreakdown,
 } from './adminCalculation'
 import {
@@ -472,13 +475,17 @@ function App() {
     const positionBreakdown = activePosition.kind === 'mirror'
       ? buildMirrorCalculationBreakdown(mirrorCatalog, activePosition.form, activePosition.quantity, activeUnitResult)
       : buildShowerCalculationBreakdown(catalog, activePosition.form, activePosition.quantity, activeUnitResult)
+    const orderCalculationItems = positionResults.map((position, index) => ({
+      label: `Позиция ${index + 1}: ${position.kind === 'mirror'
+        ? position.positionName.trim() || getMirrorProductTitle(mirrorCatalog, position.form)
+        : getConstruction(catalog, position.form.constructionId).shortTitle}`,
+      total: position.result.total,
+      cost: (position.kind === 'mirror'
+        ? getMirrorCostPrice(mirrorCatalog, position.form, position.unitResult)
+        : getShowerCostPrice(catalog, position.form, position.unitResult)) * position.quantity,
+    }))
     const orderSection = buildOrderCalculationSection(
-      positionResults.map((position, index) => ({
-        label: `Позиция ${index + 1}: ${position.kind === 'mirror'
-          ? position.positionName.trim() || getMirrorProductTitle(mirrorCatalog, position.form)
-          : getConstruction(catalog, position.form.constructionId).shortTitle}`,
-        total: position.result.total,
-      })),
+      orderCalculationItems,
       orderDelivery,
       catalog,
       orderDeliveryPrice,
@@ -486,6 +493,15 @@ function App() {
     )
     return {
       ...positionBreakdown,
+      finance: {
+        ...positionBreakdown.finance,
+        order: buildOrderProfitSummary(
+          orderCalculationItems,
+          orderDelivery,
+          orderDeliveryPrice,
+          orderResult.total,
+        ),
+      },
       sections: [...positionBreakdown.sections, orderSection],
     }
   }, [
@@ -2681,6 +2697,11 @@ type AdminCalculationDetailsProps = {
 }
 
 function AdminCalculationDetails({ breakdown }: AdminCalculationDetailsProps) {
+  const finance = breakdown.finance.order ?? breakdown.finance.position
+  const positionFinance = breakdown.finance.position
+  const marginLabel = `${finance.marginPercent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
+  const positionMarginLabel = `${positionFinance.marginPercent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
+
   return (
     <details className="admin-calculation-details">
       <summary>
@@ -2692,8 +2713,50 @@ function AdminCalculationDetails({ breakdown }: AdminCalculationDetailsProps) {
           </span>
         </span>
         <ChevronDown className="admin-calculation-chevron" size={17} aria-hidden="true" />
+        <span className="admin-finance-overview">
+          <span className="admin-finance-metric">
+            <small>Себестоимость КП</small>
+            <strong>{money(finance.cost)}</strong>
+          </span>
+          <span className={finance.profit < 0 ? 'admin-finance-metric is-alert' : 'admin-finance-metric'}>
+            <small>Останется</small>
+            <strong>{money(finance.profit)}</strong>
+          </span>
+          <span className={finance.lowMargin ? 'admin-finance-metric is-alert' : 'admin-finance-metric is-healthy'}>
+            <small>Маржа</small>
+            <strong>{marginLabel}</strong>
+            {finance.lowMargin ? <em>Ниже 30%</em> : null}
+          </span>
+        </span>
       </summary>
       <div className="admin-calculation-body">
+        <section className="admin-calculation-section">
+          <h3>Экономика активной позиции</h3>
+          <div className="admin-calculation-rows">
+            <div className="admin-calculation-row">
+              <span>Себестоимость</span>
+              <code>Материалы, работы и выплаты с учётом количества</code>
+              <strong>{money(positionFinance.cost)}</strong>
+            </div>
+            <div className="admin-calculation-row">
+              <span>Цена продажи</span>
+              <code>Итог позиции после скидки</code>
+              <strong>{money(positionFinance.revenue)}</strong>
+            </div>
+            <div className="admin-calculation-row is-emphasis">
+              <span>Останется компании</span>
+              <code>{money(positionFinance.revenue)} − {money(positionFinance.cost)}</code>
+              <strong>{money(positionFinance.profit)}</strong>
+            </div>
+            <div className={positionFinance.lowMargin
+              ? 'admin-calculation-row is-margin-alert'
+              : 'admin-calculation-row is-margin-healthy'}>
+              <span>Маржа позиции</span>
+              <code>{money(positionFinance.profit)} / {money(positionFinance.revenue)} × 100%</code>
+              <strong>{positionMarginLabel}{positionFinance.lowMargin ? ' · ниже 30%' : ''}</strong>
+            </div>
+          </div>
+        </section>
         {breakdown.sections.map((section, sectionIndex) => (
           <section className="admin-calculation-section" key={`${section.title}-${sectionIndex}`}>
             <h3>{section.title}</h3>
@@ -2713,6 +2776,27 @@ function AdminCalculationDetails({ breakdown }: AdminCalculationDetailsProps) {
         ))}
       </div>
     </details>
+  )
+}
+
+function AdminMobileFinance({ breakdown }: AdminCalculationDetailsProps) {
+  const finance = breakdown.finance.order ?? breakdown.finance.position
+
+  return (
+    <div className={finance.lowMargin ? 'admin-mobile-finance is-alert' : 'admin-mobile-finance'}>
+      <span>
+        <small>Себестоимость</small>
+        <strong>{money(finance.cost)}</strong>
+      </span>
+      <span>
+        <small>Останется</small>
+        <strong>{money(finance.profit)}</strong>
+      </span>
+      <span>
+        <small>Маржа</small>
+        <strong>{finance.marginPercent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%</strong>
+      </span>
+    </div>
   )
 }
 
@@ -2748,6 +2832,7 @@ function SummaryDock({
       </div>
       {priceComparison ? <PriceComparisonPanel comparison={priceComparison} /> : null}
       {adminBreakdown ? <AdminCalculationDetails breakdown={adminBreakdown} /> : null}
+      {adminBreakdown ? <AdminMobileFinance breakdown={adminBreakdown} /> : null}
       <div className="summary-composition">
         <span>Состав КП</span>
         {positions.map((position) => (
