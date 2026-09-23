@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { CrmConnectionPanel } from './CrmConnectionPanel'
 import {
   Archive,
@@ -330,6 +330,10 @@ const remapQuoteVariants = (sourceQuote: Quote, nextItems: ReturnType<typeof get
 }
 
 function App() {
+  const linkedQuoteId = useMemo(
+    () => new URLSearchParams(window.location.search).get('quote')?.trim() ?? '',
+    [],
+  )
   const [catalog, setCatalog] = useState<PricingCatalog>(() => loadCatalog())
   const [mirrorCatalog, setMirrorCatalog] = useState<MirrorPricingCatalog>(() => loadMirrorCatalog())
   const [quotes, setQuotes] = useState<Quote[]>(() => loadQuotes())
@@ -362,6 +366,7 @@ function App() {
   const mirrorCatalogRef = useRef(mirrorCatalog)
   const quoteSyncRunningRef = useRef(false)
   const quoteSyncRequestedRef = useRef(false)
+  const openedLinkedQuoteRef = useRef('')
   catalogRef.current = catalog
   mirrorCatalogRef.current = mirrorCatalog
   const isAdmin = Boolean(serverSession) || import.meta.env.DEV
@@ -1045,6 +1050,29 @@ function App() {
     setActiveTab(selected.kind === 'mirror' ? 'mirrors' : 'showers')
     setNotice(`${quote.number} открыт`)
   }
+
+  const openLinkedQuote = useEffectEvent((quote: Quote) => {
+    loadQuoteToCalculator(quote)
+  })
+
+  useEffect(() => {
+    if (!linkedQuoteId || openedLinkedQuoteRef.current === linkedQuoteId) return
+    if (serverSession && quoteSyncStatus === 'loading') return
+
+    const linkedQuote = quotes.find((quote) => quote.id === linkedQuoteId)
+    if (!linkedQuote) {
+      setActiveTab('archive')
+      if (!serverSession) setNotice('Войдите в CRM, чтобы открыть связанное КП')
+      else if (quoteSyncStatus === 'synced') setNotice('Связанное КП не найдено в архиве')
+      return
+    }
+
+    openedLinkedQuoteRef.current = linkedQuoteId
+    openLinkedQuote(linkedQuote)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('quote')
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [linkedQuoteId, quoteSyncStatus, quotes, serverSession])
 
   const selectPosition = (positionId: string) => {
     const position = positions.find((item) => item.id === positionId)
