@@ -13,11 +13,13 @@ export type MirrorOptionSelection = {
   id: string
   serviceId: string
   quantity: number
+  manualQuantity?: number
 }
 
 export type MirrorGroupSelection = {
   id: string
   groupId: string
+  itemQuantities?: Record<string, number>
 }
 
 export type MirrorForm = {
@@ -42,6 +44,7 @@ export type MirrorCalculatedOption = {
   unit: MirrorUnit
   unitLabel: string
   quantity: number
+  automaticQuantity: number
   unitPrice: number
   total: number
   category: MirrorService['category']
@@ -85,7 +88,10 @@ export const createInitialMirrorForm = (catalog: MirrorPricingCatalog, customer?
 export const cloneMirrorForm = (form: MirrorForm): MirrorForm => ({
   ...form,
   options: form.options.map((option) => ({ ...option })),
-  groups: (form.groups ?? []).map((group) => ({ ...group })),
+  groups: (form.groups ?? []).map((group) => ({
+    ...group,
+    itemQuantities: group.itemQuantities ? { ...group.itemQuantities } : undefined,
+  })),
 })
 
 export const mirrorArea = (form: Pick<MirrorForm, 'width' | 'height'>) =>
@@ -94,11 +100,23 @@ export const mirrorArea = (form: Pick<MirrorForm, 'width' | 'height'>) =>
 export const mirrorPerimeter = (form: Pick<MirrorForm, 'width' | 'height'>) =>
   2 * (Math.max(0, Number(form.width) || 0) + Math.max(0, Number(form.height) || 0)) / 1000
 
-export const getMirrorOptionQuantity = (form: MirrorForm, service: MirrorService, requested: number) => {
+export const getMirrorAutomaticOptionQuantity = (form: MirrorForm, service: MirrorService, requested: number) => {
   const quantity = Math.max(0, Number(requested) || 0)
   if (service.unit === 'area') return mirrorArea(form) * quantity
   if (service.unit === 'perimeter') return mirrorPerimeter(form) * quantity
   return quantity
+}
+
+export const getMirrorOptionQuantity = (
+  form: MirrorForm,
+  service: MirrorService,
+  requested: number,
+  manualQuantity?: number,
+) => {
+  const normalizedManualQuantity = Number(manualQuantity)
+  return Number.isFinite(normalizedManualQuantity) && normalizedManualQuantity >= 0
+    ? normalizedManualQuantity
+    : getMirrorAutomaticOptionQuantity(form, service, requested)
 }
 
 const calculateMirrorOption = (
@@ -108,7 +126,8 @@ const calculateMirrorOption = (
   group?: { id: string; label: string; selectionId: string },
 ): MirrorCalculatedOption => {
   const service = getMirrorService(catalog, selection.serviceId)
-  const quantity = getMirrorOptionQuantity(form, service, selection.quantity)
+  const automaticQuantity = getMirrorAutomaticOptionQuantity(form, service, selection.quantity)
+  const quantity = getMirrorOptionQuantity(form, service, selection.quantity, selection.manualQuantity)
   return {
     id: selection.id,
     serviceId: service.id,
@@ -116,6 +135,7 @@ const calculateMirrorOption = (
     unit: service.unit,
     unitLabel: mirrorUnitLabels[service.unit],
     quantity,
+    automaticQuantity,
     unitPrice: service.price,
     total: service.price * quantity,
     category: service.category,
@@ -137,7 +157,12 @@ export const getMirrorCalculatedOptions = (
     return group.items.map((item) => calculateMirrorOption(
       catalog,
       form,
-      { id: `${selection.id}:${item.id}`, serviceId: item.serviceId, quantity: item.quantity },
+      {
+        id: `${selection.id}:${item.id}`,
+        serviceId: item.serviceId,
+        quantity: item.quantity,
+        manualQuantity: selection.itemQuantities?.[item.id],
+      },
       { id: group.id, label: group.label, selectionId: selection.id },
     ))
   })

@@ -29,6 +29,28 @@ const pdfColors = {
 
 const pdfLoadTimeoutMs = 20_000
 
+const quoteDocumentLabel = (quoteNumber: string) => {
+  const normalizedNumber = quoteNumber
+    .trim()
+    .replace(/^КП(?:\s*№)?[\s-]*/iu, '')
+    .replace(/^№\s*/u, '')
+    .trim()
+
+  return `КП № ${normalizedNumber || 'без номера'}`
+}
+
+export const getQuotePdfFileName = (quote: Pick<Quote, 'number'>) => {
+  const labelWithoutControlCharacters = Array.from(
+    quoteDocumentLabel(quote.number),
+    (character) => character.charCodeAt(0) <= 31 ? '-' : character,
+  ).join('')
+  const safeLabel = labelWithoutControlCharacters
+    .replace(/[<>:"/\\|?*]/g, '-')
+    .replace(/[. ]+$/g, '')
+
+  return `${safeLabel}.pdf`
+}
+
 const formatPdfDate = (date: string) =>
   new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit', month: '2-digit', year: 'numeric',
@@ -300,7 +322,7 @@ export const buildQuotePdfDefinition = (quote: Quote): TDocumentDefinitions => {
     pageSize: 'A4',
     pageMargins: [30, 28, 30, 28],
     info: {
-      title: `${quote.number} - коммерческое предложение`,
+      title: `${quoteDocumentLabel(quote.number)} - коммерческое предложение`,
       subject: `${items.length} поз. - ${items.map(getQuoteItemTitle).join(', ')}`,
       author: 'Амальгама',
     },
@@ -430,8 +452,6 @@ export const createQuotePdfBlob = (quote: Quote) =>
     worker.postMessage(quote)
   })
 
-const pdfFileName = (quote: Quote) => `${quote.number.trim()}.pdf`
-
 export type QuotePdfPreview = {
   fileName: string
   title: string
@@ -445,9 +465,10 @@ export type QuotePdfPreview = {
 }
 
 export const shareQuotePdf = async (quote: Quote): Promise<QuotePdfPreview> => {
-  const fileName = pdfFileName(quote)
-  const title = `${quote.number} - коммерческое предложение`
+  const fileName = getQuotePdfFileName(quote)
+  const title = `${quoteDocumentLabel(quote.number)} - коммерческое предложение`
   const blob = await createQuotePdfBlob(quote)
+  const file = new File([blob], fileName, { type: 'application/pdf', lastModified: Date.now() })
 
-  return { fileName, title, documentLabel: 'Коммерческое предложение', url: URL.createObjectURL(blob) }
+  return { fileName, title, documentLabel: 'Коммерческое предложение', url: URL.createObjectURL(file) }
 }

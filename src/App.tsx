@@ -1868,6 +1868,21 @@ function MirrorCalculatorScreen({
     onForm({ options: form.options.map((option) => option.id === id ? { ...option, ...patch } : option) })
   }
 
+  const updateGroupItemQuantity = (selectionId: string, itemId: string, quantity?: number) => {
+    onForm({
+      groups: selectedGroups.map((selection) => {
+        if (selection.id !== selectionId) return selection
+        const itemQuantities = { ...(selection.itemQuantities ?? {}) }
+        if (quantity === undefined) delete itemQuantities[itemId]
+        else itemQuantities[itemId] = Math.max(0, Number(quantity) || 0)
+        return {
+          ...selection,
+          itemQuantities: Object.keys(itemQuantities).length > 0 ? itemQuantities : undefined,
+        }
+      }),
+    })
+  }
+
   const deleteOption = (id: string) => {
     onForm({ options: form.options.filter((option) => option.id !== id) })
   }
@@ -2054,19 +2069,45 @@ function MirrorCalculatorScreen({
                           <Trash2 size={16} />
                         </button>
                       </header>
-                      <div className="mirror-selected-group-items">
-                        {groupOptions.map((option) => {
-                          const service = getMirrorService(catalog, option.serviceId)
-                          return (
-                            <div className="mirror-selected-group-item" key={option.id}>
-                              <span>
-                                <strong>{option.label}</strong>
-                                {service.sku ? <small>VDSF · арт. {service.sku}</small> : null}
-                              </span>
-                              <b>{new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(option.quantity)} {option.unitLabel}</b>
-                              <strong>{money(option.total)}</strong>
-                            </div>
-                          )
+                        <div className="mirror-selected-group-items">
+                          {groupOptions.map((option) => {
+                            const service = getMirrorService(catalog, option.serviceId)
+                            const groupItemId = option.id.slice(`${selection.id}:`.length)
+                            const hasManualQuantity = selection.itemQuantities?.[groupItemId] !== undefined
+                            return (
+                              <div className="mirror-selected-group-item" key={option.id}>
+                                <span>
+                                  <strong>{option.label}</strong>
+                                  {service.sku ? <small>VDSF · арт. {service.sku}</small> : null}
+                                </span>
+                                <label className="mirror-selected-quantity">
+                                  <span>Количество, {option.unitLabel}</span>
+                                  <span>
+                                    <input
+                                      aria-label={`Количество: ${option.label}`}
+                                      inputMode="decimal"
+                                      min={0}
+                                      step={option.unit === 'piece' ? 1 : 0.01}
+                                      type="number"
+                                      value={option.quantity}
+                                      onChange={(event) => updateGroupItemQuantity(selection.id, groupItemId, Number(event.target.value))}
+                                    />
+                                    {hasManualQuantity ? (
+                                      <button
+                                        aria-label={`Вернуть автоматическое количество: ${option.label}`}
+                                        title="Вернуть автоматический расчёт"
+                                        type="button"
+                                        onClick={() => updateGroupItemQuantity(selection.id, groupItemId)}
+                                      >
+                                        <RotateCcw size={14} />
+                                      </button>
+                                    ) : null}
+                                  </span>
+                                  <small>Авто: {new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(option.automaticQuantity)} {option.unitLabel}</small>
+                                </label>
+                                <strong>{money(option.total)}</strong>
+                              </div>
+                            )
                         })}
                       </div>
                     </section>
@@ -2105,9 +2146,31 @@ function MirrorCalculatorScreen({
                           />
                         </label>
                       ) : (
-                        <span className="mirror-option-auto">
-                          {calculated.quantity.toFixed(2)} {calculated.unitLabel}
-                        </span>
+                        <label className="mirror-option-quantity mirror-option-manual-quantity">
+                          <span>Количество, {calculated.unitLabel}</span>
+                          <span>
+                            <input
+                              aria-label={`Количество: ${service.label}`}
+                              inputMode="decimal"
+                              min={0}
+                              step="0.01"
+                              type="number"
+                              value={calculated.quantity}
+                              onChange={(event) => updateOption(option.id, { manualQuantity: Math.max(0, Number(event.target.value) || 0) })}
+                            />
+                            {option.manualQuantity !== undefined ? (
+                              <button
+                                aria-label={`Вернуть автоматическое количество: ${service.label}`}
+                                title="Вернуть автоматический расчёт"
+                                type="button"
+                                onClick={() => updateOption(option.id, { manualQuantity: undefined })}
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            ) : null}
+                          </span>
+                          <small>Авто: {new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(calculated.automaticQuantity)}</small>
+                        </label>
                       )}
                       <strong>{money(calculated.total)}</strong>
                       <button aria-label={`Удалить ${service.label}`} type="button" onClick={() => deleteOption(option.id)}>
