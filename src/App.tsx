@@ -24,7 +24,6 @@ import {
   Percent,
   Plus,
   RefreshCw,
-  Ruler,
   RotateCcw,
   Save,
   Search,
@@ -148,7 +147,6 @@ import {
   type ServerSession,
 } from './serverSync'
 import { shareQuotePdf, type QuotePdfPreview } from './quotePdf'
-import { ProductionWorkspace } from './ProductionWorkspace'
 
 type ProductKind = 'shower' | 'mirror'
 type TabId = 'showers' | 'mirrors' | 'archive' | 'prices'
@@ -347,12 +345,6 @@ function App() {
   const [editingPriceSnapshot, setEditingPriceSnapshot] = useState<EditingPriceSnapshot | null>(null)
   const [pdfQuoteId, setPdfQuoteId] = useState('')
   const [pdfPreview, setPdfPreview] = useState<QuotePdfPreview | null>(null)
-  const [productionWorkspace, setProductionWorkspace] = useState<{
-    positionId: string
-    form: CalculatorForm
-    itemIndex: number
-    quoteNumber: string
-  } | null>(null)
   const [serverSession, setServerSession] = useState<ServerSession | null>(() => loadServerSession())
   const [syncStatus, setSyncStatus] = useState<PriceSyncStatus>(serverSession ? 'loading' : 'signed-out')
   const [syncMessage, setSyncMessage] = useState('')
@@ -946,27 +938,6 @@ function App() {
     void downloadQuotePdf(quote)
   }
 
-  const openProductionWorkspace = () => {
-    if (activePosition.kind !== 'shower') return
-    if (focusFirstInvalidPosition()) return
-    const editingQuote = quotes.find((quote) => quote.id === editingQuoteId)
-    setProductionWorkspace({
-      positionId: activePosition.id,
-      form: cloneForm(activePosition.form),
-      itemIndex: Math.max(0, positions.findIndex((position) => position.id === activePosition.id)),
-      quoteNumber: editingQuote?.number ?? getNextQuoteNumber(quotes),
-    })
-  }
-
-  const updateProductionWorkspaceForm = (nextForm: CalculatorForm) => {
-    const positionId = productionWorkspace?.positionId
-    if (!positionId) return
-    setProductionWorkspace((current) => current ? { ...current, form: cloneForm(nextForm) } : null)
-    setPositions((current) => current.map((position) => position.id === positionId && position.kind === 'shower'
-      ? { ...position, form: cloneForm(nextForm) }
-      : position))
-  }
-
   const addPosition = (kind: ProductKind) => {
     const sharedSettings = pickSharedPatch(activePosition.form)
     const next = kind === 'mirror'
@@ -1312,7 +1283,6 @@ function App() {
             onDelivery={updateOrderDelivery}
             onForm={updateForm}
             onPdf={downloadCurrentQuotePdf}
-            onProduction={isAdmin ? openProductionWorkspace : undefined}
             onQuantity={updatePositionQuantity}
             onSave={saveCurrentQuote}
             onSelectPosition={selectPosition}
@@ -1393,18 +1363,6 @@ function App() {
         <PdfPreviewDialog preview={pdfPreview} onClose={() => setPdfPreview(null)} />
       ) : null}
 
-      {productionWorkspace ? (
-        <ProductionWorkspace
-          catalog={catalog}
-          form={productionWorkspace.form}
-          itemIndex={productionWorkspace.itemIndex}
-          quoteNumber={productionWorkspace.quoteNumber}
-          onClose={() => setProductionWorkspace(null)}
-          onFormChange={updateProductionWorkspaceForm}
-          onPreview={setPdfPreview}
-        />
-      ) : null}
-
     </div>
   )
 }
@@ -1479,7 +1437,6 @@ type CalculatorScreenProps = {
   onDelivery: (patch: Partial<QuoteDelivery>) => void
   onForm: (patch: Partial<CalculatorForm>) => void
   onPdf: () => void
-  onProduction?: () => void
   onQuantity: (quantity: number) => void
   onSave: () => void
   onOpenArchive: () => void
@@ -1533,7 +1490,6 @@ function CalculatorScreen({
   onDimension,
   onForm,
   onPdf,
-  onProduction,
   onSave,
   onOpenArchive,
   onOpenQuote,
@@ -1735,7 +1691,6 @@ function CalculatorScreen({
           hasErrors={positionSummaries.some((position) => position.hasErrors)}
           isPdfBusy={isPdfBusy}
           onPdf={onPdf}
-          onProduction={onProduction}
           onSave={onSave}
         />
         <RecentCalculations
@@ -2730,7 +2685,6 @@ type SummaryDockProps = {
   hasErrors: boolean
   isPdfBusy: boolean
   onPdf: () => void
-  onProduction?: () => void
   onSave: () => void
 }
 
@@ -2902,7 +2856,6 @@ function SummaryDock({
   hasErrors,
   isPdfBusy,
   onPdf,
-  onProduction,
   onSave,
 }: SummaryDockProps) {
   return (
@@ -2963,12 +2916,6 @@ function SummaryDock({
           <FileDown size={19} />
           {isPdfBusy ? 'Формируем...' : 'Создать PDF'}
         </button>
-        {onProduction ? (
-          <button className="production-action" disabled={hasErrors} type="button" onClick={onProduction}>
-            <Ruler size={19} />
-            Чертежи для производства
-          </button>
-        ) : null}
       </div>
     </aside>
   )
