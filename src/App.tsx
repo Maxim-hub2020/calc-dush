@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { CrmConnectionPanel } from './CrmConnectionPanel'
+import { MobileInputSheet } from './MobileInputSheet'
 import {
   Archive,
   Box,
@@ -1362,6 +1363,8 @@ function App() {
       {pdfPreview ? (
         <PdfPreviewDialog preview={pdfPreview} onClose={() => setPdfPreview(null)} />
       ) : null}
+
+      <MobileInputSheet />
 
     </div>
   )
