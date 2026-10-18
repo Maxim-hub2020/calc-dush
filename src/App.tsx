@@ -135,6 +135,7 @@ import {
 } from './storage'
 import {
   clearServerSession,
+  installCrmSessionBridge,
   loadServerCatalogs,
   loadQuoteSyncOutbox,
   loadServerSession,
@@ -363,6 +364,15 @@ function App() {
   catalogRef.current = catalog
   mirrorCatalogRef.current = mirrorCatalog
   const isAdmin = Boolean(serverSession) || import.meta.env.DEV
+
+  useEffect(() => installCrmSessionBridge((session) => {
+    setServerSession(session)
+    setSyncStatus('loading')
+    setQuoteSyncStatus('loading')
+    setSyncMessage('')
+    setQuoteSyncMessage('')
+    setSyncAttempt((current) => current + 1)
+  }), [])
 
   const synchronizeQuoteArchive = useCallback(async (showLoading = false) => {
     if (!serverSession) return

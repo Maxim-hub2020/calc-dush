@@ -107,6 +107,58 @@ const saveServerSession = (session: ServerSession) => {
   localStorage.setItem(sessionKey, JSON.stringify(session))
 }
 
+const trustedCrmOrigins = new Set([
+  'https://cehcrm.ru',
+  'https://crm.cehcrm.ru',
+])
+
+const isTrustedCrmOrigin = (origin: string) => (
+  trustedCrmOrigins.has(origin)
+  || (import.meta.env.DEV && /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin))
+)
+
+const isServerSession = (value: unknown): value is ServerSession => {
+  if (!value || typeof value !== 'object') return false
+  const session = value as Partial<ServerSession>
+  return Boolean(
+    typeof session.username === 'string' && session.username.trim()
+    && typeof session.access === 'string' && session.access
+    && typeof session.refresh === 'string' && session.refresh,
+  )
+}
+
+export const installCrmSessionBridge = (onSession: (session: ServerSession) => void) => {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('embedded') !== 'crm' || window.parent === window) return () => undefined
+
+  const receiveSession = (event: MessageEvent) => {
+    if (event.source !== window.parent || !isTrustedCrmOrigin(event.origin)) return
+    if (event.data?.type !== 'cehcrm:calculator-session' || !isServerSession(event.data.session)) return
+
+    const session = {
+      username: event.data.session.username.trim(),
+      access: event.data.session.access,
+      refresh: event.data.session.refresh,
+    }
+    saveServerSession(session)
+    onSession(session)
+    window.parent.postMessage({ type: 'cehcrm:calculator-session-accepted' }, event.origin)
+  }
+
+  window.addEventListener('message', receiveSession)
+
+  try {
+    const parentOrigin = new URL(document.referrer).origin
+    if (isTrustedCrmOrigin(parentOrigin)) {
+      window.parent.postMessage({ type: 'cehcrm:calculator-ready' }, parentOrigin)
+    }
+  } catch {
+    // The parent will also send the session after iframe load.
+  }
+
+  return () => window.removeEventListener('message', receiveSession)
+}
+
 export const clearServerSession = () => {
   activeOutboxKey()
   localStorage.removeItem(sessionKey)
