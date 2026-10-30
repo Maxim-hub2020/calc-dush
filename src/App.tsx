@@ -344,6 +344,8 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabId>('showers')
   const [notice, setNotice] = useState('')
   const [editingQuoteId, setEditingQuoteId] = useState('')
+  const savedPositionPrices = useRef<Record<string, { form: string; result: CalculationResult }>>({})
+  const savedDeliveryPrice = useRef<{ form: string; price: number } | null>(null)
   const [editingPriceSnapshot, setEditingPriceSnapshot] = useState<EditingPriceSnapshot | null>(null)
   const [pdfQuoteId, setPdfQuoteId] = useState('')
   const [pdfPreview, setPdfPreview] = useState<QuotePdfPreview | null>(null)
@@ -429,7 +431,10 @@ function App() {
   }, [positions])
   const positionResults = useMemo(
     () => positions.map((position) => {
-      const unitResult = position.kind === 'mirror'
+      const saved = savedPositionPrices.current[position.id]
+      const unitResult = saved?.form === JSON.stringify(position.form)
+        ? saved.result
+        : position.kind === 'mirror'
         ? calculateMirrorQuote(mirrorCatalog, position.form)
         : calculateQuote(catalog, position.form)
       return {
@@ -458,11 +463,15 @@ function App() {
   const orderResult = useMemo(
     () => applyQuoteDelivery(
       combineCalculationResults(positionResults.map((position) => position.result)),
-      calculateQuoteDelivery(catalog, orderDelivery),
+      savedDeliveryPrice.current?.form === JSON.stringify(orderDelivery)
+        ? savedDeliveryPrice.current.price
+        : calculateQuoteDelivery(catalog, orderDelivery),
     ),
     [catalog, orderDelivery, positionResults],
   )
-  const orderDeliveryPrice = calculateQuoteDelivery(catalog, orderDelivery)
+  const orderDeliveryPrice = savedDeliveryPrice.current?.form === JSON.stringify(orderDelivery)
+    ? savedDeliveryPrice.current.price
+    : calculateQuoteDelivery(catalog, orderDelivery)
   const positionSummaries = useMemo<PositionSummary[]>(
     () => positionResults.map((position, index) => ({
       id: position.id,
@@ -879,6 +888,10 @@ function App() {
     const editingQuote = quotes.find((item) => item.id === editingQuoteId)
     const quoteNumber = editingQuote?.number ?? getNextQuoteNumber(quotes)
     const quote = createQuote(catalog, mirrorCatalog, drafts, orderDelivery, orderCustomer, quoteNumber)
+    quote.result = applyQuoteDelivery(
+      combineCalculationResults(drafts.map((draft) => multiplyCalculationResult(draft.result, draft.quantity))),
+      orderDeliveryPrice,
+    )
     if (!editingQuote) return quote
     const variants = remapQuoteVariants(editingQuote, getQuoteItems(quote))
     return {
@@ -900,6 +913,8 @@ function App() {
   }
 
   const resetCalculatorDraft = (kind: ProductKind) => {
+    savedPositionPrices.current = {}
+    savedDeliveryPrice.current = null
     const nextPosition = kind === 'mirror'
       ? createMirrorDraftPosition(mirrorCatalog)
       : createDraftPosition(catalog)
@@ -1022,6 +1037,14 @@ function App() {
       return { id: positionId, kind: 'shower', quantity: getQuoteItemQuantity(item), form }
     })
     const selectedIndex = itemId ? Math.max(0, items.findIndex((item) => item.id === itemId)) : 0
+    // Archive results are a price snapshot, not a live view of today's catalog.
+    savedPositionPrices.current = Object.fromEntries(nextPositions.map((position, index) => [
+      position.id, { form: JSON.stringify(position.form), result: items[index].result },
+    ]))
+    savedDeliveryPrice.current = {
+      form: JSON.stringify(getQuoteDelivery(quote)),
+      price: quote.result.delivery,
+    }
     const selected = nextPositions[selectedIndex]
     setPositions(nextPositions)
     setOrderDelivery(getQuoteDelivery(quote))
