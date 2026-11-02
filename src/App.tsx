@@ -55,6 +55,7 @@ import {
   createInitialForm,
   createQuote,
   getConstruction,
+  getInstallationAmounts,
   getConstructionHardwareComponents,
   getOption,
   getPublicProductPrice,
@@ -1678,9 +1679,17 @@ function CalculatorScreen({
           <ToggleRow
             checked={form.installation}
             label="Монтаж"
-            value={money(construction.installationPrice)}
-            onChange={(installation) => onForm({ installation })}
+            value={money(getInstallationAmounts(construction, { ...form, installation: true }).price)}
+            onChange={(installation) => onForm({ installation, complexInstallation: installation ? form.complexInstallation : false })}
           />
+          {form.installation ? (
+            <ToggleRow
+              checked={Boolean(form.complexInstallation)}
+              label="Сложные условия монтажа"
+              value="+25%"
+              onChange={(complexInstallation) => onForm({ complexInstallation })}
+            />
+          ) : null}
           <ToggleRow
             checked={form.designerEnabled}
             label="Дизайнер на изделие"
@@ -4541,7 +4550,7 @@ function PricesScreen({
 
   const updateConstruction = (
     id: string,
-    patch: Partial<Pick<Construction, 'basePrice' | 'installationPrice' | 'shortTitle' | 'title'>>,
+    patch: Partial<Pick<Construction, 'basePrice' | 'installationPrice' | 'installationCost' | 'shortTitle' | 'title'>>,
   ) => {
     setDraftCatalog({
       ...catalog,
@@ -4976,6 +4985,7 @@ function PricesScreen({
                 basePrice={item.basePrice}
                 canDelete={catalog.constructions.length > 1}
                 installationPrice={item.installationPrice}
+                installationCost={item.installationCost ?? item.installationPrice}
                 key={item.id}
                 label={item.shortTitle}
                 hardwareComponents={item.hardwareComponents ?? []}
@@ -4986,6 +4996,7 @@ function PricesScreen({
                 onHardwareChange={(componentId, patch) => updateConstructionHardware(item.id, componentId, patch)}
                 onHardwareDelete={(componentId) => deleteConstructionHardware(item.id, componentId)}
                 onInstallationPriceChange={(value) => updateConstruction(item.id, { installationPrice: value })}
+                onInstallationCostChange={(value) => updateConstruction(item.id, { installationCost: value })}
                 onLabelChange={(value) => updateConstruction(item.id, { shortTitle: value, title: value })}
               />
             ))}
@@ -5532,6 +5543,7 @@ type ConstructionPriceRowProps = {
   label: string
   basePrice: number
   installationPrice: number
+  installationCost: number
   hardwareComponents: ConstructionHardwareComponent[]
   hardwareItems: ShowerHardwareItem[]
   canDelete: boolean
@@ -5544,6 +5556,7 @@ type ConstructionPriceRowProps = {
   ) => void
   onHardwareDelete: (componentId: string) => void
   onInstallationPriceChange: (value: number) => void
+  onInstallationCostChange: (value: number) => void
   onDelete: () => void
 }
 
@@ -5551,6 +5564,7 @@ function ConstructionPriceRow({
   label,
   basePrice,
   installationPrice,
+  installationCost,
   hardwareComponents,
   hardwareItems,
   canDelete,
@@ -5560,6 +5574,7 @@ function ConstructionPriceRow({
   onHardwareChange,
   onHardwareDelete,
   onInstallationPriceChange,
+  onInstallationCostChange,
   onDelete,
 }: ConstructionPriceRowProps) {
   const componentBaseFor = (thickness: 6 | 8) => hardwareComponents.reduce((sum, component) => {
@@ -5605,7 +5620,7 @@ function ConstructionPriceRow({
           </label>
         )}
         <label className="construction-price-field construction-installation-field">
-          <span>Монтаж</span>
+          <span>Монтаж клиенту</span>
           <div className="price-value-field">
             <input
               aria-label={`Стоимость монтажа: ${label || 'конструкция'}`}
@@ -5614,6 +5629,20 @@ function ConstructionPriceRow({
               type="number"
               value={installationPrice}
               onChange={(event) => onInstallationPriceChange(Math.max(0, Number(event.target.value) || 0))}
+            />
+            <small>₽</small>
+          </div>
+        </label>
+        <label className="construction-price-field construction-crew-field">
+          <span>Оплата бригаде</span>
+          <div className="price-value-field">
+            <input
+              aria-label={`Оплата бригаде: ${label || 'конструкция'}`}
+              inputMode="numeric"
+              min={0}
+              type="number"
+              value={installationCost}
+              onChange={(event) => onInstallationCostChange(Math.max(0, Number(event.target.value) || 0))}
             />
             <small>₽</small>
           </div>

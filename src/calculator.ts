@@ -75,6 +75,7 @@ export type CalculatorForm = {
   hardwareId: string
   hardwareClassId: string
   installation: boolean
+  complexInstallation?: boolean
   delivery: boolean
   deliveryZone: DeliveryZone
   deliveryKm: number
@@ -231,6 +232,14 @@ export const shortMoney = (value: number) =>
     maximumFractionDigits: 0,
   }).format(Number.isFinite(value) ? value : 0)
 
+export const getInstallationAmounts = (construction: Construction, form: Pick<CalculatorForm, 'installation' | 'complexInstallation'>) => {
+  const factor = form.installation && form.complexInstallation ? 1.25 : 1
+  const price = form.installation ? Math.max(0, Number(construction.installationPrice) || 0) * factor : 0
+  // Unknown/custom constructions retain the former conservative cost until configured.
+  const cost = form.installation ? Math.max(0, Number(construction.installationCost ?? construction.installationPrice) || 0) * factor : 0
+  return { price, cost }
+}
+
 export const getPublicProductPrice = (result: CalculationResult) => result.product + result.installation
 
 export const normalizeQuoteQuantity = (value: unknown) => {
@@ -330,6 +339,7 @@ export const createInitialForm = (catalog: PricingCatalog): CalculatorForm => {
     hardwareId: catalog.hardware[0].id,
     hardwareClassId: catalog.hardwareClass[0].id,
     installation: false,
+    complexInstallation: false,
     delivery: false,
     deliveryZone: 'inside',
     deliveryKm: 0,
@@ -390,7 +400,7 @@ export const calculateQuote = (catalog: PricingCatalog, form: CalculatorForm): C
     ? 0
     : ceilToTen((glassPrice + fallbackConstructionBase) * productMarkupFactor + hardwarePrice * hardwareMarkupFactor)
   const baseProductWithSurcharge = applySurcharge(baseProduct)
-  const baseInstallation = form.installation ? construction.installationPrice : 0
+  const baseInstallation = getInstallationAmounts(construction, form).price
   const designerPercent = Math.max(0, Number(catalog.services.designerPercent) || 0)
   const designerFactor = form.designerEnabled ? 1 + designerPercent / 100 : 1
   const productBeforeRounding = roundToTen(baseProductWithSurcharge * designerFactor)
@@ -554,7 +564,7 @@ const createShowerQuoteItem = (catalog: PricingCatalog, draft: ShowerQuoteDraftI
     glassLabel: glass.label,
     hardwareLabel: hardware.label,
     hardwareClassLabel: hardwareClass.label,
-    details: buildShowerQuoteDetails(catalog, id, draft.form, glass.label, hardware.label, hardwareClass.label),
+    details: [...buildShowerQuoteDetails(catalog, id, draft.form, glass.label, hardware.label, hardwareClass.label), ...(draft.form.installation ? [{ id: `${id}:installation`, label: 'Монтаж', value: draft.form.complexInstallation ? 'Сложные условия (+25%)' : 'Стандартный' }] : [])],
   }
 }
 

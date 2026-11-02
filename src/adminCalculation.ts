@@ -1,5 +1,6 @@
 import {
   getConstruction,
+  getInstallationAmounts,
   getConstructionHardwareBasePrice,
   getConstructionHardwareComponents,
   getOption,
@@ -112,7 +113,7 @@ export const getShowerCostPrice = (
   const fallbackConstructionBase = hardwareComponents.length > 0
     ? 0
     : Math.max(0, Number(construction.basePrice) || 0)
-  const installationCost = form.installation ? Math.max(0, Number(construction.installationPrice) || 0) : 0
+  const { cost: installationCost, price: installationSellingPrice } = getInstallationAmounts(construction, form)
   const productMarkup = Math.max(0, Number(catalog.services.productMarkupPercent) || 0)
   const hardwareMarkup = Math.max(0, Number(catalog.services.hardwareMarkupPercent) || 0)
   const sellingBase = ceilToTen(
@@ -128,7 +129,7 @@ export const getShowerCostPrice = (
     : 0
   const designerPayout = form.designerEnabled
     ? roundToTen(productWithSurcharge * percentFactor(designerPercent)) - productWithSurcharge
-      + roundToTen(installationCost * percentFactor(designerPercent)) - installationCost
+      + roundToTen(installationSellingPrice * percentFactor(designerPercent)) - installationSellingPrice
     : 0
 
   return glassPrice + fallbackConstructionBase + hardwarePrice + installationCost + designerPayout
@@ -200,7 +201,7 @@ export const buildShowerCalculationBreakdown = (
   const hasSurcharge = height > catalog.services.heightSurchargeAfter
   const surchargePercent = hasSurcharge ? catalog.services.heightSurchargePercent : 0
   const productWithSurcharge = roundToTen(baseProduct * percentFactor(surchargePercent))
-  const baseInstallation = form.installation ? construction.installationPrice : 0
+  const baseInstallation = getInstallationAmounts(construction, form).price
   const designerPercent = form.designerEnabled
     ? Math.max(0, Number(catalog.services.designerPercent) || 0)
     : 0
@@ -317,8 +318,13 @@ export const buildShowerCalculationBreakdown = (
           },
           {
             label: 'Монтаж',
-            formula: form.installation ? construction.title : 'Не выбран',
+            formula: form.installation ? `${construction.title}${form.complexInstallation ? ' · сложные условия +25%' : ''}` : 'Не выбран',
             value: money(baseInstallation),
+          },
+          {
+            label: 'Оплата монтажной бригаде',
+            formula: form.installation ? `Плановая оплата всей бригаде${form.complexInstallation ? ' × 1,25' : ''}; транспорт и расходники учитываются отдельно` : 'Монтаж не выбран',
+            value: money(getInstallationAmounts(construction, form).cost),
           },
           {
             label: 'Дизайнер',
