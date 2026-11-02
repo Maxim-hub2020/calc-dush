@@ -2508,13 +2508,14 @@ function QuoteAdjustmentsControl({
   discountMixed,
   onChange,
 }: QuoteAdjustmentsControlProps) {
+  const [expanded, setExpanded] = useState(false)
   return (
-    <div className="order-adjustments-control">
-      <div className="order-adjustments-title">
+    <div className={`order-adjustments-control${expanded ? '' : ' is-collapsed'}`}>
+      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} className="order-adjustments-title">
         <Percent size={18} aria-hidden="true" />
         <span>Условия по КП</span>
         <small>Для всех позиций</small>
-      </div>
+      </button>
       <div className="order-adjustments-fields">
         <label className={designerMixed ? 'order-adjustment-toggle is-mixed' : 'order-adjustment-toggle'}>
           <input
@@ -2564,13 +2565,14 @@ type CustomerControlProps = {
 }
 
 function CustomerControl({ customer, onChange }: CustomerControlProps) {
+  const [expanded, setExpanded] = useState(false)
   return (
-    <div className="order-customer-control">
-      <div className="order-customer-title">
+    <div className={`order-customer-control${expanded ? '' : ' is-collapsed'}`}>
+      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} className="order-customer-title">
         <UserRound size={18} aria-hidden="true" />
         <span>{customer.clientName || 'Добавить клиента'}</span>
         <small>{customer.clientPhone || 'Общий для всех позиций'}</small>
-      </div>
+      </button>
       <div className="order-customer-fields">
         <label className="text-field">
           <span>Имя</span>
@@ -2607,13 +2609,14 @@ type DeliveryControlProps = {
 }
 
 function DeliveryControl({ delivery, kmRate, label = 'Доставка по КП', price, onChange }: DeliveryControlProps) {
+  const [expanded, setExpanded] = useState(false)
   return (
-    <div className="order-delivery-control">
-      <div className="order-delivery-title">
+    <div className={`order-delivery-control${expanded ? '' : ' is-collapsed'}`}>
+      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} className="order-delivery-title">
         <Truck size={18} aria-hidden="true" />
         <span>{label}</span>
         <strong>{money(price)}</strong>
-      </div>
+      </button>
       <div className="order-delivery-body">
         <div className="segmented order-delivery-modes" role="group" aria-label="Тип доставки">
           <button className={!delivery.enabled ? 'is-active' : ''} type="button" onClick={() => onChange({ enabled: false })}>Без доставки</button>

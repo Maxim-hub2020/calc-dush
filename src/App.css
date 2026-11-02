@@ -5920,7 +5920,9 @@ body { padding: 0; background: #f7f7f4; }
 }
 
 .mobile-calculator-header, .mobile-summary-bar, .mobile-summary-heading, .mobile-summary-backdrop { display: none; }
+.order-adjustments-title, .order-customer-title, .order-delivery-title { width: 100%; border: 0; background: transparent; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 @media (max-width: 767px) {
+  .is-collapsed > .order-adjustments-fields, .is-collapsed > .order-customer-fields, .is-collapsed > .order-delivery-body { display: none; }
   .app-header { min-height: 48px; padding: 6px 12px; }
   .app-header > .brand-lockup, .app-header > .app-tabs { display: none; }
   .mobile-calculator-header { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; }
@@ -5928,7 +5930,17 @@ body { padding: 0; background: #f7f7f4; }
   .mobile-calculator-header select { width: auto; max-width: 160px; min-height: 40px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0 10px; background: #f8fafc; color: #0f172a; }
   .app-main { padding-bottom: calc(78px + env(safe-area-inset-bottom)); }
   .position-section { gap: 6px; padding: 10px; }
+  .position-title { display: flex; flex-wrap: nowrap; gap: 6px; }
+  .position-title h2 { font-size: 13px; white-space: nowrap; }
+  .position-tools { gap: 4px; flex-wrap: nowrap; }
+  .position-tools > button, .position-tools .new-quote-button { width: 32px; min-width: 32px; min-height: 40px; padding: 0; }
+  .position-quantity > div { grid-template-columns: 28px 30px 28px; }
+  .position-tools .add-position { min-height: 40px; padding: 0 8px; font-size: 12px; }
   .position-strip { grid-auto-columns: 140px; }
+  .position-tab { min-height: 44px; padding: 4px 8px; }
+  .position-tab-select { min-height: 40px; padding: 4px; }
+  .position-tab-select > span, .position-tab-select > small { display: none; }
+  .position-tab-select strong { font-size: 12px; }
   .dimension-list, .mirror-dimensions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .step-navigation { position: static; margin: 0; padding: 10px 0; }
   .summary-dock { display: block; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
