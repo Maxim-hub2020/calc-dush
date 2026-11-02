@@ -4,7 +4,6 @@ import { MobileInputSheet } from './MobileInputSheet'
 import {
   Archive,
   Box,
-  DoorOpen,
   Square,
   Link as LinkIcon,
   Calculator,
@@ -1595,8 +1594,6 @@ function CalculatorScreen({
           </div>
           <OptionSelect label="Стекло" value={form.glassId} items={catalog.glass} onChange={(glassId) => onForm({ glassId })} />
           <OptionSelect label="Фурнитура" value={form.hardwareId} items={catalog.hardware} onChange={(hardwareId) => onForm({ hardwareId })} />
-          <OptionSelect label="Открывание" value={form.openingDirection || ''} items={[{ id: '', label: 'Не указано', price: 0 }, { id: 'left', label: 'Влево', price: 0 }, { id: 'right', label: 'Вправо', price: 0 }]} onChange={(value) => onForm({ openingDirection: value === 'left' || value === 'right' ? value : undefined })} />
-          <small className="opening-view-note">Открывание — вид со стороны входа</small>
           <OptionSelect label="Класс фурнитуры" value={form.hardwareClassId} items={catalog.hardwareClass} onChange={(hardwareClassId) => onForm({ hardwareClassId })} />
           <ToggleRow checked={form.installation} label="Монтаж" value={money(getInstallationAmounts(construction, { ...form, installation: true }).price)} onChange={(installation) => onForm({ installation, complexInstallation: installation ? form.complexInstallation : false })} />
           {form.installation ? <ToggleRow checked={Boolean(form.complexInstallation)} label="Сложные условия монтажа" value="+25%" onChange={(complexInstallation) => onForm({ complexInstallation })} /> : null}
@@ -1712,7 +1709,6 @@ function CalculatorScreen({
             items={catalog.hardwareClass}
             onChange={(hardwareClassId) => onForm({ hardwareClassId })}
           />
-          <OptionSelect label="Открывание" value={form.openingDirection || ''} items={[{ id: '', label: 'Не указано', price: 0 }, { id: 'left', label: 'Влево', price: 0 }, { id: 'right', label: 'Вправо', price: 0 }]} onChange={(value) => onForm({ openingDirection: value === 'left' || value === 'right' ? value : undefined })} />
           {hardwareComponents.length > 0 ? (
             <div className="construction-composition-summary">
               <span>Состав конструкции</span>
@@ -2742,7 +2738,7 @@ type OptionSelectProps = {
 }
 
 function OptionSelect({ label, value, items, onChange }: OptionSelectProps) {
-  const Icon = label === 'Стекло' ? Square : label === 'Фурнитура' ? LinkIcon : label === 'Открывание' ? DoorOpen : Settings2
+  const Icon = label === 'Стекло' ? Square : label === 'Фурнитура' ? LinkIcon : Settings2
   return (
     <label className="select-field">
       <span className="option-row-label"><Icon size={18} aria-hidden="true" /><span>{label}</span></span>
