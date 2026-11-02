@@ -69,6 +69,7 @@ export type QuoteVariant = {
 }
 
 export type CalculatorForm = {
+  openingDirection?: 'left' | 'right'
   constructionId: string
   dimensions: Record<string, number>
   glassId: string
@@ -535,6 +536,7 @@ const buildShowerQuoteDetails = (
       value: `${form.dimensions[field.key] ?? 0} мм`,
     })),
     { id: `${itemId}:glass`, label: 'Стекло', value: glassLabel },
+    ...(form.openingDirection ? [{ id: `${itemId}:opening`, label: 'Открывание', value: form.openingDirection === 'left' ? 'Влево (вид со стороны входа)' : 'Вправо (вид со стороны входа)' }] : []),
     { id: `${itemId}:hardware`, label: 'Фурнитура', value: hardwareLabel },
     { id: `${itemId}:hardware-class`, label: 'Класс фурнитуры', value: hardwareClassLabel },
     ...[...hingeGroups.values()].map((hinge, index) => {

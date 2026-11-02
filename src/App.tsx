@@ -4,6 +4,9 @@ import { MobileInputSheet } from './MobileInputSheet'
 import {
   Archive,
   Box,
+  DoorOpen,
+  Square,
+  Link as LinkIcon,
   Calculator,
   Check,
   ChevronDown,
@@ -434,7 +437,7 @@ function App() {
   const positionResults = useMemo(
     () => positions.map((position) => {
       const saved = savedPositionPrices.current[position.id]
-      const unitResult = saved?.form === JSON.stringify(position.form)
+      const unitResult = saved?.form === JSON.stringify({ ...position.form, openingDirection: undefined })
         ? saved.result
         : position.kind === 'mirror'
         ? calculateMirrorQuote(mirrorCatalog, position.form)
@@ -1041,7 +1044,7 @@ function App() {
     const selectedIndex = itemId ? Math.max(0, items.findIndex((item) => item.id === itemId)) : 0
     // Archive results are a price snapshot, not a live view of today's catalog.
     savedPositionPrices.current = Object.fromEntries(nextPositions.map((position, index) => [
-      position.id, { form: JSON.stringify(position.form), result: items[index].result },
+      position.id, { form: JSON.stringify({ ...position.form, openingDirection: undefined }), result: items[index].result },
     ]))
     savedDeliveryPrice.current = {
       form: JSON.stringify(getQuoteDelivery(quote)),
@@ -1592,6 +1595,8 @@ function CalculatorScreen({
           </div>
           <OptionSelect label="Стекло" value={form.glassId} items={catalog.glass} onChange={(glassId) => onForm({ glassId })} />
           <OptionSelect label="Фурнитура" value={form.hardwareId} items={catalog.hardware} onChange={(hardwareId) => onForm({ hardwareId })} />
+          <OptionSelect label="Открывание" value={form.openingDirection || ''} items={[{ id: '', label: 'Не указано', price: 0 }, { id: 'left', label: 'Влево', price: 0 }, { id: 'right', label: 'Вправо', price: 0 }]} onChange={(value) => onForm({ openingDirection: value === 'left' || value === 'right' ? value : undefined })} />
+          <small className="opening-view-note">Открывание — вид со стороны входа</small>
           <OptionSelect label="Класс фурнитуры" value={form.hardwareClassId} items={catalog.hardwareClass} onChange={(hardwareClassId) => onForm({ hardwareClassId })} />
           <ToggleRow checked={form.installation} label="Монтаж" value={money(getInstallationAmounts(construction, { ...form, installation: true }).price)} onChange={(installation) => onForm({ installation, complexInstallation: installation ? form.complexInstallation : false })} />
           {form.installation ? <ToggleRow checked={Boolean(form.complexInstallation)} label="Сложные условия монтажа" value="+25%" onChange={(complexInstallation) => onForm({ complexInstallation })} /> : null}
@@ -1707,6 +1712,7 @@ function CalculatorScreen({
             items={catalog.hardwareClass}
             onChange={(hardwareClassId) => onForm({ hardwareClassId })}
           />
+          <OptionSelect label="Открывание" value={form.openingDirection || ''} items={[{ id: '', label: 'Не указано', price: 0 }, { id: 'left', label: 'Влево', price: 0 }, { id: 'right', label: 'Вправо', price: 0 }]} onChange={(value) => onForm({ openingDirection: value === 'left' || value === 'right' ? value : undefined })} />
           {hardwareComponents.length > 0 ? (
             <div className="construction-composition-summary">
               <span>Состав конструкции</span>
@@ -2736,9 +2742,10 @@ type OptionSelectProps = {
 }
 
 function OptionSelect({ label, value, items, onChange }: OptionSelectProps) {
+  const Icon = label === 'Стекло' ? Square : label === 'Фурнитура' ? LinkIcon : label === 'Открывание' ? DoorOpen : Settings2
   return (
     <label className="select-field">
-      <span>{label}</span>
+      <span className="option-row-label"><Icon size={18} aria-hidden="true" /><span>{label}</span></span>
       <span className="select-control">
         <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
           {items.map((item) => (

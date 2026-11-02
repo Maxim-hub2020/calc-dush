@@ -5967,6 +5967,9 @@ body { padding: 0; background: #f7f7f4; }
 }
 
 .mobile-direct-config, .mobile-order-context { display: none; }
+.option-row-label { display: flex; align-items: center; gap: 10px; }
+.option-row-label > svg { flex-shrink: 0; color: #334155; }
+.opening-view-note { font-size: 11px; color: #64748b; }
 .quote-settings-overlay { position: fixed; inset: 0; z-index: 100; }
 .quote-settings-backdrop { position: absolute; inset: 0; border: 0; background: #0f172a70; width: 100%; height: 100%; }
 .quote-settings-sheet { position: absolute; bottom: 0; left: 0; right: 0; max-height: 85dvh; overflow-y: auto; display: grid; gap: 10px; padding: 20px 16px max(20px, env(safe-area-inset-bottom)); background: white; border-radius: 28px 28px 0 0; }
@@ -6009,6 +6012,9 @@ body { padding: 0; background: #f7f7f4; }
   .position-tools .add-position { color: #334155; border: 1px solid #cbd5e1; background: white; box-shadow: none; }
   .mobile-direct-config .select-field, .direct-option-row { padding: 6px 0; }
   .mobile-direct-config .select-control select, .direct-option-row select { border: 0; background: white; box-shadow: none; font-weight: 500; color: #475569; padding-right: 24px; }
+  .mobile-direct-config .select-field { grid-template-columns: minmax(125px, 1fr) minmax(0, 1.3fr); min-height: 48px; gap: 6px; }
+  .mobile-direct-config .select-control select { min-height: 40px; padding: 6px 20px 6px 0; text-align: right; font-size: 13px !important; }
+  .mobile-direct-config .select-control > svg { right: 0; width: 15px; color: #64748b; }
   .mobile-direct-config .field-row { border: 1px solid #dbe2ec; border-radius: 12px; background: white; }
   .mobile-direct-config .field-row > span { font-size: 12px; color: #64748b; }
   .mobile-direct-config .field-row input { border: 0; background: transparent; text-align: left; padding: 0; box-shadow: none; }
