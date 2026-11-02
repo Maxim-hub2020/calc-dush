@@ -5967,7 +5967,8 @@ body { padding: 0; background: #f7f7f4; }
 }
 
 .mobile-direct-config, .mobile-order-context { display: none; }
-.option-row-label { display: flex; align-items: center; gap: 10px; }
+.select-field > .option-row-label { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; text-align: left; }
+.select-field > .option-row-label > span { display: block; min-width: 0; }
 .option-row-label > svg { flex-shrink: 0; color: #334155; }
 .opening-view-note { font-size: 11px; color: #64748b; }
 .quote-settings-overlay { position: fixed; inset: 0; z-index: 100; }
@@ -6005,6 +6006,11 @@ body { padding: 0; background: #f7f7f4; }
   .mobile-order-context { background: #f5f8fc; border: 0; border-radius: 12px; padding: 10px 12px; }
   .position-section { padding: 8px 0 14px; border-bottom: 1px solid #e2e8f0; }
   .position-title { border: 0; padding: 0; }
+  .position-section > .position-title { align-self: center; padding-bottom: 0; }
+  .position-section .position-tools { width: auto; }
+  .position-section .position-tab { min-height: 44px; }
+  .position-section .position-tab-select { min-height: 34px; }
+  .position-section .add-position { min-height: 44px; }
   .position-tab-select > span { display: block; font-size: 13px; font-weight: 700; }
   .position-tab-select:has(> span) > strong { display: none; }
   .position-tab.is-active { background: #2563eb; border-color: #2563eb; color: white; }
@@ -6012,7 +6018,9 @@ body { padding: 0; background: #f7f7f4; }
   .position-tools .add-position { color: #334155; border: 1px solid #cbd5e1; background: white; box-shadow: none; }
   .mobile-direct-config .select-field, .direct-option-row { padding: 6px 0; }
   .mobile-direct-config .select-control select, .direct-option-row select { border: 0; background: white; box-shadow: none; font-weight: 500; color: #475569; padding-right: 24px; }
-  .mobile-direct-config .select-field { grid-template-columns: minmax(125px, 1fr) minmax(0, 1.3fr); min-height: 48px; gap: 6px; }
+  .mobile-direct-config .select-field { grid-template-columns: minmax(125px, 1fr) minmax(0, 1.3fr); min-height: 48px; gap: 6px; padding: 3px 0; }
+  .mobile-direct-config .select-field > .option-row-label { min-height: 40px; }
+  .mobile-direct-config .select-field > .select-control { display: block; align-self: center; }
   .mobile-direct-config .select-control select { min-height: 40px; padding: 6px 20px 6px 0; text-align: right; font-size: 13px !important; }
   .mobile-direct-config .select-control > svg { right: 0; width: 15px; color: #64748b; }
   .mobile-direct-config .field-row { border: 1px solid #dbe2ec; border-radius: 12px; background: white; }
