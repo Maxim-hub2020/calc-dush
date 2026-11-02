@@ -18,7 +18,10 @@ const fieldTitle = (field: EditableField) => {
   if (ariaLabel) return ariaLabel
   const label = field.closest('label')
   const labelText = label?.querySelector(':scope > span')?.textContent?.trim()
-  return labelText || field.placeholder || 'Введите значение'
+  const linkedLabel = Array.from(field.labels || []).map((item) => item.textContent?.trim()).find(Boolean)
+  const labelledBy = field.getAttribute('aria-labelledby')?.split(/\s+/).map((id) => document.getElementById(id)?.textContent?.trim()).filter(Boolean).join(' ')
+  const nearbyLabel = field.parentElement?.querySelector('label, .field-label, .dimension-label')?.textContent?.trim()
+  return ariaLabel || labelText || labelledBy || linkedLabel || nearbyLabel || field.placeholder || field.name || 'Введите значение'
 }
 
 const inputModeFor = (field: EditableField) => {
@@ -131,14 +134,29 @@ export function MobileInputSheet() {
     root.setAttribute('data-calculator-input-open', 'true')
     document.body.style.overflow = 'hidden'
     const viewport = window.visualViewport
+    let parentViewport: { top: number; height: number } | null = null
+    const parentOrigins = ['https://cehcrm.ru', 'https://amalgama.cehcrm.ru']
+    const notifyParent = (open: boolean) => {
+      if (window.parent === window) return
+      for (const origin of parentOrigins) window.parent.postMessage({ type: 'cehcrm:calculator-input', open }, origin)
+    }
     let frame = 0
     const update = () => {
       if (!viewportRef.current) return
-      viewportRef.current.style.height = `${viewport?.height || window.innerHeight}px`
-      viewportRef.current.style.top = `${viewport?.offsetTop || 0}px`
+      viewportRef.current.style.height = `${parentViewport?.height ?? viewport?.height ?? window.innerHeight}px`
+      viewportRef.current.style.top = `${parentViewport?.top ?? viewport?.offsetTop ?? 0}px`
+    }
+    const receiveViewport = (event: MessageEvent) => {
+      if (event.source !== window.parent || !parentOrigins.includes(event.origin) || event.data?.type !== 'cehcrm:calculator-viewport') return
+      const { top, height } = event.data
+      if (!Number.isFinite(top) || !Number.isFinite(height) || top < 0 || height <= 0) return
+      parentViewport = { top, height }
+      update()
     }
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(update) }
     update()
+    window.addEventListener('message', receiveViewport)
+    notifyParent(true)
     viewport?.addEventListener('resize', schedule)
     viewport?.addEventListener('scroll', schedule)
     sheetFieldRef.current?.focus({ preventScroll: true })
@@ -146,6 +164,8 @@ export function MobileInputSheet() {
 
     return () => {
       viewport?.removeEventListener('resize', schedule)
+      window.removeEventListener('message', receiveViewport)
+      notifyParent(false)
       viewport?.removeEventListener('scroll', schedule)
       cancelAnimationFrame(frame)
       cancelAnimationFrame(enterFrame)
