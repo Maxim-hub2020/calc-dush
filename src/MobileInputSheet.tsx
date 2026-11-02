@@ -49,9 +49,8 @@ export function MobileInputSheet() {
   const [dragY, setDragY] = useState(0)
   const sheetFieldRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
   const fieldRef = useRef<EditableField | null>(null)
-  const revealTimerRef = useRef<number | null>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const closeTimerRef = useRef<number | null>(null)
-  const blurTimerRef = useRef<number | null>(null)
   const gestureRef = useRef<{ field: EditableField | null, x: number, y: number, moved: boolean } | null>(null)
   const pendingOpenRef = useRef<EditableField | null>(null)
   const openedAtRef = useRef(0)
@@ -99,12 +98,6 @@ export function MobileInputSheet() {
       }
       event.preventDefault()
       pendingOpenRef.current = gesture.field
-      window.setTimeout(() => {
-        const pendingField = pendingOpenRef.current
-        if (!pendingField) return
-        pendingOpenRef.current = null
-        openFor(pendingField)
-      }, 0)
     }
     const onClick = (event: MouseEvent) => {
       const nextField = editableField(event.target)
@@ -133,27 +126,33 @@ export function MobileInputSheet() {
   useLayoutEffect(() => {
     if (!field) return undefined
     const previousOverflow = document.body.style.overflow
+    const root = document.documentElement
+    root.style.setProperty('--calculator-frozen-height', `${window.innerHeight}px`)
+    root.setAttribute('data-calculator-input-open', 'true')
     document.body.style.overflow = 'hidden'
-    sheetFieldRef.current?.focus({ preventScroll: true })
-
-    const reveal = () => {
-      if (revealTimerRef.current) window.clearTimeout(revealTimerRef.current)
-      revealTimerRef.current = window.setTimeout(() => {
-        window.requestAnimationFrame(() => setEntered(true))
-      }, 60)
-    }
     const viewport = window.visualViewport
-    viewport?.addEventListener('resize', reveal)
-    revealTimerRef.current = window.setTimeout(() => {
-      window.requestAnimationFrame(() => setEntered(true))
-    }, 120)
+    let frame = 0
+    const update = () => {
+      if (!viewportRef.current) return
+      viewportRef.current.style.height = `${viewport?.height || window.innerHeight}px`
+      viewportRef.current.style.top = `${viewport?.offsetTop || 0}px`
+    }
+    const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(update) }
+    update()
+    viewport?.addEventListener('resize', schedule)
+    viewport?.addEventListener('scroll', schedule)
+    sheetFieldRef.current?.focus({ preventScroll: true })
+    const enterFrame = requestAnimationFrame(() => setEntered(true))
 
     return () => {
-      viewport?.removeEventListener('resize', reveal)
-      if (revealTimerRef.current) window.clearTimeout(revealTimerRef.current)
+      viewport?.removeEventListener('resize', schedule)
+      viewport?.removeEventListener('scroll', schedule)
+      cancelAnimationFrame(frame)
+      cancelAnimationFrame(enterFrame)
       if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current)
-      if (blurTimerRef.current) window.clearTimeout(blurTimerRef.current)
       document.body.style.overflow = previousOverflow
+      root.removeAttribute('data-calculator-input-open')
+      root.style.removeProperty('--calculator-frozen-height')
     }
   }, [field])
 
@@ -163,14 +162,14 @@ export function MobileInputSheet() {
     if (closeTimerRef.current) return
     setDragging(false)
     setEntered(false)
-    blurTimerRef.current = window.setTimeout(() => sheetFieldRef.current?.blur(), 90)
+    sheetFieldRef.current?.blur()
     closeTimerRef.current = window.setTimeout(() => {
       fieldRef.current?.dispatchEvent(new Event('change', { bubbles: true }))
       fieldRef.current?.blur()
       closeTimerRef.current = null
       setField(null)
       setDragY(0)
-    }, 280)
+    }, 360)
   }
 
   const closeFromBackdrop = () => {
@@ -219,7 +218,7 @@ export function MobileInputSheet() {
   }
 
   return createPortal(
-    <div className="mobile-input-sheet" data-mobile-input-sheet role="presentation">
+    <div ref={viewportRef} className="mobile-input-sheet" data-mobile-input-sheet role="presentation">
       <div aria-label="Закрыть ввод" className="mobile-input-sheet-backdrop" role="button" style={{ opacity: entered ? 1 : 0 }} onClick={closeFromBackdrop} />
       <section
         aria-label={title}
@@ -227,8 +226,9 @@ export function MobileInputSheet() {
         className="mobile-input-sheet-panel"
         role="dialog"
         style={{
-          transform: entered ? `translate3d(0, ${dragY}px, 0)` : 'translate3d(0, 100%, 0)',
-          transition: dragging ? 'none' : 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)',
+          transform: `translate3d(0, ${dragY}px, 0)`,
+          opacity: entered ? 1 : 0,
+          transition: dragging ? 'none' : 'transform 300ms ease, opacity 250ms ease',
         }}
       >
         <div className="mobile-input-sheet-handle" onPointerCancel={finishDrag} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={finishDrag}>

@@ -1216,6 +1216,12 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
+        <div className="mobile-calculator-header">
+          <strong>Калькулятор</strong>
+          <select aria-label="Раздел калькулятора" value={activeTab} onChange={(event) => navigateToTab(event.target.value as TabId)}>
+            {tabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
+          </select>
+        </div>
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">A</span>
           <div>
@@ -2894,8 +2900,27 @@ function SummaryDock({
   onPdf,
   onSave,
 }: SummaryDockProps) {
+  const [expanded, setExpanded] = useState(false)
+  useEffect(() => {
+    if (!expanded) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setExpanded(false) }
+    window.addEventListener('keydown', escape)
+    return () => {
+      document.body.style.overflow = previous
+      window.removeEventListener('keydown', escape)
+    }
+  }, [expanded])
   return (
-    <aside className="summary-dock">
+    <>
+    {expanded ? <button type="button" aria-label="Закрыть итог" className="mobile-summary-backdrop" onClick={() => setExpanded(false)} /> : null}
+    <aside className={`summary-dock${expanded ? ' is-expanded' : ''}`}>
+      <div className="mobile-summary-bar">
+        <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><strong>{money(orderResult.total)}</strong><ChevronDown size={18} /></button>
+        <button className="primary-action" type="button" onClick={() => setExpanded(!expanded)}>КП</button>
+      </div>
+      <div className="mobile-summary-heading"><strong>Состав расчёта</strong><button type="button" aria-label="Свернуть итог" onClick={() => setExpanded(false)}>×</button></div>
       <div className="summary-headline">
         {orderResult.discount > 0 ? (
           <>
@@ -2944,16 +2969,17 @@ function SummaryDock({
         <span>Гарантия на изделие 1 год</span>
       </div>
       <div className="summary-actions">
-        <button className="primary-action" disabled={hasErrors} type="button" onClick={onSave}>
+        <button className="primary-action" disabled={hasErrors} type="button" onClick={() => { setExpanded(false); onSave() }}>
           <Save size={19} />
           Сохранить КП
         </button>
-        <button className="pdf-action" disabled={hasErrors || isPdfBusy} type="button" onClick={onPdf}>
+        <button className="pdf-action" disabled={hasErrors || isPdfBusy} type="button" onClick={() => { setExpanded(false); onPdf() }}>
           <FileDown size={19} />
           {isPdfBusy ? 'Формируем...' : 'Создать PDF'}
         </button>
       </div>
     </aside>
+    </>
   )
 }
 

@@ -5913,3 +5913,38 @@ body { padding: 0; background: #f7f7f4; }
     display: none;
   }
 }
+
+.mobile-calculator-header, .mobile-summary-bar, .mobile-summary-heading, .mobile-summary-backdrop { display: none; }
+@media (max-width: 767px) {
+  .app-header { min-height: 48px; padding: 6px 12px; }
+  .app-header > .brand-lockup, .app-header > .app-tabs { display: none; }
+  .mobile-calculator-header { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; }
+  .mobile-calculator-header strong { font-size: 16px; }
+  .mobile-calculator-header select { width: auto; max-width: 160px; min-height: 40px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0 10px; background: #f8fafc; color: #0f172a; }
+  .app-main { padding-bottom: calc(78px + env(safe-area-inset-bottom)); }
+  .position-section { gap: 6px; padding: 10px; }
+  .position-strip { grid-auto-columns: 140px; }
+  .dimension-list, .mirror-dimensions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .step-navigation { position: static; margin: 0; padding: 10px 0; }
+  .summary-dock { display: block; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
+  .summary-dock > :not(.mobile-summary-bar) { display: none; }
+  .mobile-summary-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .mobile-summary-bar button { min-height: 44px; border: 0; border-radius: 12px; padding: 0 14px; display: flex; align-items: center; gap: 8px; font: inherit; }
+  .mobile-summary-bar button:first-child { background: white; color: #0f172a; padding-left: 0; }
+  .mobile-summary-bar strong { font-size: 23px; }
+  .mobile-summary-bar .primary-action { width: 100px; color: white; background: #2563eb; }
+  .mobile-summary-backdrop { display: block; position: fixed; inset: -100vh 0 0; border: 0; background: #0f172a70; }
+  .summary-dock.is-expanded { position: relative; max-height: 80dvh; overflow-y: auto; border-radius: 26px 26px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); }
+  .summary-dock.is-expanded > .mobile-summary-bar { display: none; }
+  .summary-dock.is-expanded > .mobile-summary-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; font-size: 20px; }
+  .mobile-summary-heading button { min-width: 44px; min-height: 44px; border: 0; border-radius: 50%; background: #f1f5f9; font-size: 26px; }
+  .summary-dock.is-expanded > .summary-headline, .summary-dock.is-expanded > .summary-composition, .summary-dock.is-expanded > .summary-lines, .summary-dock.is-expanded > .admin-calculation-details, .summary-dock.is-expanded > .summary-actions { display: block; }
+  .summary-dock.is-expanded .summary-actions { display: grid; gap: 8px; margin-top: 16px; }
+  .summary-dock.is-expanded .summary-actions button { width: 100%; font-size: 14px; }
+  .summary-dock.is-expanded .admin-finance-overview { display: none; }
+  html[data-calculator-input-open] .summary-column { visibility: hidden; }
+  html[data-calculator-input-open] #root { min-height: var(--calculator-frozen-height); height: var(--calculator-frozen-height); overflow: hidden; }
+  .mobile-input-sheet { bottom: auto; }
+  .mobile-input-sheet-panel { position: absolute; max-height: 100%; overflow-y: auto; }
+  .mobile-input-sheet-backdrop { position: fixed; top: 0; bottom: auto; height: var(--calculator-frozen-height, 100vh); backdrop-filter: none; }
+}
