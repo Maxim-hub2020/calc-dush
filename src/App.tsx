@@ -343,6 +343,7 @@ function App() {
   const [orderCustomer, setOrderCustomer] = useState<QuoteCustomer>(() => normalizeQuoteCustomer(null))
   const [activePositionId, setActivePositionId] = useState(() => positions[0].id)
   const [activeTab, setActiveTab] = useState<TabId>('showers')
+  const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [editingQuoteId, setEditingQuoteId] = useState('')
   const savedPositionPrices = useRef<Record<string, { form: string; result: CalculationResult }>>({})
@@ -1218,10 +1219,9 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="mobile-calculator-header">
-          <strong>Калькулятор</strong>
-          <select aria-label="Раздел калькулятора" value={activeTab} onChange={(event) => navigateToTab(event.target.value as TabId)}>
-            {tabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
-          </select>
+          <button type="button" aria-label="Архив КП" onClick={() => navigateToTab('archive')}><ChevronRight style={{ transform: 'rotate(180deg)' }} size={20} /></button>
+          <strong>{quotes.find((quote) => quote.id === editingQuoteId)?.number ? `КП №${quotes.find((quote) => quote.id === editingQuoteId)?.number}` : 'Новое КП'} <span aria-label={serverSession ? 'CRM подключена' : 'CRM не подключена'} className={serverSession ? 'connection-dot is-connected' : 'connection-dot'} /></strong>
+          <button type="button" aria-label="Параметры КП" onClick={() => setMobileSettingsOpen(true)}><MoreHorizontal size={22} /></button>
         </div>
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">A</span>
@@ -1256,6 +1256,7 @@ function App() {
       </header>
 
       <main className="app-main">
+        {activeTab === 'prices' ? <div className="prices-crm-connection">
         <CrmConnectionPanel
           username={serverSession?.username ?? ''}
           syncStatus={quoteSyncStatus}
@@ -1263,6 +1264,8 @@ function App() {
           onLogin={loginForServerSync}
           onLogout={logoutFromServerSync}
         />
+        </div> : null}
+        <button className="mobile-order-context" type="button" onClick={() => setMobileSettingsOpen(true)}><UserRound size={18} /><span>{orderCustomer.clientName || 'Добавить клиента'} · {orderDelivery.enabled ? 'Доставка' : 'Без доставки'}</span><ChevronRight size={16} /></button>
         {notice ? (
           <button className="notice" type="button" onClick={() => setNotice('')}>
             <Check size={16} />
@@ -1405,6 +1408,23 @@ function App() {
       ) : null}
 
       <MobileInputSheet />
+      {mobileSettingsOpen ? (
+        <div className="quote-settings-overlay">
+          <button className="quote-settings-backdrop" aria-label="Закрыть параметры КП" onClick={() => setMobileSettingsOpen(false)} />
+          <section className="quote-settings-sheet" role="dialog" aria-modal="true" aria-label="Параметры КП">
+            <header><h2>Параметры КП</h2><button type="button" onClick={() => setMobileSettingsOpen(false)} aria-label="Закрыть">×</button></header>
+            <CustomerControl customer={orderCustomer} onChange={updateOrderCustomer} />
+            <DeliveryControl delivery={orderDelivery} kmRate={catalog.services.deliveryKmRate} price={orderDeliveryPrice} onChange={updateOrderDelivery} />
+            <QuoteAdjustmentsControl adjustments={quoteAdjustmentState.adjustments} designerPercent={catalog.services.designerPercent} designerMixed={quoteAdjustmentState.designerMixed} discountMixed={quoteAdjustmentState.discountMixed} onChange={updateQuoteAdjustments} />
+            <label className="text-field"><span>Количество выбранного изделия</span><input type="number" inputMode="numeric" min={1} max={999} value={activePosition.quantity} onChange={(event) => updatePositionQuantity(Number(event.target.value))} /></label>
+            <button type="button" onClick={() => { duplicatePosition(); setMobileSettingsOpen(false) }}>Дублировать изделие</button>
+            {positions.length > 1 ? <button type="button" onClick={() => { deletePosition(activePositionId); setMobileSettingsOpen(false) }}>Удалить изделие</button> : null}
+            <button type="button" onClick={() => { resetCalculatorDraft(activePosition.kind); setMobileSettingsOpen(false) }}>Новое КП</button>
+            <button type="button" onClick={() => { navigateToTab('archive'); setMobileSettingsOpen(false) }}>Архив предложений</button>
+            <button type="button" onClick={() => { navigateToTab('prices'); setMobileSettingsOpen(false) }}>Цены</button>
+          </section>
+        </div>
+      ) : null}
 
     </div>
   )
@@ -1519,6 +1539,17 @@ function StepNavigation({ activeIndex, count, onChange }: StepNavigationProps) {
   )
 }
 
+function useMobileCalculator() {
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches)
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767px)')
+    const update = () => setMobile(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return mobile
+}
+
 function CalculatorScreen({
   adminBreakdown,
   catalog,
@@ -1537,6 +1568,8 @@ function CalculatorScreen({
   onOpenArchive,
   onOpenQuote,
   onSelectConstruction,
+  onQuantity,
+  quantity,
 }: CalculatorScreenProps) {
   const construction = getConstruction(catalog, form.constructionId)
   const glass = getOption(catalog.glass, form.glassId)
@@ -1549,6 +1582,21 @@ function CalculatorScreen({
   return (
     <div className="screen-stack calculator-screen">
       <section className="parameter-panel workspace-panel">
+        <div className="mobile-direct-config">
+          <div className="direct-product-heading"><h2>{construction.shortTitle}</h2><label><input aria-label="Количество изделия" type="number" inputMode="numeric" min={1} max={999} value={quantity} onChange={(event) => onQuantity(Number(event.target.value))} /> шт.</label></div>
+          <ConstructionPreview construction={construction} />
+          <label className="direct-option-row"><span>Конструкция</span><select aria-label="Конструкция" value={form.constructionId} onChange={(event) => onSelectConstruction(event.target.value)}>{catalog.constructions.map((item) => <option key={item.id} value={item.id}>{item.shortTitle}</option>)}</select></label>
+          <h3>Размеры, мм</h3>
+          <div className="dimension-list">
+            {construction.fields.map((field) => <label className="field-row" key={field.key}><span>{field.label}</span><input aria-label={`${field.label}, мм`} inputMode="numeric" type="number" value={form.dimensions[field.key] ?? ''} onChange={(event) => onDimension(field.key, Number(event.target.value))} />{result.errors[field.key] ? <em>{result.errors[field.key]}</em> : null}</label>)}
+          </div>
+          <OptionSelect label="Стекло" value={form.glassId} items={catalog.glass} onChange={(glassId) => onForm({ glassId })} />
+          <OptionSelect label="Фурнитура" value={form.hardwareId} items={catalog.hardware} onChange={(hardwareId) => onForm({ hardwareId })} />
+          <OptionSelect label="Класс фурнитуры" value={form.hardwareClassId} items={catalog.hardwareClass} onChange={(hardwareClassId) => onForm({ hardwareClassId })} />
+          <ToggleRow checked={form.installation} label="Монтаж" value={money(getInstallationAmounts(construction, { ...form, installation: true }).price)} onChange={(installation) => onForm({ installation, complexInstallation: installation ? form.complexInstallation : false })} />
+          {form.installation ? <ToggleRow checked={Boolean(form.complexInstallation)} label="Сложные условия монтажа" value="+25%" onChange={(complexInstallation) => onForm({ complexInstallation })} /> : null}
+        </div>
+        <div className="desktop-step-config">
         <div className="panel-heading">
           <div>
             <span>Позиция {positionSummaries.findIndex((position) => position.id === activePositionId) + 1}</span>
@@ -1728,6 +1776,7 @@ function CalculatorScreen({
           />
 
         </div>
+        </div>
       </section>
 
       <div className="summary-column">
@@ -1806,6 +1855,7 @@ function MirrorCalculatorScreen({
   onSave,
 }: MirrorCalculatorScreenProps) {
   const [activeSection, setActiveSection] = useState<MirrorSectionId>('dimensions')
+  const mobile = useMobileCalculator()
   const [serviceQuery, setServiceQuery] = useState('')
   const material = getMirrorMaterial(catalog, form.materialId)
   const calculatedOptions = getMirrorCalculatedOptions(catalog, form)
@@ -1929,7 +1979,7 @@ function MirrorCalculatorScreen({
         </nav>
 
         <div className="config-panel">
-          {activeSection === 'dimensions' ? (
+          {mobile || activeSection === 'dimensions' ? (
             <section className="section-block">
               <div className="section-title">
                 <h2>Размер зеркала</h2>
@@ -1964,7 +2014,7 @@ function MirrorCalculatorScreen({
             </section>
           ) : null}
 
-          {activeSection === 'material' ? (
+          {mobile || activeSection === 'material' ? (
             <section className="section-block">
               <div className="section-title">
                 <h2>Материал</h2>
@@ -1979,7 +2029,7 @@ function MirrorCalculatorScreen({
             </section>
           ) : null}
 
-          {activeSection === 'options' ? (
+          {mobile || activeSection === 'options' ? (
             <section className="section-block mirror-options-section">
               <div className="section-title">
                 <h2>Работы и комплекты</h2>
@@ -2195,7 +2245,7 @@ function MirrorCalculatorScreen({
             </section>
           ) : null}
 
-          {activeSection === 'pricing' ? (
+          {mobile || activeSection === 'pricing' ? (
             <section className="section-block">
               <div className="section-title">
                 <h2>Условия расчёта</h2>
@@ -2416,7 +2466,7 @@ function PositionSwitcher({
           </button>
           <div className="add-position-menu">
             <button className="add-position" type="button" onClick={() => onAddProduct ? setAddOpen((current) => !current) : onAdd()}>
-              <Plus size={17} /> Добавить
+              <Plus size={17} /> Изделие
             </button>
             {addOpen && onAddProduct ? (
               <div className="add-position-popover">
@@ -2690,7 +2740,7 @@ function OptionSelect({ label, value, items, onChange }: OptionSelectProps) {
     <label className="select-field">
       <span>{label}</span>
       <span className="select-control">
-        <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
           {items.map((item) => (
             <option key={item.id} value={item.id}>
               {item.label}
