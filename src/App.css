@@ -5970,6 +5970,7 @@ body { padding: 0; background: #f7f7f4; }
 .select-field > .option-row-label { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; text-align: left; }
 .select-field > .option-row-label > span { display: block; min-width: 0; }
 .option-row-label > svg { flex-shrink: 0; color: #334155; }
+.resume-calculation { min-height: 44px; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 12px; background: white; color: #2563eb; font: inherit; font-weight: 600; }
 .quote-settings-overlay { position: fixed; inset: 0; z-index: 100; }
 .quote-settings-backdrop { position: absolute; inset: 0; border: 0; background: #0f172a70; width: 100%; height: 100%; }
 .quote-settings-sheet { position: absolute; bottom: 0; left: 0; right: 0; max-height: 85dvh; overflow-y: auto; display: grid; gap: 10px; padding: 20px 16px max(20px, env(safe-area-inset-bottom)); background: white; border-radius: 28px 28px 0 0; }
@@ -6001,7 +6002,8 @@ body { padding: 0; background: #f7f7f4; }
   .mobile-direct-config .select-field, .direct-option-row { display: grid; grid-template-columns: minmax(90px, .7fr) minmax(0, 1.3fr); gap: 8px; align-items: center; min-height: 48px; border-bottom: 1px solid #edf2f7; margin: 0; }
   .direct-option-row select, .mobile-direct-config select { width: 100%; min-width: 0; min-height: 44px; }
   .mirror-calculator-screen .config-panel { min-height: 0; }
-  .mobile-calculator-header strong { font-size: 17px; color: #0f172a; }
+  .mobile-calculator-header { display: grid; grid-template-columns: minmax(0, 1fr) 44px; }
+  .mobile-calculator-header strong { font-size: 17px; color: #0f172a; text-align: center; padding-left: 44px; }
   .mobile-order-context { background: #f5f8fc; border: 0; border-radius: 12px; padding: 10px 12px; }
   .position-section { padding: 8px 0 14px; border-bottom: 1px solid #e2e8f0; }
   .position-title { border: 0; padding: 0; }

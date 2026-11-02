@@ -453,6 +453,7 @@ export const createQuotePdfBlob = (quote: Quote) =>
   })
 
 export type QuotePdfPreview = {
+  file?: File
   fileName: string
   title: string
   documentLabel: string
@@ -470,5 +471,5 @@ export const shareQuotePdf = async (quote: Quote): Promise<QuotePdfPreview> => {
   const blob = await createQuotePdfBlob(quote)
   const file = new File([blob], fileName, { type: 'application/pdf', lastModified: Date.now() })
 
-  return { fileName, title, documentLabel: 'Коммерческое предложение', url: URL.createObjectURL(file) }
+  return { file, fileName, title, documentLabel: 'Коммерческое предложение', url: URL.createObjectURL(file) }
 }

@@ -959,12 +959,11 @@ function App() {
   const downloadCurrentQuotePdf = () => {
     if (focusFirstInvalidPosition()) return
     const quote = createQuoteFromPositions()
-    const nextKind = activePosition.kind
     setQuotes((current) => editingQuoteId
       ? current.map((item) => item.id === editingQuoteId ? quote : item)
       : [quote, ...current])
     syncQuoteChanges([quote])
-    resetCalculatorDraft(nextKind)
+    setEditingQuoteId(quote.id)
     void downloadQuotePdf(quote)
   }
 
@@ -1221,7 +1220,6 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="mobile-calculator-header">
-          <button type="button" aria-label="Архив КП" onClick={() => navigateToTab('archive')}><ChevronRight style={{ transform: 'rotate(180deg)' }} size={20} /></button>
           <strong>{quotes.find((quote) => quote.id === editingQuoteId)?.number ? `КП №${quotes.find((quote) => quote.id === editingQuoteId)?.number}` : 'Новое КП'} <span aria-label={serverSession ? 'CRM подключена' : 'CRM не подключена'} className={serverSession ? 'connection-dot is-connected' : 'connection-dot'} /></strong>
           <button type="button" aria-label="Параметры КП" onClick={() => setMobileSettingsOpen(true)}><MoreHorizontal size={22} /></button>
         </div>
@@ -1258,6 +1256,7 @@ function App() {
       </header>
 
       <main className="app-main">
+        {activeTab === 'archive' || activeTab === 'prices' ? <button type="button" className="resume-calculation" onClick={() => navigateToTab(activePosition.kind === 'mirror' ? 'mirrors' : 'showers')}>Продолжить текущий расчёт</button> : null}
         {activeTab === 'prices' ? <div className="prices-crm-connection">
         <CrmConnectionPanel
           username={serverSession?.username ?? ''}
@@ -1406,7 +1405,7 @@ function App() {
       </main>
 
       {pdfPreview ? (
-        <PdfPreviewDialog preview={pdfPreview} onClose={() => setPdfPreview(null)} />
+        <PdfPreviewDialog preview={pdfPreview} onClose={() => { setPdfPreview(null); setActiveTab(activePosition.kind === 'mirror' ? 'mirrors' : 'showers') }} />
       ) : null}
 
       <MobileInputSheet />
@@ -1438,6 +1437,24 @@ type PdfPreviewDialogProps = {
 }
 
 function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
+  const [shareError, setShareError] = useState('')
+  const shareOrDownload = async () => {
+    setShareError('')
+    if (preview.file && navigator.canShare?.({ files: [preview.file] }) && navigator.share) {
+      try {
+        await navigator.share({ files: [preview.file], title: preview.title })
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) setShareError('Не удалось открыть меню «Поделиться». Попробуйте ещё раз или сохраните файл.')
+      }
+      return
+    }
+    const link = document.createElement('a')
+    link.href = preview.url
+    link.download = preview.fileName
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
   return (
     <div className="pdf-preview-backdrop">
       <section aria-labelledby="pdf-preview-title" aria-modal="true" className="pdf-preview-dialog" role="dialog">
@@ -1457,21 +1474,18 @@ function PdfPreviewDialog({ preview, onClose }: PdfPreviewDialogProps) {
           <strong>{preview.fileName}</strong>
         </div>
         <footer>
-          <a href={preview.url} rel="noopener" target="_blank">
-            <FileDown size={18} />
-            Открыть отдельно
-          </a>
-          <a download={preview.fileName} href={preview.url}>
+          <button type="button" onClick={() => void shareOrDownload()}>
             <Save size={18} />
-            Скачать PDF
-          </a>
+            Скачать / поделиться КП
+          </button>
+          {shareError ? <><p role="alert">{shareError}</p><a download={preview.fileName} href={preview.url}>Сохранить PDF</a></> : null}
           {preview.attachments?.map((attachment) => (
             <a download={attachment.fileName} href={attachment.url} key={attachment.fileName}>
               <FileDown size={18} />
               {attachment.label}
             </a>
           ))}
-          <button type="button" onClick={onClose}>Закрыть</button>
+          <button type="button" onClick={onClose}>Вернуться в калькулятор</button>
         </footer>
       </section>
     </div>
