@@ -436,9 +436,9 @@
   max-width: calc(100% - 12px);
   flex: 0 0 auto;
   aspect-ratio: 1 / 1;
-  background-color: #4d7ebc;
+  background-color: #ffffff;
   background-repeat: no-repeat;
-  background-size: 523.81% 442.86%;
+  background-size: 400% 300%;
   border-radius: 4px;
 }
 
@@ -6021,10 +6021,17 @@ body { padding: 0; background: #f7f7f4; }
   .mobile-direct-config .select-field { grid-template-columns: minmax(125px, 1fr) minmax(0, 1.3fr); min-height: 48px; gap: 6px; padding: 3px 0; }
   .mobile-direct-config .select-field > .option-row-label { min-height: 40px; }
   .mobile-direct-config .select-field > .select-control { display: block; align-self: center; }
-  .mobile-direct-config .select-control select { min-height: 40px; padding: 6px 20px 6px 0; text-align: right; font-size: 13px !important; }
+  .mobile-direct-config .select-control select { min-height: 44px; padding: 6px 20px 6px 0; text-align: right; font-size: 16px !important; }
   .mobile-direct-config .select-control > svg { right: 0; width: 15px; color: #64748b; }
   .mobile-direct-config .field-row { border: 1px solid #dbe2ec; border-radius: 12px; background: white; }
   .mobile-direct-config .field-row > span { font-size: 12px; color: #64748b; }
   .mobile-direct-config .field-row input { border: 0; background: transparent; text-align: left; padding: 0; box-shadow: none; }
   .parameter-panel.workspace-panel { padding: 14px; border-color: #eef2f7; box-shadow: none; }
+  .mobile-direct-config .option-row-label > span { font-size: 14px; font-weight: 500; line-height: 1.35; }
+  .mobile-direct-config .field-row > span { font-weight: 500; font-size: 13px; }
+  .mobile-direct-config .field-row input { font-size: 18px !important; font-weight: 600; }
+  .mobile-direct-config h2, .mobile-summary-heading strong { font-weight: 700; letter-spacing: -0.3px; color: #0f172a; }
+  .mobile-calculator-header strong { font-weight: 650; }
+  .mobile-direct-config .reference-shower-thumbnail { height: 100%; max-width: 100%; border-radius: 0; }
+  .mobile-direct-config > .construction-preview { height: 180px; max-height: 180px; }
 }

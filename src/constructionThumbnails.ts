@@ -1,19 +1,19 @@
 import type { CSSProperties } from 'react'
-import showerThumbnailSprite from './assets/shower-thumbnail-sprite.png'
+import showerThumbnailSprite from './assets/shower-concept-sprite.png'
 
 const constructionThumbnailPositions: Record<string, string> = {
-  '6663': '6.46% 21.88%',
-  '6744': '35.96% 21.88%',
-  '6747': '66.01% 21.88%',
-  '6745': '95.79% 21.88%',
-  '6746': '6.46% 58.68%',
-  '6748': '35.96% 58.68%',
-  '6749': '66.01% 58.68%',
-  '6750': '95.79% 58.68%',
-  '6751': '6.46% 95.49%',
-  '6752': '35.96% 95.49%',
-  '6753': '66.01% 95.49%',
-  '6754': '95.79% 95.49%',
+  '6663': '0% 0%',
+  '6744': '33.333333% 0%',
+  '6747': '66.666667% 0%',
+  '6745': '100% 0%',
+  '6746': '0% 50%',
+  '6748': '33.333333% 50%',
+  '6749': '66.666667% 50%',
+  '6750': '100% 50%',
+  '6751': '0% 100%',
+  '6752': '33.333333% 100%',
+  '6753': '66.666667% 100%',
+  '6754': '100% 100%',
 }
 
 export const getConstructionThumbnailStyle = (constructionId: string): CSSProperties | null => {
