@@ -6033,4 +6033,19 @@ body { padding: 0; background: #f7f7f4; }
   .mobile-calculator-header strong { font-weight: 650; }
   .mobile-direct-config .reference-shower-thumbnail { height: 100%; max-width: 100%; border-radius: 0; }
   .mobile-direct-config > .construction-preview { height: 180px; max-height: 180px; }
+  .mobile-direct-config .dimension-list .field-row,
+  .mirror-dimensions .field-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 60px;
+    padding: 6px 10px;
+    gap: 2px;
+  }
+  .mobile-direct-config .dimension-list .field-row input,
+  .mirror-dimensions .field-row input {
+    height: 28px;
+    min-height: 28px;
+    padding: 0;
+    font-size: 18px !important;
+  }
 }
