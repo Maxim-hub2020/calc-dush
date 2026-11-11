@@ -11,10 +11,8 @@ import {
   type QuoteDelivery,
 } from './calculator'
 import {
-  getMirrorCalculatedOptions,
-  getMirrorMaterial,
+  getMirrorPricingComponents,
   getMirrorProductTitle,
-  mirrorArea,
   type MirrorForm,
 } from './mirrorCalculator'
 import type { MirrorPricingCatalog } from './mirrorPricing'
@@ -141,22 +139,9 @@ export const getMirrorCostPrice = (
   unitResult: CalculationResult,
 ) => {
   if (Object.keys(unitResult.errors).length > 0) return 0
-  const area = mirrorArea(form)
-  const material = getMirrorMaterial(catalog, form.materialId)
-  const options = getMirrorCalculatedOptions(catalog, form).filter((item) => item.category === 'work')
-  const rawMaterial = area * material.price
-  const rawWork = options.reduce((sum, item) => sum + item.total, 0)
-  const baseProduct = rawMaterial * percentFactor(catalog.settings.materialMarkupPercent)
-  const baseInstallation = rawWork * percentFactor(catalog.settings.serviceMarkupPercent)
-  const baseSubtotal = baseProduct + baseInstallation
-  const managerPayout = form.managerEnabled
-    ? baseSubtotal * Math.max(0, Number(catalog.settings.managerPercent) || 0) / 100
-    : 0
-  const designerPayout = form.designerEnabled
-    ? baseSubtotal * Math.max(0, Number(catalog.settings.designerPercent) || 0) / 100
-    : 0
+  const pricing = getMirrorPricingComponents(catalog, form)
 
-  return rawMaterial + rawWork + managerPayout + designerPayout
+  return pricing.rawMaterial + pricing.rawWork + pricing.manager + pricing.designer
 }
 
 export const buildShowerCalculationBreakdown = (
@@ -374,29 +359,8 @@ export const buildMirrorCalculationBreakdown = (
   quantity: number,
   unitResult: CalculationResult,
 ): AdminCalculationBreakdown => {
-  const area = mirrorArea(form)
-  const material = getMirrorMaterial(catalog, form.materialId)
-  const options = getMirrorCalculatedOptions(catalog, form).filter((item) => item.category === 'work')
-  const valid = Object.keys(unitResult.errors).length === 0
-  const rawMaterial = valid ? area * material.price : 0
-  const rawWork = valid ? options.reduce((sum, item) => sum + item.total, 0) : 0
-  const materialMarkup = Math.max(0, Number(catalog.settings.materialMarkupPercent) || 0)
-  const serviceMarkup = Math.max(0, Number(catalog.settings.serviceMarkupPercent) || 0)
-  const baseProduct = rawMaterial * percentFactor(materialMarkup)
-  const baseInstallation = rawWork * percentFactor(serviceMarkup)
-  const baseSubtotal = baseProduct + baseInstallation
-  const managerPercent = form.managerEnabled ? Math.max(0, Number(catalog.settings.managerPercent) || 0) : 0
-  const designerPercent = form.designerEnabled ? Math.max(0, Number(catalog.settings.designerPercent) || 0) : 0
-  const manager = baseSubtotal * managerPercent / 100
-  const designer = baseSubtotal * designerPercent / 100
-  const commissionFactor = baseSubtotal > 0 ? (baseSubtotal + manager + designer) / baseSubtotal : 1
-  const productBeforeRounding = roundToTen(baseProduct * commissionFactor)
-  const installation = roundToTen(baseInstallation * commissionFactor)
-  const subtotal = roundMoneyUp(productBeforeRounding + installation)
-  const appliedDiscount = form.discountEnabled ? discountPercent(form.discountPercent) : 0
-  const total = form.discountEnabled
-    ? roundMoneyUp(subtotal * (1 - appliedDiscount / 100))
-    : subtotal
+  const pricing = getMirrorPricingComponents(catalog, form)
+  const options = pricing.options.filter((item) => item.category === 'work')
   const normalizedQuantity = Math.max(1, Math.floor(Number(quantity) || 1))
   const positionCost = getMirrorCostPrice(catalog, form, unitResult) * normalizedQuantity
   const workRows: AdminCalculationRow[] = options.map((item) => ({
@@ -411,12 +375,12 @@ export const buildMirrorCalculationBreakdown = (
     {
       label: 'Работы всего',
       formula: options.length > 0 ? options.map((item) => money(item.total)).join(' + ') : '0',
-      value: money(rawWork),
+      value: money(pricing.rawWork),
     },
     {
       label: 'Работы с наценкой',
-      formula: `${money(rawWork)} × (1 + ${number(serviceMarkup)}%)`,
-      value: money(baseInstallation),
+      formula: `${money(pricing.rawWork)} × (1 + ${number(pricing.serviceMarkupPercent)}%)`,
+      value: money(pricing.baseInstallation),
       emphasis: true,
     },
   )
@@ -433,17 +397,17 @@ export const buildMirrorCalculationBreakdown = (
           {
             label: 'Площадь',
             formula: `${number(form.width, 0)} / 1000 × ${number(form.height, 0)} / 1000`,
-            value: `${number(area)} м²`,
+            value: `${number(pricing.area)} м²`,
           },
           {
-            label: material.label,
-            formula: `${number(area)} м² × ${money(material.price)}/м²`,
-            value: money(rawMaterial),
+            label: pricing.material.label,
+            formula: `${number(pricing.area)} м² × ${money(pricing.material.price)}/м²`,
+            value: money(pricing.rawMaterial),
           },
           {
             label: 'Материал с наценкой',
-            formula: `${money(rawMaterial)} × (1 + ${number(materialMarkup)}%)`,
-            value: money(baseProduct),
+            formula: `${money(pricing.rawMaterial)} × (1 + ${number(pricing.materialMarkupPercent)}%)`,
+            value: money(pricing.baseProduct),
             emphasis: true,
           },
         ],
@@ -457,55 +421,55 @@ export const buildMirrorCalculationBreakdown = (
         rows: [
           {
             label: 'База для надбавок',
-            formula: `${money(baseProduct)} + ${money(baseInstallation)}`,
-            value: money(baseSubtotal),
+            formula: `${money(pricing.baseProduct)} + ${money(pricing.baseInstallation)}`,
+            value: money(pricing.baseSubtotal),
           },
           {
             label: 'Менеджер',
             formula: form.managerEnabled
-              ? `${money(baseSubtotal)} × ${number(managerPercent)}%`
+              ? `${money(pricing.baseSubtotal)} × ${number(pricing.managerPercent)}%`
               : 'Не применяется',
-            value: money(manager),
+            value: money(pricing.manager),
           },
           {
             label: 'Дизайнер',
             formula: form.designerEnabled
-              ? `${money(baseSubtotal)} × ${number(designerPercent)}%`
+              ? `${money(pricing.baseSubtotal)} × ${number(pricing.designerPercent)}%`
               : 'Не применяется',
-            value: money(designer),
+            value: money(pricing.designer),
           },
           {
             label: 'Коэффициент надбавок',
-            formula: baseSubtotal > 0
-              ? `(${money(baseSubtotal)} + ${money(manager)} + ${money(designer)}) / ${money(baseSubtotal)}`
+            formula: pricing.baseSubtotal > 0
+              ? `(${money(pricing.baseSubtotal)} + ${money(pricing.manager)} + ${money(pricing.designer)}) / ${money(pricing.baseSubtotal)}`
               : 'Нет базы для расчёта',
-            value: `× ${number(commissionFactor)}`,
+            value: `× ${number(pricing.commissionFactor)}`,
           },
           {
             label: 'Изделие после надбавок',
-            formula: `round10(${money(baseProduct)} × ${number(commissionFactor)})`,
-            value: money(productBeforeRounding),
+            formula: `round10(${money(pricing.baseProduct)} × ${number(pricing.commissionFactor)})`,
+            value: money(pricing.productBeforeRounding),
           },
           {
             label: 'Работы после надбавок',
-            formula: `round10(${money(baseInstallation)} × ${number(commissionFactor)})`,
-            value: money(installation),
+            formula: `round10(${money(pricing.baseInstallation)} × ${number(pricing.commissionFactor)})`,
+            value: money(pricing.installation),
           },
           {
             label: 'Округление до сотни',
-            formula: `ceil100(${money(productBeforeRounding)} + ${money(installation)})`,
-            value: money(subtotal),
+            formula: `ceil100(${money(pricing.productBeforeRounding)} + ${money(pricing.installation)})`,
+            value: money(pricing.subtotal),
           },
           {
             label: 'Скидка',
             formula: form.discountEnabled
-              ? `ceil100(${money(subtotal)} × (1 − ${number(appliedDiscount)}%))`
+              ? `ceil100(${money(pricing.subtotal)} × (1 − ${number(pricing.discountPercent)}%))`
               : 'Не применяется',
-            value: form.discountEnabled ? money(subtotal - total) : money(0),
+            value: form.discountEnabled ? money(pricing.discount) : money(0),
           },
           {
             label: 'Итого за 1 шт.',
-            formula: form.discountEnabled ? `${money(subtotal)} − ${money(subtotal - total)}` : money(subtotal),
+            formula: form.discountEnabled ? `${money(pricing.subtotal)} − ${money(pricing.discount)}` : money(pricing.subtotal),
             value: money(unitResult.total),
             emphasis: true,
           },

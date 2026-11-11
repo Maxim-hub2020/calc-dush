@@ -3877,12 +3877,12 @@
   font-weight: 760;
 }
 
-.mirror-option-row > strong {
+.mirror-option-row > strong,
+.mirror-option-row > .mirror-calculated-selling-price {
   align-self: center;
   color: var(--heading);
   font-size: 13px;
   text-align: right;
-  white-space: nowrap;
 }
 
 .mirror-option-row > button {
@@ -3934,8 +3934,34 @@
   font-weight: 680;
 }
 
-.mirror-selected-group > header > b {
+.mirror-selected-group > header > b,
+.mirror-group-selling-price > b {
   color: var(--accent-dark);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.mirror-group-selling-price,
+.mirror-calculated-selling-price,
+.mirror-service-selling-price {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  text-align: right;
+}
+
+.mirror-group-selling-price small,
+.mirror-calculated-selling-price small,
+.mirror-service-selling-price small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 680;
+  line-height: 1.2;
+}
+
+.mirror-calculated-selling-price strong,
+.mirror-service-selling-price b {
+  color: var(--heading);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -4000,11 +4026,11 @@
   font-weight: 720;
 }
 
-.mirror-selected-group-item > strong {
+.mirror-selected-group-item > strong,
+.mirror-selected-group-item > .mirror-calculated-selling-price {
   color: var(--heading);
   font-size: 12px;
   text-align: right;
-  white-space: nowrap;
 }
 
 .mirror-options-empty {
@@ -4501,7 +4527,8 @@
     grid-column: 1 / 4;
   }
 
-  .mirror-option-row > strong {
+  .mirror-option-row > strong,
+  .mirror-option-row > .mirror-calculated-selling-price {
     grid-column: 2;
   }
 
@@ -4518,7 +4545,8 @@
     grid-column: 1 / -1;
   }
 
-  .mirror-selected-group-item > strong {
+  .mirror-selected-group-item > strong,
+  .mirror-selected-group-item > .mirror-calculated-selling-price {
     grid-column: 2;
   }
 

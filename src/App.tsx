@@ -94,11 +94,13 @@ import {
   calculateMirrorQuote,
   cloneMirrorForm,
   createInitialMirrorForm,
-  getMirrorCalculatedGroupTotal,
+  getMirrorCalculatedGroupSellingTotal,
+  getMirrorCalculatedOptionSellingTotal,
   getMirrorCalculatedOptions,
   getMirrorMaterial,
   getMirrorProductTitle,
   getMirrorService,
+  getMirrorServiceSellingUnitPrice,
   getMirrorTitle,
   MIRROR_MAX_HEIGHT_MM,
   MIRROR_MAX_WIDTH_MM,
@@ -2077,7 +2079,7 @@ function MirrorCalculatorScreen({
                           <strong>{group.label}</strong>
                           <small>{group.items.length} позиций в составе</small>
                         </span>
-                        <b>{selection ? money(getMirrorCalculatedGroupTotal(catalog, form, selection.id)) : 'Добавить'}</b>
+                        <b>{selection ? money(getMirrorCalculatedGroupSellingTotal(catalog, form, selection.id)) : 'Добавить'}</b>
                       </button>
                     )
                   })}
@@ -2108,7 +2110,10 @@ function MirrorCalculatorScreen({
                               <strong>{item.label}</strong>
                               {item.sku ? <small>VDSF · арт. {item.sku}</small> : null}
                             </span>
-                            <b>{money(item.price)}/{mirrorUnitLabels[item.unit]}</b>
+                            <span className="mirror-service-selling-price">
+                              <b>{money(getMirrorServiceSellingUnitPrice(catalog, item))}/{mirrorUnitLabels[item.unit]}</b>
+                              <small>Цена цеха: {money(item.price)}/{mirrorUnitLabels[item.unit]}</small>
+                            </span>
                           </button>
                         )
                       })}
@@ -2136,7 +2141,10 @@ function MirrorCalculatorScreen({
                           <strong>{group.label}</strong>
                           <small>{formatPositionCount(groupOptions.length)} в составе</small>
                         </span>
-                        <b>{money(getMirrorCalculatedGroupTotal(catalog, form, selection.id))}</b>
+                        <span className="mirror-group-selling-price">
+                          <b>{money(getMirrorCalculatedGroupSellingTotal(catalog, form, selection.id))}</b>
+                          <small>Цех: {money(groupOptions.reduce((sum, option) => sum + option.total, 0))}</small>
+                        </span>
                         <button aria-label={`Удалить комплект ${group.label}`} type="button" onClick={() => toggleGroup(group.id)}>
                           <Trash2 size={16} />
                         </button>
@@ -2177,7 +2185,10 @@ function MirrorCalculatorScreen({
                                   </span>
                                   <small>Авто: {new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(option.automaticQuantity)} {option.unitLabel}</small>
                                 </label>
-                                <strong>{money(option.total)}</strong>
+                                <span className="mirror-calculated-selling-price">
+                                  <strong>{money(getMirrorCalculatedOptionSellingTotal(catalog, option))}</strong>
+                                  <small>Цех: {money(option.total)}</small>
+                                </span>
                               </div>
                             )
                         })}
@@ -2244,7 +2255,10 @@ function MirrorCalculatorScreen({
                           <small>Авто: {new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(calculated.automaticQuantity)}</small>
                         </label>
                       )}
-                      <strong>{money(calculated.total)}</strong>
+                      <span className="mirror-calculated-selling-price">
+                        <strong>{money(getMirrorCalculatedOptionSellingTotal(catalog, calculated))}</strong>
+                        <small>Цех: {money(calculated.total)}</small>
+                      </span>
                       <button aria-label={`Удалить ${service.label}`} type="button" onClick={() => deleteOption(option.id)}>
                         <Trash2 size={17} />
                       </button>

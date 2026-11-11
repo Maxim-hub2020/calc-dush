@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "test:pricing": "node scripts/validate-pricing-calculations.mjs",
     "test:production-drawings": "node scripts/validate-production-drawings.mjs"
   },
   "dependencies": {

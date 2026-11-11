@@ -177,6 +177,28 @@ export const getMirrorCalculatedGroupTotal = (
   .filter((option) => option.groupSelectionId === selectionId)
   .reduce((sum, option) => sum + option.total, 0)
 
+export const getMirrorServiceSellingUnitPrice = (
+  catalog: MirrorPricingCatalog,
+  service: Pick<MirrorService, 'category' | 'price'>,
+) => service.category === 'work'
+  ? service.price * (1 + Math.max(0, Number(catalog.settings.serviceMarkupPercent) || 0) / 100)
+  : service.price
+
+export const getMirrorCalculatedOptionSellingTotal = (
+  catalog: MirrorPricingCatalog,
+  option: Pick<MirrorCalculatedOption, 'category' | 'total'>,
+) => option.category === 'work'
+  ? option.total * (1 + Math.max(0, Number(catalog.settings.serviceMarkupPercent) || 0) / 100)
+  : option.total
+
+export const getMirrorCalculatedGroupSellingTotal = (
+  catalog: MirrorPricingCatalog,
+  form: MirrorForm,
+  selectionId: string,
+) => getMirrorCalculatedOptions(catalog, form)
+  .filter((option) => option.groupSelectionId === selectionId)
+  .reduce((sum, option) => sum + getMirrorCalculatedOptionSellingTotal(catalog, option), 0)
+
 export const getMirrorTitle = (form: Pick<MirrorForm, 'width' | 'height'>) =>
   `Зеркало ${Math.max(0, Number(form.width) || 0)} × ${Math.max(0, Number(form.height) || 0)} мм`
 
@@ -185,7 +207,36 @@ export const getMirrorProductTitle = (
   form: Pick<MirrorForm, 'width' | 'height' | 'materialId'>,
 ) => `${getMirrorMaterial(catalog, form.materialId).label} · ${Math.max(0, Number(form.width) || 0)} × ${Math.max(0, Number(form.height) || 0)} мм`
 
-export const calculateMirrorQuote = (catalog: MirrorPricingCatalog, form: MirrorForm): CalculationResult => {
+export type MirrorPricingComponents = {
+  area: number
+  material: MirrorMaterial
+  options: MirrorCalculatedOption[]
+  errors: Record<string, string>
+  rawMaterial: number
+  rawWork: number
+  materialMarkupPercent: number
+  serviceMarkupPercent: number
+  baseProduct: number
+  baseInstallation: number
+  baseSubtotal: number
+  managerPercent: number
+  designerPercent: number
+  manager: number
+  designer: number
+  commissionFactor: number
+  productBeforeRounding: number
+  installation: number
+  subtotal: number
+  discountPercent: number
+  discount: number
+  total: number
+  product: number
+}
+
+export const getMirrorPricingComponents = (
+  catalog: MirrorPricingCatalog,
+  form: MirrorForm,
+): MirrorPricingComponents => {
   const errors: Record<string, string> = {}
   const width = Number(form.width)
   const height = Number(form.height)
@@ -202,39 +253,73 @@ export const calculateMirrorQuote = (catalog: MirrorPricingCatalog, form: Mirror
   const rawWork = valid
     ? options.filter((item) => item.category === 'work').reduce((sum, item) => sum + item.total, 0)
     : 0
-  const baseProduct = rawMaterial * (1 + Math.max(0, catalog.settings.materialMarkupPercent) / 100)
-  const baseInstallation = rawWork * (1 + Math.max(0, catalog.settings.serviceMarkupPercent) / 100)
+  const materialMarkupPercent = Math.max(0, Number(catalog.settings.materialMarkupPercent) || 0)
+  const serviceMarkupPercent = Math.max(0, Number(catalog.settings.serviceMarkupPercent) || 0)
+  const baseProduct = rawMaterial * (1 + materialMarkupPercent / 100)
+  const baseInstallation = rawWork * (1 + serviceMarkupPercent / 100)
   const baseSubtotal = baseProduct + baseInstallation
-  const manager = form.managerEnabled ? baseSubtotal * Math.max(0, catalog.settings.managerPercent) / 100 : 0
-  const designer = form.designerEnabled ? baseSubtotal * Math.max(0, catalog.settings.designerPercent) / 100 : 0
+  const managerPercent = form.managerEnabled ? Math.max(0, Number(catalog.settings.managerPercent) || 0) : 0
+  const designerPercent = form.designerEnabled ? Math.max(0, Number(catalog.settings.designerPercent) || 0) : 0
+  const manager = baseSubtotal * managerPercent / 100
+  const designer = baseSubtotal * designerPercent / 100
   const commissionFactor = baseSubtotal > 0 ? (baseSubtotal + manager + designer) / baseSubtotal : 1
   const productBeforeRounding = roundToTen(baseProduct * commissionFactor)
   const installation = roundToTen(baseInstallation * commissionFactor)
   const subtotal = roundMoneyUp(productBeforeRounding + installation)
   const product = subtotal - installation
-  const delivery = 0
   const discountPercent = Math.min(100, Math.max(0, Number(form.discountPercent) || 0))
   const total = form.discountEnabled ? roundMoneyUp(subtotal * (1 - discountPercent / 100)) : subtotal
   const discount = subtotal - total
-  const lines = [
-    { label: 'Стоимость изделия', value: product + installation },
-    { label: 'Доставка', value: delivery },
-  ]
-  if (discount > 0) lines.push({ label: 'Скидка', value: discount })
 
   return {
-    product,
+    area,
+    material,
+    options,
+    errors,
+    rawMaterial,
+    rawWork,
+    materialMarkupPercent,
+    serviceMarkupPercent,
+    baseProduct,
+    baseInstallation,
+    baseSubtotal,
+    managerPercent,
+    designerPercent,
+    manager,
+    designer,
+    commissionFactor,
+    productBeforeRounding,
     installation,
-    delivery,
-    manager: roundToTen(manager),
-    designer: roundToTen(designer),
     subtotal,
+    discountPercent,
     discount,
     total,
-    glassArea: area,
+    product,
+  }
+}
+
+export const calculateMirrorQuote = (catalog: MirrorPricingCatalog, form: MirrorForm): CalculationResult => {
+  const pricing = getMirrorPricingComponents(catalog, form)
+  const delivery = 0
+  const lines = [
+    { label: 'Стоимость изделия', value: pricing.product + pricing.installation },
+    { label: 'Доставка', value: delivery },
+  ]
+  if (pricing.discount > 0) lines.push({ label: 'Скидка', value: pricing.discount })
+
+  return {
+    product: pricing.product,
+    installation: pricing.installation,
+    delivery,
+    manager: roundToTen(pricing.manager),
+    designer: roundToTen(pricing.designer),
+    subtotal: pricing.subtotal,
+    discount: pricing.discount,
+    total: pricing.total,
+    glassArea: pricing.area,
     hardwarePrice: 0,
     hasSurcharge: false,
-    errors,
+    errors: pricing.errors,
     lines,
   }
 }
