@@ -373,12 +373,12 @@ export const buildMirrorCalculationBreakdown = (
   }
   workRows.push(
     {
-      label: 'Работы всего',
+      label: 'Работы: себестоимость цеха',
       formula: options.length > 0 ? options.map((item) => money(item.total)).join(' + ') : '0',
       value: money(pricing.rawWork),
     },
     {
-      label: 'Работы с наценкой',
+      label: 'Работы: цена с наценкой',
       formula: `${money(pricing.rawWork)} × (1 + ${number(pricing.serviceMarkupPercent)}%)`,
       value: money(pricing.baseInstallation),
       emphasis: true,

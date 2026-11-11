@@ -1344,6 +1344,7 @@ function App() {
           <MirrorCalculatorScreen
             activePositionId={activePositionId}
             adminBreakdown={adminCalculationBreakdown}
+            showWorkshopPrices={isAdmin}
             catalog={mirrorCatalog}
             customer={orderCustomer}
             delivery={orderDelivery}
@@ -1824,6 +1825,7 @@ function CalculatorScreen({
 
 type MirrorCalculatorScreenProps = {
   adminBreakdown: AdminCalculationBreakdown | null
+  showWorkshopPrices: boolean
   catalog: MirrorPricingCatalog
   customer: QuoteCustomer
   delivery: QuoteDelivery
@@ -1860,6 +1862,7 @@ const mirrorSections: Array<{ id: MirrorSectionId; label: string }> = [
 
 function MirrorCalculatorScreen({
   adminBreakdown,
+  showWorkshopPrices,
   catalog,
   form,
   result,
@@ -2112,7 +2115,7 @@ function MirrorCalculatorScreen({
                             </span>
                             <span className="mirror-service-selling-price">
                               <b>{money(getMirrorServiceSellingUnitPrice(catalog, item))}/{mirrorUnitLabels[item.unit]}</b>
-                              <small>Цена цеха: {money(item.price)}/{mirrorUnitLabels[item.unit]}</small>
+                              {showWorkshopPrices && <small>Цена цеха: {money(item.price)}/{mirrorUnitLabels[item.unit]}</small>}
                             </span>
                           </button>
                         )
@@ -2143,7 +2146,7 @@ function MirrorCalculatorScreen({
                         </span>
                         <span className="mirror-group-selling-price">
                           <b>{money(getMirrorCalculatedGroupSellingTotal(catalog, form, selection.id))}</b>
-                          <small>Цех: {money(groupOptions.reduce((sum, option) => sum + option.total, 0))}</small>
+                          {showWorkshopPrices && <small>Цех: {money(groupOptions.reduce((sum, option) => sum + option.total, 0))}</small>}
                         </span>
                         <button aria-label={`Удалить комплект ${group.label}`} type="button" onClick={() => toggleGroup(group.id)}>
                           <Trash2 size={16} />
@@ -2187,7 +2190,7 @@ function MirrorCalculatorScreen({
                                 </label>
                                 <span className="mirror-calculated-selling-price">
                                   <strong>{money(getMirrorCalculatedOptionSellingTotal(catalog, option))}</strong>
-                                  <small>Цех: {money(option.total)}</small>
+                                  {showWorkshopPrices && <small>Цех: {money(option.total)}</small>}
                                 </span>
                               </div>
                             )
@@ -2257,7 +2260,7 @@ function MirrorCalculatorScreen({
                       )}
                       <span className="mirror-calculated-selling-price">
                         <strong>{money(getMirrorCalculatedOptionSellingTotal(catalog, calculated))}</strong>
-                        <small>Цех: {money(calculated.total)}</small>
+                        {showWorkshopPrices && <small>Цех: {money(calculated.total)}</small>}
                       </span>
                       <button aria-label={`Удалить ${service.label}`} type="button" onClick={() => deleteOption(option.id)}>
                         <Trash2 size={17} />

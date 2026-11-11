@@ -52,6 +52,28 @@ try {
   assert.equal(mirrorBreakdown.finance.position.revenue, mirrorWithMarkup.total)
   assert.equal(mirrorPricing.total, mirrorWithMarkup.total)
 
+  const mirrorGroupCatalog = clone(mirrorCatalogWithMarkup)
+  mirrorGroupCatalog.groups.push({
+    id: 'test-installation',
+    label: 'Test installation',
+    visibleInQuote: true,
+    items: [{ id: 'glue', serviceId: 'installation-glue', quantity: 1 }],
+  })
+  const mirrorGroupForm = {
+    ...mirrorForm,
+    options: [],
+    groups: [{ id: 'group-selection', groupId: 'test-installation', itemQuantities: { glue: 4 } }],
+  }
+  const mirrorGroupPricing = mirrorCalculator.getMirrorPricingComponents(mirrorGroupCatalog, mirrorGroupForm)
+  assert.equal(mirrorGroupPricing.options[0].quantity, 4, 'Group work must use the manual quantity')
+  assert.equal(mirrorGroupPricing.rawWork, 8_800, 'Group workshop cost must be based on the manual quantity')
+  assert.equal(mirrorGroupPricing.baseInstallation, 9_680, 'Group selling price must include work markup')
+  assert.equal(
+    mirrorCalculator.getMirrorCalculatedGroupSellingTotal(mirrorGroupCatalog, mirrorGroupForm, 'group-selection'),
+    mirrorGroupPricing.baseInstallation,
+    'Group UI total must match the marked-up group price in the calculation',
+  )
+
   const discountedMirrorForm = { ...mirrorForm, discountEnabled: true, discountPercent: 10 }
   const discountedMirror = mirrorCalculator.calculateMirrorQuote(mirrorCatalogWithMarkup, discountedMirrorForm)
   assert.ok(discountedMirror.total < mirrorWithMarkup.total, 'Mirror discount must reduce revenue')
